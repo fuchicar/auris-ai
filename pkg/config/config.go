@@ -1,0 +1,142 @@
+package config
+
+import (
+	"encoding/base64"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+)
+
+// AurisConfig is the in-memory representation of the agent configuration.
+// Sensitive fields (e.g. APIKey) are held as plaintext strings.
+type AurisConfig struct {
+	ActiveProvider string
+	Providers      map[string]*ProviderConfig
+}
+
+// ProviderConfig holds per-provider settings.
+// APIKey is plaintext in memory; it is encrypted when written to disk.
+type ProviderConfig struct {
+	APIKey string
+}
+
+// diskConfig is the JSON-serializable shadow of AurisConfig.
+type diskConfig struct {
+	ActiveProvider string                   `json:"active_provider"`
+	KDF            diskKDF                  `json:"kdf"`
+	Providers      map[string]*diskProvider `json:"providers,omitempty"`
+}
+
+type diskKDF struct {
+	Salt    string `json:"salt"`     // base64(16 random bytes)
+	Time    uint32 `json:"time"`
+	Memory  uint32 `json:"memory"`
+	Threads uint8  `json:"threads"`
+	KeyLen  uint32 `json:"key_len"`
+}
+
+type diskProvider struct {
+	APIKey string `json:"api_key"` // base64(nonce[12]+ciphertext) or ""
+}
+
+// Load reads the config file from the standard OS path and decrypts sensitive fields.
+// If the file does not exist, Load returns an empty *AurisConfig (not nil) and a nil error.
+func Load(passphrase string) (*AurisConfig, error) {
+	p, err := Path()
+	if err != nil {
+		return nil, fmt.Errorf("config: Load: %w", err)
+	}
+
+	data, err := os.ReadFile(p)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return &AurisConfig{Providers: make(map[string]*ProviderConfig)}, nil
+		}
+		return nil, fmt.Errorf("config: Load: read file: %w", err)
+	}
+
+	var disk diskConfig
+	if err := json.Unmarshal(data, &disk); err != nil {
+		return nil, fmt.Errorf("config: Load: unmarshal: %w", err)
+	}
+
+	salt, err := base64.StdEncoding.DecodeString(disk.KDF.Salt)
+	if err != nil {
+		return nil, fmt.Errorf("config: Load: decode salt: %w", err)
+	}
+	params := kdfParams{
+		Salt:    salt,
+		Time:    disk.KDF.Time,
+		Memory:  disk.KDF.Memory,
+		Threads: disk.KDF.Threads,
+		KeyLen:  disk.KDF.KeyLen,
+	}
+	key := deriveKey(passphrase, params)
+
+	cfg := &AurisConfig{
+		ActiveProvider: disk.ActiveProvider,
+		Providers:      make(map[string]*ProviderConfig, len(disk.Providers)),
+	}
+	for name, dp := range disk.Providers {
+		apiKey, err := decryptField(key, dp.APIKey)
+		if err != nil {
+			return nil, fmt.Errorf("config: Load: provider %q: %w", name, err)
+		}
+		cfg.Providers[name] = &ProviderConfig{APIKey: apiKey}
+	}
+	return cfg, nil
+}
+
+// Save encrypts sensitive fields and writes the config to the standard OS path.
+// It creates the config directory if it does not exist.
+// A new random salt is generated on each call.
+func Save(cfg *AurisConfig, passphrase string) error {
+	p, err := Path()
+	if err != nil {
+		return fmt.Errorf("config: Save: %w", err)
+	}
+
+	if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
+		return fmt.Errorf("config: Save: mkdir: %w", err)
+	}
+
+	params, err := newKDFParams()
+	if err != nil {
+		return fmt.Errorf("config: Save: %w", err)
+	}
+	key := deriveKey(passphrase, params)
+
+	disk := diskConfig{
+		ActiveProvider: cfg.ActiveProvider,
+		KDF: diskKDF{
+			Salt:    base64.StdEncoding.EncodeToString(params.Salt),
+			Time:    params.Time,
+			Memory:  params.Memory,
+			Threads: params.Threads,
+			KeyLen:  params.KeyLen,
+		},
+	}
+
+	if len(cfg.Providers) > 0 {
+		disk.Providers = make(map[string]*diskProvider, len(cfg.Providers))
+		for name, pc := range cfg.Providers {
+			encKey, err := encryptField(key, pc.APIKey)
+			if err != nil {
+				return fmt.Errorf("config: Save: provider %q: %w", name, err)
+			}
+			disk.Providers[name] = &diskProvider{APIKey: encKey}
+		}
+	}
+
+	data, err := json.MarshalIndent(disk, "", "  ")
+	if err != nil {
+		return fmt.Errorf("config: Save: marshal: %w", err)
+	}
+
+	if err := os.WriteFile(p, data, 0o600); err != nil {
+		return fmt.Errorf("config: Save: write file: %w", err)
+	}
+	return nil
+}
