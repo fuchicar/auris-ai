@@ -260,6 +260,115 @@ func TestDecryptField_TruncatedBlob(t *testing.T) {
 	}
 }
 
+func TestLoad_FileNotExist_AIProvidersMapsNotNil(t *testing.T) {
+	withTempConfig(t)
+
+	cfg, err := Load("anypassphrase")
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.AIProviders == nil {
+		t.Error("AIProviders should be non-nil when file does not exist")
+	}
+	if cfg.AITaskRoutes == nil {
+		t.Error("AITaskRoutes should be non-nil when file does not exist")
+	}
+}
+
+func TestRoundtrip_AIProvider(t *testing.T) {
+	withTempConfig(t)
+
+	original := &AurisConfig{
+		ActiveAIProvider: "ollama",
+		DefaultAIModel:   "llama3.2:latest",
+		AIProviders: map[string]*AIProviderConfig{
+			"ollama": {BaseURL: "http://localhost:11434", APIKey: "secret-token"},
+		},
+	}
+	if err := Save(original, "pass"); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	loaded, err := Load("pass")
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if loaded.ActiveAIProvider != "ollama" {
+		t.Errorf("ActiveAIProvider: got %q, want %q", loaded.ActiveAIProvider, "ollama")
+	}
+	if loaded.DefaultAIModel != "llama3.2:latest" {
+		t.Errorf("DefaultAIModel: got %q, want %q", loaded.DefaultAIModel, "llama3.2:latest")
+	}
+	got, ok := loaded.AIProviders["ollama"]
+	if !ok {
+		t.Fatal("ai provider 'ollama' missing after Load")
+	}
+	if got.BaseURL != "http://localhost:11434" {
+		t.Errorf("BaseURL: got %q, want %q", got.BaseURL, "http://localhost:11434")
+	}
+	if got.APIKey != "secret-token" {
+		t.Errorf("APIKey: got %q, want %q", got.APIKey, "secret-token")
+	}
+}
+
+func TestRoundtrip_AIProviderEmptyAPIKey(t *testing.T) {
+	withTempConfig(t)
+
+	original := &AurisConfig{
+		AIProviders: map[string]*AIProviderConfig{
+			"ollama": {BaseURL: "http://localhost:11434", APIKey: ""},
+		},
+	}
+	if err := Save(original, "pass"); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	loaded, err := Load("pass")
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	got, ok := loaded.AIProviders["ollama"]
+	if !ok {
+		t.Fatal("ai provider 'ollama' missing after Load")
+	}
+	if got.APIKey != "" {
+		t.Errorf("APIKey: got %q, want empty string", got.APIKey)
+	}
+}
+
+func TestRoundtrip_AITaskRoutes(t *testing.T) {
+	withTempConfig(t)
+
+	original := &AurisConfig{
+		AITaskRoutes: map[string]AITaskRoute{
+			"chat":               {Provider: "ollama", Model: "llama3.2:latest"},
+			"financial_analysis": {Provider: "ollama", Model: "llama3.2:latest"},
+			"summary":            {Provider: "ollama", Model: "mistral:latest"},
+		},
+	}
+	if err := Save(original, "pass"); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	loaded, err := Load("pass")
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	for task, want := range original.AITaskRoutes {
+		got, ok := loaded.AITaskRoutes[task]
+		if !ok {
+			t.Errorf("task route %q missing after Load", task)
+			continue
+		}
+		if got.Provider != want.Provider {
+			t.Errorf("task %q Provider: got %q, want %q", task, got.Provider, want.Provider)
+		}
+		if got.Model != want.Model {
+			t.Errorf("task %q Model: got %q, want %q", task, got.Model, want.Model)
+		}
+	}
+}
+
 func TestRoundtrip_NewFields(t *testing.T) {
 	withTempConfig(t)
 

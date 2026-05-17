@@ -17,6 +17,12 @@ type AurisConfig struct {
 	Locale           string            // BCP-47 tag, e.g. "en" or "es"; empty means auto-detected at runtime
 	Theme            string            // "light" | "dark"
 	FinancialProfile *FinancialProfile // nil until the setup questionnaire is completed
+
+	// AI provider fields — all optional; zero value means AI is not yet configured.
+	ActiveAIProvider string
+	DefaultAIModel   string
+	AIProviders      map[string]*AIProviderConfig
+	AITaskRoutes     map[string]AITaskRoute // keyed by TaskType string
 }
 
 // FinancialProfile holds the user's financial background collected during the setup
@@ -54,6 +60,20 @@ type ProviderConfig struct {
 	APIKey string
 }
 
+// AIProviderConfig holds per-AI-provider settings.
+// BaseURL is stored unencrypted (contains no secrets).
+// APIKey is plaintext in memory; it is encrypted when written to disk.
+type AIProviderConfig struct {
+	BaseURL string // e.g. "http://localhost:11434"; empty means provider default
+	APIKey  string // optional; empty for local providers like Ollama
+}
+
+// AITaskRoute maps a TaskType string to a specific provider key and model ID.
+type AITaskRoute struct {
+	Provider string // key in AIProviders (e.g. "ollama")
+	Model    string // model ID (e.g. "llama3.2:latest")
+}
+
 // diskConfig is the JSON-serializable shadow of AurisConfig.
 type diskConfig struct {
 	ActiveProvider   string                   `json:"active_provider"`
@@ -62,6 +82,16 @@ type diskConfig struct {
 	Locale           string                   `json:"locale,omitempty"`
 	Theme            string                   `json:"theme,omitempty"`
 	FinancialProfile *FinancialProfile        `json:"financial_profile,omitempty"`
+
+	ActiveAIProvider string                      `json:"active_ai_provider,omitempty"`
+	DefaultAIModel   string                      `json:"default_ai_model,omitempty"`
+	AIProviders      map[string]*diskAIProvider  `json:"ai_providers,omitempty"`
+	AITaskRoutes     map[string]AITaskRoute      `json:"ai_task_routes,omitempty"`
+}
+
+type diskAIProvider struct {
+	BaseURL string `json:"base_url,omitempty"` // plaintext; not a secret
+	APIKey  string `json:"api_key,omitempty"`  // base64(nonce[12]+ciphertext) or ""
 }
 
 type diskKDF struct {
@@ -87,7 +117,11 @@ func Load(passphrase string) (*AurisConfig, error) {
 	data, err := os.ReadFile(p)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return &AurisConfig{Providers: make(map[string]*ProviderConfig)}, nil
+			return &AurisConfig{
+				Providers:    make(map[string]*ProviderConfig),
+				AIProviders:  make(map[string]*AIProviderConfig),
+				AITaskRoutes: make(map[string]AITaskRoute),
+			}, nil
 		}
 		return nil, fmt.Errorf("config: Load: read file: %w", err)
 	}
@@ -111,11 +145,18 @@ func Load(passphrase string) (*AurisConfig, error) {
 	key := deriveKey(passphrase, params)
 
 	cfg := &AurisConfig{
-		ActiveProvider:  disk.ActiveProvider,
-		Providers:       make(map[string]*ProviderConfig, len(disk.Providers)),
-		Locale:          disk.Locale,
-		Theme:           disk.Theme,
+		ActiveProvider:   disk.ActiveProvider,
+		Providers:        make(map[string]*ProviderConfig, len(disk.Providers)),
+		Locale:           disk.Locale,
+		Theme:            disk.Theme,
 		FinancialProfile: disk.FinancialProfile,
+		ActiveAIProvider: disk.ActiveAIProvider,
+		DefaultAIModel:   disk.DefaultAIModel,
+		AITaskRoutes:     disk.AITaskRoutes,
+		AIProviders:      make(map[string]*AIProviderConfig),
+	}
+	if cfg.AITaskRoutes == nil {
+		cfg.AITaskRoutes = make(map[string]AITaskRoute)
 	}
 	for name, dp := range disk.Providers {
 		apiKey, err := decryptField(key, dp.APIKey)
@@ -123,6 +164,13 @@ func Load(passphrase string) (*AurisConfig, error) {
 			return nil, fmt.Errorf("config: Load: provider %q: %w", name, err)
 		}
 		cfg.Providers[name] = &ProviderConfig{APIKey: apiKey}
+	}
+	for name, dp := range disk.AIProviders {
+		apiKey, err := decryptField(key, dp.APIKey)
+		if err != nil {
+			return nil, fmt.Errorf("config: Load: ai provider %q: %w", name, err)
+		}
+		cfg.AIProviders[name] = &AIProviderConfig{BaseURL: dp.BaseURL, APIKey: apiKey}
 	}
 	return cfg, nil
 }
@@ -147,7 +195,7 @@ func Save(cfg *AurisConfig, passphrase string) error {
 	key := deriveKey(passphrase, params)
 
 	disk := diskConfig{
-		ActiveProvider:  cfg.ActiveProvider,
+		ActiveProvider: cfg.ActiveProvider,
 		KDF: diskKDF{
 			Salt:    base64.StdEncoding.EncodeToString(params.Salt),
 			Time:    params.Time,
@@ -155,9 +203,12 @@ func Save(cfg *AurisConfig, passphrase string) error {
 			Threads: params.Threads,
 			KeyLen:  params.KeyLen,
 		},
-		Locale:          cfg.Locale,
-		Theme:           cfg.Theme,
+		Locale:           cfg.Locale,
+		Theme:            cfg.Theme,
 		FinancialProfile: cfg.FinancialProfile,
+		ActiveAIProvider: cfg.ActiveAIProvider,
+		DefaultAIModel:   cfg.DefaultAIModel,
+		AITaskRoutes:     cfg.AITaskRoutes,
 	}
 
 	if len(cfg.Providers) > 0 {
@@ -168,6 +219,17 @@ func Save(cfg *AurisConfig, passphrase string) error {
 				return fmt.Errorf("config: Save: provider %q: %w", name, err)
 			}
 			disk.Providers[name] = &diskProvider{APIKey: encKey}
+		}
+	}
+
+	if len(cfg.AIProviders) > 0 {
+		disk.AIProviders = make(map[string]*diskAIProvider, len(cfg.AIProviders))
+		for name, pc := range cfg.AIProviders {
+			encKey, err := encryptField(key, pc.APIKey)
+			if err != nil {
+				return fmt.Errorf("config: Save: ai provider %q: %w", name, err)
+			}
+			disk.AIProviders[name] = &diskAIProvider{BaseURL: pc.BaseURL, APIKey: encKey}
 		}
 	}
 
