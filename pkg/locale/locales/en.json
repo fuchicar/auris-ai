@@ -1,0 +1,318 @@
+{
+  "welcome.title": {
+    "other": "Welcome to Auris, your personal finance assistant"
+  },
+  "welcome.hint": {
+    "other": "Press Enter to continue"
+  },
+
+  "unlock.prompt": {
+    "other": "Enter your master passphrase to unlock the configuration:"
+  },
+  "unlock.error": {
+    "other": "Wrong passphrase. Please try again."
+  },
+
+  "setup.theme.label": {
+    "other": "Choose a display theme"
+  },
+  "setup.theme.light": {
+    "other": "Light"
+  },
+  "setup.theme.dark": {
+    "other": "Dark"
+  },
+  "setup.theme.hint": {
+    "other": "↑↓ navigate · Enter select"
+  },
+
+  "setup.passphrase.prompt": {
+    "other": "Create a master passphrase to encrypt your configuration:"
+  },
+  "setup.passphrase.confirm": {
+    "other": "Confirm passphrase:"
+  },
+  "setup.passphrase.mismatch": {
+    "other": "Passphrases do not match. Please try again."
+  },
+  "setup.passphrase.short": {
+    "other": "Passphrase must be at least 8 characters."
+  },
+  "setup.passphrase.hint": {
+    "other": "Enter passphrase · Tab to confirm field"
+  },
+
+  "profile.progress": {
+    "other": "Question {{.Current}} of {{.Total}}"
+  },
+  "profile.hint.single": {
+    "other": "↑↓ navigate · Enter select"
+  },
+  "profile.hint.multi": {
+    "other": "↑↓ navigate · Space toggle · Enter confirm"
+  },
+  "profile.hint.other": {
+    "other": "Type your answer · Enter confirm"
+  },
+
+  "profile.q1.label": {
+    "other": "What life stage are you in?"
+  },
+  "profile.q1.opt.under35": {
+    "other": "Under 35, no family commitments"
+  },
+  "profile.q1.opt.35to50": {
+    "other": "35–50, with family or mortgage"
+  },
+  "profile.q1.opt.50to65": {
+    "other": "50–65, thinking about retirement"
+  },
+  "profile.q1.opt.retired": {
+    "other": "Retired or about to retire"
+  },
+
+  "profile.q2.label": {
+    "other": "How would you describe your income stability?"
+  },
+  "profile.q2.opt.very_stable": {
+    "other": "Very stable (civil servant or permanent contract)"
+  },
+  "profile.q2.opt.stable": {
+    "other": "Stable (employee with a fixed contract)"
+  },
+  "profile.q2.opt.variable": {
+    "other": "Variable (self-employed or freelance)"
+  },
+  "profile.q2.opt.irregular": {
+    "other": "Irregular (project-by-project)"
+  },
+
+  "profile.q3.label": {
+    "other": "Do you have an emergency fund to cover 3–6 months of expenses?"
+  },
+  "profile.q3.opt.yes_margin": {
+    "other": "Yes, and I have room to spare"
+  },
+  "profile.q3.opt.yes_tight": {
+    "other": "Yes, but just barely"
+  },
+  "profile.q3.opt.no_working": {
+    "other": "Not yet, but I'm working on it"
+  },
+  "profile.q3.opt.no_priority": {
+    "other": "No, and it's not a priority right now"
+  },
+
+  "profile.q4.label": {
+    "other": "What do you mainly want to use this money for? (multiple answers)"
+  },
+  "profile.q4.opt.retirement": {
+    "other": "Pension or retirement"
+  },
+  "profile.q4.opt.home_purchase": {
+    "other": "Buy a home"
+  },
+  "profile.q4.opt.children_education": {
+    "other": "Children's education"
+  },
+  "profile.q4.opt.wealth_growth": {
+    "other": "Grow my wealth"
+  },
+  "profile.q4.opt.passive_income": {
+    "other": "Generate passive income"
+  },
+  "profile.q4.opt.concrete_goal": {
+    "other": "A specific time-bound goal"
+  },
+  "profile.q4.opt.other": {
+    "other": "Other (please specify)"
+  },
+
+  "profile.q5.label": {
+    "other": "When might you need to access this money, if needed?"
+  },
+  "profile.q5.opt.under_1y": {
+    "other": "In less than 1 year"
+  },
+  "profile.q5.opt.1_3y": {
+    "other": "In 1 to 3 years"
+  },
+  "profile.q5.opt.3_7y": {
+    "other": "In 3 to 7 years"
+  },
+  "profile.q5.opt.over_7y": {
+    "other": "In more than 7 years"
+  },
+  "profile.q5.opt.no_rush": {
+    "other": "No rush — it's long term"
+  },
+
+  "profile.q6.label": {
+    "other": "Imagine you invest €10,000 and in 3 months it's worth €7,500. What would you do?"
+  },
+  "profile.q6.opt.sell_all": {
+    "other": "Sell everything to avoid further losses"
+  },
+  "profile.q6.opt.sell_some": {
+    "other": "Sell part of it to secure some gains"
+  },
+  "profile.q6.opt.hold": {
+    "other": "Wait for it to recover without touching anything"
+  },
+  "profile.q6.opt.buy_more": {
+    "other": "Buy more — it's on sale"
+  },
+
+  "profile.q7.label": {
+    "other": "What is the maximum loss you could absorb without it affecting you significantly?"
+  },
+  "profile.q7.opt.none": {
+    "other": "None — I cannot afford to lose anything"
+  },
+  "profile.q7.opt.10pct": {
+    "other": "Up to 10%"
+  },
+  "profile.q7.opt.25pct": {
+    "other": "Up to 25%"
+  },
+  "profile.q7.opt.50pct": {
+    "other": "Up to 50% if it can grow afterwards"
+  },
+  "profile.q7.opt.all": {
+    "other": "All of it, if the upside potential justifies it"
+  },
+
+  "profile.q8.label": {
+    "other": "What financial products do you have real experience with? (multiple answers)"
+  },
+  "profile.q8.opt.none": {
+    "other": "None — I'm new to investing"
+  },
+  "profile.q8.opt.savings": {
+    "other": "Savings accounts or deposits"
+  },
+  "profile.q8.opt.funds": {
+    "other": "Investment funds"
+  },
+  "profile.q8.opt.stocks_etfs": {
+    "other": "Stocks or ETFs"
+  },
+  "profile.q8.opt.bonds": {
+    "other": "Bonds or fixed income"
+  },
+  "profile.q8.opt.real_estate": {
+    "other": "Real estate investment"
+  },
+  "profile.q8.opt.crypto": {
+    "other": "Cryptocurrencies"
+  },
+  "profile.q8.opt.derivatives": {
+    "other": "Derivatives or options"
+  },
+
+  "profile.q9.label": {
+    "other": "What matters most in your investments?"
+  },
+  "profile.q9.opt.safety": {
+    "other": "Safety (no loss of value)"
+  },
+  "profile.q9.opt.liquidity": {
+    "other": "Liquidity (withdraw whenever I want)"
+  },
+  "profile.q9.opt.returns": {
+    "other": "Returns (maximum growth)"
+  },
+  "profile.q9.opt.impact": {
+    "other": "Impact (ethical or ESG investments)"
+  },
+
+  "profile.q10.label": {
+    "other": "Do you have any restrictions or preferences to consider? (multiple answers)"
+  },
+  "profile.q10.opt.no_tobacco_weapons": {
+    "other": "No tobacco or weapons"
+  },
+  "profile.q10.opt.no_crypto": {
+    "other": "No cryptocurrencies"
+  },
+  "profile.q10.opt.country_only": {
+    "other": "Products from my country only (specify below)"
+  },
+  "profile.q10.opt.no_leverage": {
+    "other": "No leverage"
+  },
+  "profile.q10.opt.none": {
+    "other": "No restrictions"
+  },
+  "profile.q10.opt.other": {
+    "other": "Other (please specify)"
+  },
+
+  "setup.locale.label": {
+    "other": "Choose your language"
+  },
+  "setup.locale.english": {
+    "other": "English"
+  },
+  "setup.locale.spanish": {
+    "other": "Spanish (Español)"
+  },
+  "setup.locale.hint": {
+    "other": "↑↓ navigate · Enter select"
+  },
+
+  "setup.provider.label": {
+    "other": "Select your market data provider"
+  },
+  "setup.provider.hint": {
+    "other": "↑↓ navigate · Enter select"
+  },
+
+  "setup.apikey.label": {
+    "other": "Enter your API key"
+  },
+  "setup.apikey.docs_hint": {
+    "other": "Get your API key at:"
+  },
+  "setup.apikey.connecting": {
+    "other": "Validating API key…"
+  },
+  "setup.apikey.error": {
+    "other": "Connection failed: {{.Error}}"
+  },
+  "setup.apikey.hint": {
+    "other": "Enter API key · Enter validate"
+  },
+
+  "menu.title": {
+    "other": "Main Menu"
+  },
+  "menu.change_theme": {
+    "other": "Change Theme"
+  },
+  "menu.change_language": {
+    "other": "Change Language"
+  },
+  "menu.exit": {
+    "other": "Exit"
+  },
+  "menu.hint": {
+    "other": "↑↓ navigate · Enter select · / for commands"
+  },
+  "menu.command.prompt": {
+    "other": "Enter command:"
+  },
+  "menu.command.hint": {
+    "other": "Available: /theme [light|dark]  /language [en|es]  /exit · Esc cancel"
+  },
+  "menu.command.unknown": {
+    "other": "Unknown command. Try /theme, /language or /exit."
+  },
+
+  "error.save_config": {
+    "other": "Failed to save configuration: {{.Error}}"
+  },
+  "error.connect_provider": {
+    "other": "Could not connect to the provider: {{.Error}}"
+  }
+}

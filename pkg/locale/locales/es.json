@@ -1,0 +1,318 @@
+{
+  "welcome.title": {
+    "other": "Bienvenido a Auris, su asistente personal de finanzas"
+  },
+  "welcome.hint": {
+    "other": "Pulse Enter para continuar"
+  },
+
+  "unlock.prompt": {
+    "other": "Introduzca su contraseña maestra para desbloquear la configuración:"
+  },
+  "unlock.error": {
+    "other": "Contraseña incorrecta. Inténtelo de nuevo."
+  },
+
+  "setup.theme.label": {
+    "other": "Elija un tema visual"
+  },
+  "setup.theme.light": {
+    "other": "Claro"
+  },
+  "setup.theme.dark": {
+    "other": "Oscuro"
+  },
+  "setup.theme.hint": {
+    "other": "↑↓ navegar · Enter seleccionar"
+  },
+
+  "setup.passphrase.prompt": {
+    "other": "Cree una contraseña maestra para cifrar su configuración:"
+  },
+  "setup.passphrase.confirm": {
+    "other": "Confirme la contraseña:"
+  },
+  "setup.passphrase.mismatch": {
+    "other": "Las contraseñas no coinciden. Inténtelo de nuevo."
+  },
+  "setup.passphrase.short": {
+    "other": "La contraseña debe tener al menos 8 caracteres."
+  },
+  "setup.passphrase.hint": {
+    "other": "Escriba la contraseña · Tab para el campo de confirmación"
+  },
+
+  "profile.progress": {
+    "other": "Pregunta {{.Current}} de {{.Total}}"
+  },
+  "profile.hint.single": {
+    "other": "↑↓ navegar · Enter seleccionar"
+  },
+  "profile.hint.multi": {
+    "other": "↑↓ navegar · Espacio marcar · Enter confirmar"
+  },
+  "profile.hint.other": {
+    "other": "Escriba su respuesta · Enter confirmar"
+  },
+
+  "profile.q1.label": {
+    "other": "¿En qué etapa de vida te encuentras?"
+  },
+  "profile.q1.opt.under35": {
+    "other": "Menos de 35 años, sin cargas familiares"
+  },
+  "profile.q1.opt.35to50": {
+    "other": "35–50 años, con familia o hipoteca"
+  },
+  "profile.q1.opt.50to65": {
+    "other": "50–65 años, pensando en la jubilación"
+  },
+  "profile.q1.opt.retired": {
+    "other": "Jubilado o a punto de estarlo"
+  },
+
+  "profile.q2.label": {
+    "other": "¿Cómo describirías tu estabilidad de ingresos?"
+  },
+  "profile.q2.opt.very_stable": {
+    "other": "Muy estable (funcionario o contrato fijo)"
+  },
+  "profile.q2.opt.stable": {
+    "other": "Estable (empleado con contrato)"
+  },
+  "profile.q2.opt.variable": {
+    "other": "Variable (autónomo o freelance)"
+  },
+  "profile.q2.opt.irregular": {
+    "other": "Irregular (proyecto a proyecto)"
+  },
+
+  "profile.q3.label": {
+    "other": "¿Tienes un fondo de emergencia para cubrir 3–6 meses de gastos?"
+  },
+  "profile.q3.opt.yes_margin": {
+    "other": "Sí, y me sobra margen"
+  },
+  "profile.q3.opt.yes_tight": {
+    "other": "Sí, pero justo"
+  },
+  "profile.q3.opt.no_working": {
+    "other": "No, pero estoy en ello"
+  },
+  "profile.q3.opt.no_priority": {
+    "other": "No, y ahora no es mi prioridad"
+  },
+
+  "profile.q4.label": {
+    "other": "¿Para qué quieres usar este dinero principalmente? (múltiple respuesta)"
+  },
+  "profile.q4.opt.retirement": {
+    "other": "Pensión o jubilación"
+  },
+  "profile.q4.opt.home_purchase": {
+    "other": "Comprar una vivienda"
+  },
+  "profile.q4.opt.children_education": {
+    "other": "Educación de hijos"
+  },
+  "profile.q4.opt.wealth_growth": {
+    "other": "Hacer crecer mi patrimonio"
+  },
+  "profile.q4.opt.passive_income": {
+    "other": "Generar renta pasiva"
+  },
+  "profile.q4.opt.concrete_goal": {
+    "other": "Un objetivo concreto a plazo"
+  },
+  "profile.q4.opt.other": {
+    "other": "Otro (especificar)"
+  },
+
+  "profile.q5.label": {
+    "other": "¿Cuándo necesitarías recuperar este dinero, si hace falta?"
+  },
+  "profile.q5.opt.under_1y": {
+    "other": "En menos de 1 año"
+  },
+  "profile.q5.opt.1_3y": {
+    "other": "En 1 a 3 años"
+  },
+  "profile.q5.opt.3_7y": {
+    "other": "En 3 a 7 años"
+  },
+  "profile.q5.opt.over_7y": {
+    "other": "En más de 7 años"
+  },
+  "profile.q5.opt.no_rush": {
+    "other": "No tengo prisa, es a largo plazo"
+  },
+
+  "profile.q6.label": {
+    "other": "Imagina que inviertes 10.000 € y en 3 meses valen 7.500 €. ¿Qué harías?"
+  },
+  "profile.q6.opt.sell_all": {
+    "other": "Vendería todo para no perder más"
+  },
+  "profile.q6.opt.sell_some": {
+    "other": "Vendería una parte para asegurar algo"
+  },
+  "profile.q6.opt.hold": {
+    "other": "Esperaría a que se recupere sin tocar nada"
+  },
+  "profile.q6.opt.buy_more": {
+    "other": "Aprovecharía para comprar más, está barato"
+  },
+
+  "profile.q7.label": {
+    "other": "¿Qué pérdida máxima podrías asumir sin que te afecte significativamente?"
+  },
+  "profile.q7.opt.none": {
+    "other": "Ninguna, no puedo permitirme perder nada"
+  },
+  "profile.q7.opt.10pct": {
+    "other": "Hasta un 10%"
+  },
+  "profile.q7.opt.25pct": {
+    "other": "Hasta un 25%"
+  },
+  "profile.q7.opt.50pct": {
+    "other": "Hasta un 50% si luego puede crecer más"
+  },
+  "profile.q7.opt.all": {
+    "other": "Todo, si el potencial de ganancia lo justifica"
+  },
+
+  "profile.q8.label": {
+    "other": "¿Con qué productos financieros tienes experiencia real? (múltiple respuesta)"
+  },
+  "profile.q8.opt.none": {
+    "other": "Ninguno, soy nuevo en esto"
+  },
+  "profile.q8.opt.savings": {
+    "other": "Depósitos o cuentas de ahorro"
+  },
+  "profile.q8.opt.funds": {
+    "other": "Fondos de inversión"
+  },
+  "profile.q8.opt.stocks_etfs": {
+    "other": "Acciones o ETFs"
+  },
+  "profile.q8.opt.bonds": {
+    "other": "Bonos o renta fija"
+  },
+  "profile.q8.opt.real_estate": {
+    "other": "Inversión inmobiliaria"
+  },
+  "profile.q8.opt.crypto": {
+    "other": "Criptomonedas"
+  },
+  "profile.q8.opt.derivatives": {
+    "other": "Derivados u opciones"
+  },
+
+  "profile.q9.label": {
+    "other": "¿Qué importa más en tus inversiones?"
+  },
+  "profile.q9.opt.safety": {
+    "other": "Seguridad (que no pierda valor)"
+  },
+  "profile.q9.opt.liquidity": {
+    "other": "Liquidez (poder retirar cuando quiera)"
+  },
+  "profile.q9.opt.returns": {
+    "other": "Rentabilidad (que crezca lo máximo posible)"
+  },
+  "profile.q9.opt.impact": {
+    "other": "Impacto (inversiones éticas o ESG)"
+  },
+
+  "profile.q10.label": {
+    "other": "¿Tienes alguna restricción o preferencia que debamos tener en cuenta? (múltiple respuesta)"
+  },
+  "profile.q10.opt.no_tobacco_weapons": {
+    "other": "Sin tabaco ni armamento"
+  },
+  "profile.q10.opt.no_crypto": {
+    "other": "Sin criptomonedas"
+  },
+  "profile.q10.opt.country_only": {
+    "other": "Solo productos en mi país (indicar cuál)"
+  },
+  "profile.q10.opt.no_leverage": {
+    "other": "No quiero usar apalancamiento"
+  },
+  "profile.q10.opt.none": {
+    "other": "Ninguna en particular"
+  },
+  "profile.q10.opt.other": {
+    "other": "Otra (especificar)"
+  },
+
+  "setup.locale.label": {
+    "other": "Elija su idioma"
+  },
+  "setup.locale.english": {
+    "other": "Inglés (English)"
+  },
+  "setup.locale.spanish": {
+    "other": "Español"
+  },
+  "setup.locale.hint": {
+    "other": "↑↓ navegar · Enter seleccionar"
+  },
+
+  "setup.provider.label": {
+    "other": "Seleccione su proveedor de datos de mercado"
+  },
+  "setup.provider.hint": {
+    "other": "↑↓ navegar · Enter seleccionar"
+  },
+
+  "setup.apikey.label": {
+    "other": "Introduzca su clave de API"
+  },
+  "setup.apikey.docs_hint": {
+    "other": "Obtenga su clave de API en:"
+  },
+  "setup.apikey.connecting": {
+    "other": "Validando clave de API…"
+  },
+  "setup.apikey.error": {
+    "other": "Error de conexión: {{.Error}}"
+  },
+  "setup.apikey.hint": {
+    "other": "Escriba la clave de API · Enter para validar"
+  },
+
+  "menu.title": {
+    "other": "Menú principal"
+  },
+  "menu.change_theme": {
+    "other": "Cambiar tema"
+  },
+  "menu.change_language": {
+    "other": "Cambiar idioma"
+  },
+  "menu.exit": {
+    "other": "Salir"
+  },
+  "menu.hint": {
+    "other": "↑↓ navegar · Enter seleccionar · / para comandos"
+  },
+  "menu.command.prompt": {
+    "other": "Introduzca comando:"
+  },
+  "menu.command.hint": {
+    "other": "Disponibles: /theme [light|dark]  /language [en|es]  /exit · Esc cancelar"
+  },
+  "menu.command.unknown": {
+    "other": "Comando desconocido. Pruebe /theme, /language o /exit."
+  },
+
+  "error.save_config": {
+    "other": "No se pudo guardar la configuración: {{.Error}}"
+  },
+  "error.connect_provider": {
+    "other": "No se pudo conectar con el proveedor: {{.Error}}"
+  }
+}

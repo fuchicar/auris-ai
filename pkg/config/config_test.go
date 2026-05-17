@@ -259,3 +259,59 @@ func TestDecryptField_TruncatedBlob(t *testing.T) {
 		t.Fatal("expected error for truncated blob, got nil")
 	}
 }
+
+func TestRoundtrip_NewFields(t *testing.T) {
+	withTempConfig(t)
+
+	fp := &FinancialProfile{
+		LifeStage:           "under35",
+		IncomeStability:     "stable",
+		InvestmentGoals:     []string{"retirement", "wealth_growth"},
+		InvestmentGoalsOther: "custom goal",
+		TimeHorizon:         "3_7y",
+		MaxAcceptableLoss:   "25pct",
+		FinancialExperience: []string{"stocks_etfs", "funds"},
+		InvestmentPriority:  "returns",
+		Restrictions:        []string{"no_crypto", "country_only"},
+		RestrictionsCountry: "Spain",
+	}
+
+	original := &AurisConfig{
+		ActiveProvider:   "fmp",
+		Providers:        map[string]*ProviderConfig{"fmp": {APIKey: "key"}},
+		Locale:           "es",
+		Theme:            "dark",
+		FinancialProfile: fp,
+	}
+
+	if err := Save(original, "pass"); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	loaded, err := Load("pass")
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	if loaded.Locale != "es" {
+		t.Errorf("Locale: got %q, want %q", loaded.Locale, "es")
+	}
+	if loaded.Theme != "dark" {
+		t.Errorf("Theme: got %q, want %q", loaded.Theme, "dark")
+	}
+	if loaded.FinancialProfile == nil {
+		t.Fatal("FinancialProfile is nil after Load")
+	}
+	if loaded.FinancialProfile.LifeStage != "under35" {
+		t.Errorf("LifeStage: got %q, want %q", loaded.FinancialProfile.LifeStage, "under35")
+	}
+	if len(loaded.FinancialProfile.InvestmentGoals) != 2 {
+		t.Errorf("InvestmentGoals length: got %d, want 2", len(loaded.FinancialProfile.InvestmentGoals))
+	}
+	if loaded.FinancialProfile.InvestmentGoalsOther != "custom goal" {
+		t.Errorf("InvestmentGoalsOther: got %q, want %q", loaded.FinancialProfile.InvestmentGoalsOther, "custom goal")
+	}
+	if loaded.FinancialProfile.RestrictionsCountry != "Spain" {
+		t.Errorf("RestrictionsCountry: got %q, want %q", loaded.FinancialProfile.RestrictionsCountry, "Spain")
+	}
+}

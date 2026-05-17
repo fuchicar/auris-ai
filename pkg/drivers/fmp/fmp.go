@@ -251,6 +251,17 @@ func reverseCandles(s []providers.Candle) {
 // providers.ProviderAPI — implementación
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Name returns the human-readable display name of the FMP provider.
+func (d *Driver) Name() string {
+	return "Financial Modeling Prep"
+}
+
+// DocsURL returns the URL to the FMP API key documentation page.
+func (d *Driver) DocsURL() string {
+	return "https://site.financialmodelingprep.com/developer/docs"
+}
+
+// Description returns a prose description of the FMP provider.
 func (d *Driver) Description() string {
 	return "Financial Modeling Prep (FMP) market data provider"
 }

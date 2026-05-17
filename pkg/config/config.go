@@ -12,8 +12,40 @@ import (
 // AurisConfig is the in-memory representation of the agent configuration.
 // Sensitive fields (e.g. APIKey) are held as plaintext strings.
 type AurisConfig struct {
-	ActiveProvider string
-	Providers      map[string]*ProviderConfig
+	ActiveProvider   string
+	Providers        map[string]*ProviderConfig
+	Locale           string            // BCP-47 tag, e.g. "en" or "es"; empty means auto-detected at runtime
+	Theme            string            // "light" | "dark"
+	FinancialProfile *FinancialProfile // nil until the setup questionnaire is completed
+}
+
+// FinancialProfile holds the user's financial background collected during the setup
+// questionnaire. All fields are stored as plaintext JSON — they are not credentials.
+type FinancialProfile struct {
+	// Q1: single-select life-stage
+	LifeStage string `json:"life_stage,omitempty"`
+	// Q2: single-select income stability
+	IncomeStability string `json:"income_stability,omitempty"`
+	// Q3: single-select emergency fund status
+	EmergencyFund string `json:"emergency_fund,omitempty"`
+	// Q4: multi-select investment goals
+	InvestmentGoals []string `json:"investment_goals,omitempty"`
+	// Q4: free text when "other" is selected
+	InvestmentGoalsOther string `json:"investment_goals_other,omitempty"`
+	// Q5: single-select time horizon
+	TimeHorizon string `json:"time_horizon,omitempty"`
+	// Q6: single-select reaction to a 25% portfolio loss
+	LossScenario string `json:"loss_scenario,omitempty"`
+	// Q7: single-select maximum acceptable loss percentage
+	MaxAcceptableLoss string `json:"max_acceptable_loss,omitempty"`
+	// Q8: multi-select prior financial experience
+	FinancialExperience []string `json:"financial_experience,omitempty"`
+	// Q9: single-select investment priority
+	InvestmentPriority string `json:"investment_priority,omitempty"`
+	// Q10: multi-select investment restrictions
+	Restrictions []string `json:"restrictions,omitempty"`
+	// Q10: country name when "country_only" restriction is selected
+	RestrictionsCountry string `json:"restrictions_country,omitempty"`
 }
 
 // ProviderConfig holds per-provider settings.
@@ -24,9 +56,12 @@ type ProviderConfig struct {
 
 // diskConfig is the JSON-serializable shadow of AurisConfig.
 type diskConfig struct {
-	ActiveProvider string                   `json:"active_provider"`
-	KDF            diskKDF                  `json:"kdf"`
-	Providers      map[string]*diskProvider `json:"providers,omitempty"`
+	ActiveProvider   string                   `json:"active_provider"`
+	KDF              diskKDF                  `json:"kdf"`
+	Providers        map[string]*diskProvider `json:"providers,omitempty"`
+	Locale           string                   `json:"locale,omitempty"`
+	Theme            string                   `json:"theme,omitempty"`
+	FinancialProfile *FinancialProfile        `json:"financial_profile,omitempty"`
 }
 
 type diskKDF struct {
@@ -76,8 +111,11 @@ func Load(passphrase string) (*AurisConfig, error) {
 	key := deriveKey(passphrase, params)
 
 	cfg := &AurisConfig{
-		ActiveProvider: disk.ActiveProvider,
-		Providers:      make(map[string]*ProviderConfig, len(disk.Providers)),
+		ActiveProvider:  disk.ActiveProvider,
+		Providers:       make(map[string]*ProviderConfig, len(disk.Providers)),
+		Locale:          disk.Locale,
+		Theme:           disk.Theme,
+		FinancialProfile: disk.FinancialProfile,
 	}
 	for name, dp := range disk.Providers {
 		apiKey, err := decryptField(key, dp.APIKey)
@@ -109,7 +147,7 @@ func Save(cfg *AurisConfig, passphrase string) error {
 	key := deriveKey(passphrase, params)
 
 	disk := diskConfig{
-		ActiveProvider: cfg.ActiveProvider,
+		ActiveProvider:  cfg.ActiveProvider,
 		KDF: diskKDF{
 			Salt:    base64.StdEncoding.EncodeToString(params.Salt),
 			Time:    params.Time,
@@ -117,6 +155,9 @@ func Save(cfg *AurisConfig, passphrase string) error {
 			Threads: params.Threads,
 			KeyLen:  params.KeyLen,
 		},
+		Locale:          cfg.Locale,
+		Theme:           cfg.Theme,
+		FinancialProfile: cfg.FinancialProfile,
 	}
 
 	if len(cfg.Providers) > 0 {

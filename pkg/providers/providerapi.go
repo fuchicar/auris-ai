@@ -6,6 +6,13 @@ import (
 )
 
 type ProviderAPI interface {
+	// Name returns the short human-readable display name of the provider.
+	Name() string
+
+	// DocsURL returns the URL to the provider's API key documentation page.
+	DocsURL() string
+
+	// Description returns a prose description of the provider.
 	Description() string
 
 	// -------------------------

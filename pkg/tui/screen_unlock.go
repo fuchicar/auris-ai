@@ -1,0 +1,72 @@
+package tui
+
+import (
+	"fmt"
+
+	"github.com/charmbracelet/bubbles/textinput"
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
+
+	"auris/pkg/config"
+	"auris/pkg/locale"
+)
+
+// UnlockModel prompts the user for their master passphrase to decrypt an
+// existing configuration file. Shown on every non-setup launch.
+type UnlockModel struct {
+	input  textinput.Model
+	err    string
+	styles *Styles
+}
+
+// newUnlockModel constructs an [UnlockModel] ready for input.
+func newUnlockModel(s *Styles) *UnlockModel {
+	ti := textinput.New()
+	ti.Placeholder = "passphrase"
+	ti.EchoMode = textinput.EchoPassword
+	ti.EchoCharacter = '•'
+	ti.Focus()
+
+	return &UnlockModel{input: ti, styles: s}
+}
+
+// Init implements [tea.Model]; starts the cursor blink animation.
+func (m *UnlockModel) Init() tea.Cmd { return textinput.Blink }
+
+// Update implements [tea.Model]. On Enter it attempts to load the config; on
+// failure it clears the input and shows the error inline.
+func (m *UnlockModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		if msg.Type == tea.KeyEnter {
+			passphrase := m.input.Value()
+			cfg, err := config.Load(passphrase)
+			if err != nil {
+				m.err = locale.T("unlock.error")
+				m.input.SetValue("")
+				return m, textinput.Blink
+			}
+			return m, func() tea.Msg {
+				return ScreenDoneMsg{
+					From:   ScreenUnlock,
+					Result: UnlockResult{Passphrase: passphrase, Config: cfg},
+				}
+			}
+		}
+	}
+
+	updated, cmd := m.input.Update(msg)
+	m.input = updated
+	return m, cmd
+}
+
+// View implements [tea.Model].
+func (m *UnlockModel) View() string {
+	prompt := m.styles.Subtitle.Render(locale.T("unlock.prompt"))
+	inp := m.styles.Input.Render(m.input.View())
+	parts := []string{prompt, inp}
+	if m.err != "" {
+		parts = append(parts, m.styles.Error.Render(fmt.Sprintf("✗ %s", m.err)))
+	}
+	return lipgloss.JoinVertical(lipgloss.Left, parts...)
+}
