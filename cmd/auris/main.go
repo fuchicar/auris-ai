@@ -2,7 +2,7 @@
 //
 // Usage:
 //
-//	auris [--setup]
+//	auris [-setup]
 //
 // Without flags, Auris detects whether a configuration file exists. If not,
 // the first-run setup wizard is shown automatically. If a configuration
@@ -11,7 +11,7 @@
 //
 // Flags:
 //
-//	--setup   Re-run the setup wizard even when a configuration already exists.
+//	-setup   Re-run the setup wizard even when a configuration already exists.
 package main
 
 import (
@@ -27,6 +27,10 @@ import (
 
 func main() {
 	setupFlag := flag.Bool("setup", false, "Re-run the setup wizard")
+	flag.Usage = func() {
+		fmt.Fprintf(os.Stderr, "Usage: auris [-setup]\n\nFlags:\n")
+		flag.PrintDefaults()
+	}
 	flag.Parse()
 
 	// Detect the OS locale and initialise the translation bundle before any
