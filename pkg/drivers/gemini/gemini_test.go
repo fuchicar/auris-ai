@@ -120,7 +120,7 @@ func cheapestModel(t *testing.T, d *gemini.Driver) llm.Model {
 	if len(models) == 0 {
 		t.Skip("no models available; skipping integration test")
 	}
-	preferences := []string{"flash-lite", "flash-8b", "flash"}
+	preferences := []string{"flash-lite-latest", "flash-8b", "flash-latest", "flash-lite", "flash"}
 	for _, pref := range preferences {
 		for _, m := range models {
 			if strings.Contains(strings.ToLower(m.ID), pref) {

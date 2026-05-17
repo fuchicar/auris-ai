@@ -1,4 +1,4 @@
 pkg/drivers/fmp/test_data/fmp_api_key
-pkg/aidrivers/gemini/test_data/google_api_key
+pkg/drivers/gemini/test_data/google_api_key
 auris
 !cmd/auris/
