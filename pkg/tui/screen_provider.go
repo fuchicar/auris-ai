@@ -12,7 +12,7 @@ import (
 
 // ProviderModel lets the user choose a market data provider from the registry.
 type ProviderModel struct {
-	entries []registry.Entry
+	entries []registry.MarketEntry
 	cursor  int
 	styles  *Styles
 }
@@ -21,7 +21,7 @@ type ProviderModel struct {
 // providers from [registry.All].
 func newProviderModel(s *Styles) *ProviderModel {
 	return &ProviderModel{
-		entries: registry.All(),
+		entries: registry.AllMarket(),
 		styles:  s,
 	}
 }

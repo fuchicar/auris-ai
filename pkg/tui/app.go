@@ -71,12 +71,12 @@ type PassphraseResult struct{ Passphrase string }
 type ProfileResult struct{ Profile config.FinancialProfile }
 
 // ProviderResult is the payload emitted by the Provider selection screen.
-type ProviderResult struct{ Entry registry.Entry }
+type ProviderResult struct{ Entry registry.MarketEntry }
 
 // APIKeyResult is the payload emitted by the API key screen after a successful
 // connection test.
 type APIKeyResult struct {
-	Entry  registry.Entry
+	Entry  registry.MarketEntry
 	APIKey string
 }
 
@@ -117,7 +117,7 @@ type AppModel struct {
 	detectedLocale   string
 	flowContext      FlowContext
 	styles           *Styles
-	selectedEntry    registry.Entry // provider chosen in ScreenProvider
+	selectedEntry    registry.MarketEntry // provider chosen in ScreenProvider
 	width, height    int            // current terminal dimensions (from WindowSizeMsg)
 }
 

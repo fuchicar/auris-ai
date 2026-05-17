@@ -1,100 +1,107 @@
-package ollama_test
+package gemini_test
 
 import (
 	"context"
 	"errors"
-	"net/http"
-	"sort"
+	"os"
 	"strings"
 	"testing"
 	"time"
 
-	"auris/pkg/ai"
-	"auris/pkg/aidrivers/ollama"
+	"auris/pkg/drivers/gemini"
+	"auris/pkg/llm"
 )
+
+// skipIfRateLimited calls t.Skip when the error is ErrRateLimit.
+// The free Gemini tier has strict RPM limits that integration tests can hit
+// when several tests run back-to-back.
+func skipIfRateLimited(t *testing.T, err error) {
+	t.Helper()
+	if errors.Is(err, llm.ErrRateLimit) {
+		t.Skip("API rate limit reached; skipping (re-run after a minute)")
+	}
+}
 
 // ── Compile-time interface compliance ────────────────────────────────────────
 
 func TestInterfaceCompliance(t *testing.T) {
-	var _ ai.AIProvider = (*ollama.Driver)(nil)
+	var _ llm.AIProvider = (*gemini.Driver)(nil)
 }
 
 // ── Unit tests (no network) ──────────────────────────────────────────────────
 
 func TestName_NonEmpty(t *testing.T) {
-	d := ollama.New()
+	d := gemini.New("dummy-key")
 	if d.Name() == "" {
 		t.Error("Name() returned empty string")
 	}
 }
 
 func TestDescription_NonEmpty(t *testing.T) {
-	d := ollama.New()
+	d := gemini.New("dummy-key")
 	if d.Description() == "" {
 		t.Error("Description() returned empty string")
 	}
 }
 
 func TestIsConnected_InitiallyFalse(t *testing.T) {
-	d := ollama.New()
+	d := gemini.New("dummy-key")
 	if d.IsConnected() {
 		t.Error("IsConnected() should be false before Connect")
 	}
 }
 
 func TestComplete_NotConnected(t *testing.T) {
-	d := ollama.New()
-	_, err := d.Complete(context.Background(), ai.CompletionRequest{Model: "any"})
-	if !errors.Is(err, ai.ErrNotConnected) {
+	d := gemini.New("dummy-key")
+	_, err := d.Complete(context.Background(), llm.CompletionRequest{Model: "any"})
+	if !errors.Is(err, llm.ErrNotConnected) {
 		t.Errorf("expected ErrNotConnected, got: %v", err)
 	}
 }
 
 func TestStream_NotConnected(t *testing.T) {
-	d := ollama.New()
-	_, err := d.Stream(context.Background(), ai.CompletionRequest{Model: "any"})
-	if !errors.Is(err, ai.ErrNotConnected) {
+	d := gemini.New("dummy-key")
+	_, err := d.Stream(context.Background(), llm.CompletionRequest{Model: "any"})
+	if !errors.Is(err, llm.ErrNotConnected) {
 		t.Errorf("expected ErrNotConnected, got: %v", err)
 	}
 }
 
 func TestListModels_NotConnected(t *testing.T) {
-	d := ollama.New()
+	d := gemini.New("dummy-key")
 	_, err := d.ListModels(context.Background())
-	if !errors.Is(err, ai.ErrNotConnected) {
+	if !errors.Is(err, llm.ErrNotConnected) {
 		t.Errorf("expected ErrNotConnected, got: %v", err)
 	}
 }
 
 func TestPing_NotConnected(t *testing.T) {
-	d := ollama.New()
+	d := gemini.New("dummy-key")
 	err := d.Ping(context.Background())
-	if !errors.Is(err, ai.ErrNotConnected) {
+	if !errors.Is(err, llm.ErrNotConnected) {
 		t.Errorf("expected ErrNotConnected, got: %v", err)
 	}
 }
 
-// ── Integration tests (skip if Ollama is not running) ────────────────────────
+// ── Integration tests (skip if no API key is present) ────────────────────────
 
-func requireOllama(t *testing.T) {
+func readAPIKey(t *testing.T) string {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://localhost:11434/api/tags", nil)
+	data, err := os.ReadFile("test_data/google_api_key")
 	if err != nil {
-		t.Skip("could not build Ollama probe request; skipping integration test")
+		t.Skip("no API key in test_data/google_api_key; skipping integration test")
 	}
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil || resp.StatusCode != http.StatusOK {
-		t.Skip("Ollama not running at localhost:11434; skipping integration test")
+	key := strings.TrimSpace(string(data))
+	if key == "" {
+		t.Skip("empty API key in test_data/google_api_key; skipping integration test")
 	}
-	resp.Body.Close()
+	return key
 }
 
-func newConnectedDriver(t *testing.T) *ollama.Driver {
+func newConnectedDriver(t *testing.T) *gemini.Driver {
 	t.Helper()
-	requireOllama(t)
-	d := ollama.New()
+	apiKey := readAPIKey(t)
+	d := gemini.New(apiKey)
 	if err := d.Connect(context.Background()); err != nil {
 		t.Fatalf("Connect: %v", err)
 	}
@@ -102,25 +109,25 @@ func newConnectedDriver(t *testing.T) *ollama.Driver {
 	return d
 }
 
-// firstModel returns the smallest available model by size to keep integration tests fast.
-func firstModel(t *testing.T, d *ollama.Driver) ai.Model {
+// cheapestModel selects the smallest/cheapest model to keep integration tests
+// fast and inexpensive. Prefers flash-lite > flash-8b > flash > first available.
+func cheapestModel(t *testing.T, d *gemini.Driver) llm.Model {
 	t.Helper()
 	models, err := d.ListModels(context.Background())
 	if err != nil {
 		t.Fatalf("ListModels: %v", err)
 	}
 	if len(models) == 0 {
-		t.Skip("no models available in Ollama; skipping integration test")
+		t.Skip("no models available; skipping integration test")
 	}
-	sort.Slice(models, func(i, j int) bool {
-		if models[i].Size == 0 {
-			return false
+	preferences := []string{"flash-lite", "flash-8b", "flash"}
+	for _, pref := range preferences {
+		for _, m := range models {
+			if strings.Contains(strings.ToLower(m.ID), pref) {
+				return m
+			}
 		}
-		if models[j].Size == 0 {
-			return true
-		}
-		return models[i].Size < models[j].Size
-	})
+	}
 	return models[0]
 }
 
@@ -132,8 +139,8 @@ func TestConnect_IsConnected(t *testing.T) {
 }
 
 func TestDisconnect(t *testing.T) {
-	requireOllama(t)
-	d := ollama.New()
+	apiKey := readAPIKey(t)
+	d := gemini.New(apiKey)
 	if err := d.Connect(context.Background()); err != nil {
 		t.Fatalf("Connect: %v", err)
 	}
@@ -159,29 +166,33 @@ func TestListModels(t *testing.T) {
 		t.Fatalf("ListModels: %v", err)
 	}
 	if len(models) == 0 {
-		t.Skip("no models available in Ollama; nothing to assert")
+		t.Error("expected at least one model")
 	}
 	for _, m := range models {
 		if m.ID == "" {
 			t.Error("model with empty ID returned")
 		}
+		if !strings.HasPrefix(m.ID, "models/") {
+			t.Errorf("model ID %q does not start with 'models/'", m.ID)
+		}
 	}
 }
 
-func TestComplete_FirstModel(t *testing.T) {
+func TestComplete_CheapestModel(t *testing.T) {
 	d := newConnectedDriver(t)
-	model := firstModel(t, d)
+	model := cheapestModel(t, d)
 
-	resp, err := d.Complete(context.Background(), ai.CompletionRequest{
+	resp, err := d.Complete(context.Background(), llm.CompletionRequest{
 		Model: model.ID,
-		Messages: []ai.Message{
-			{Role: ai.RoleUser, Content: "Reply with a single word: hello"},
+		Messages: []llm.Message{
+			{Role: llm.RoleUser, Content: "Reply with a single word: hello"},
 		},
 	})
+	skipIfRateLimited(t, err)
 	if err != nil {
 		t.Fatalf("Complete: %v", err)
 	}
-	if resp.Message.Role != ai.RoleAssistant {
+	if resp.Message.Role != llm.RoleAssistant {
 		t.Errorf("expected role assistant, got %q", resp.Message.Role)
 	}
 	if resp.Message.Content == "" {
@@ -189,22 +200,24 @@ func TestComplete_FirstModel(t *testing.T) {
 	}
 }
 
-func TestStream_FirstModel(t *testing.T) {
+func TestStream_CheapestModel(t *testing.T) {
 	d := newConnectedDriver(t)
-	model := firstModel(t, d)
+	model := cheapestModel(t, d)
 
-	ch, err := d.Stream(context.Background(), ai.CompletionRequest{
+	ch, err := d.Stream(context.Background(), llm.CompletionRequest{
 		Model: model.ID,
-		Messages: []ai.Message{
-			{Role: ai.RoleUser, Content: "Reply with a single word: hello"},
+		Messages: []llm.Message{
+			{Role: llm.RoleUser, Content: "Reply with a single word: hello"},
 		},
 	})
+	skipIfRateLimited(t, err)
 	if err != nil {
 		t.Fatalf("Stream: %v", err)
 	}
 
 	var sb strings.Builder
 	for chunk := range ch {
+		skipIfRateLimited(t, chunk.Err)
 		if chunk.Err != nil {
 			t.Fatalf("stream error: %v", chunk.Err)
 		}
@@ -213,7 +226,6 @@ func TestStream_FirstModel(t *testing.T) {
 			break
 		}
 	}
-	// Drain any remaining chunks (should be none after Done, but be safe).
 	for range ch {
 	}
 
@@ -224,37 +236,36 @@ func TestStream_FirstModel(t *testing.T) {
 
 func TestStream_ContextCancellation(t *testing.T) {
 	d := newConnectedDriver(t)
-	model := firstModel(t, d)
+	model := cheapestModel(t, d)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	ch, err := d.Stream(ctx, ai.CompletionRequest{
+	ch, err := d.Stream(ctx, llm.CompletionRequest{
 		Model: model.ID,
-		Messages: []ai.Message{
-			{Role: ai.RoleUser, Content: "Count from 1 to 1000, one number per line."},
+		Messages: []llm.Message{
+			{Role: llm.RoleUser, Content: "Count from 1 to 1000, one number per line."},
 		},
 	})
+	skipIfRateLimited(t, err)
 	if err != nil {
 		t.Fatalf("Stream: %v", err)
 	}
 
-	// Cancel after receiving the first chunk.
 	for range ch {
 		cancel()
 		break
 	}
 
-	// Verify channel drains and closes within 2 seconds.
-	deadline := time.After(2 * time.Second)
+	deadline := time.After(5 * time.Second)
 	for {
 		select {
 		case _, ok := <-ch:
 			if !ok {
-				return // channel closed — test passes
+				return
 			}
 		case <-deadline:
-			t.Error("channel did not close within 2 seconds after context cancellation")
+			t.Error("channel did not close within 5 seconds after context cancellation")
 			return
 		}
 	}

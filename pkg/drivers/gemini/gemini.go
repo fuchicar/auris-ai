@@ -13,7 +13,7 @@ import (
 	"sync"
 	"time"
 
-	"auris/pkg/ai"
+	"auris/pkg/llm"
 )
 
 const (
@@ -22,7 +22,7 @@ const (
 	apiVersion         = "/v1beta"
 )
 
-// Driver implements ai.AIProvider against the Google Generative AI (Gemini) REST API.
+// Driver implements llm.AIProvider against the Google Generative AI (Gemini) REST API.
 type Driver struct {
 	apiKey     string
 	baseURL    string
@@ -99,7 +99,7 @@ func (d *Driver) Ping(ctx context.Context) error {
 }
 
 // ListModels returns all Gemini models that support content generation.
-func (d *Driver) ListModels(ctx context.Context) ([]ai.Model, error) {
+func (d *Driver) ListModels(ctx context.Context) ([]llm.Model, error) {
 	if err := d.checkConnected(); err != nil {
 		return nil, err
 	}
@@ -107,43 +107,43 @@ func (d *Driver) ListModels(ctx context.Context) ([]ai.Model, error) {
 	if err := d.doGet(ctx, apiVersion+"/models", &resp); err != nil {
 		return nil, fmt.Errorf("gemini: ListModels: %w", err)
 	}
-	var models []ai.Model
+	var models []llm.Model
 	for _, m := range resp.Models {
 		if !supportsGenerateContent(m) {
 			continue
 		}
-		models = append(models, ai.Model{ID: m.Name, Name: m.DisplayName})
+		models = append(models, llm.Model{ID: m.Name, Name: m.DisplayName})
 	}
 	return models, nil
 }
 
 // Complete sends a non-streaming completion request and returns the full response.
-func (d *Driver) Complete(ctx context.Context, req ai.CompletionRequest) (ai.CompletionResponse, error) {
+func (d *Driver) Complete(ctx context.Context, req llm.CompletionRequest) (llm.CompletionResponse, error) {
 	if err := d.checkConnected(); err != nil {
-		return ai.CompletionResponse{}, err
+		return llm.CompletionResponse{}, err
 	}
 
 	body, err := json.Marshal(buildRequest(req))
 	if err != nil {
-		return ai.CompletionResponse{}, fmt.Errorf("gemini: Complete: marshal: %w", err)
+		return llm.CompletionResponse{}, fmt.Errorf("gemini: Complete: marshal: %w", err)
 	}
 
 	url := modelURL(d.baseURL, req.Model, "generateContent")
 	var gemResp geminiResponse
 	if err := d.doPost(ctx, url, body, &gemResp); err != nil {
-		return ai.CompletionResponse{}, fmt.Errorf("gemini: Complete: %w", err)
+		return llm.CompletionResponse{}, fmt.Errorf("gemini: Complete: %w", err)
 	}
 
 	result, err := mapResponse(gemResp)
 	if err != nil {
-		return ai.CompletionResponse{}, fmt.Errorf("gemini: Complete: %w", err)
+		return llm.CompletionResponse{}, fmt.Errorf("gemini: Complete: %w", err)
 	}
 	return result, nil
 }
 
 // Stream sends a streaming completion request and returns a channel of chunks.
 // The channel is always closed after a Done==true chunk, even on error or cancellation.
-func (d *Driver) Stream(ctx context.Context, req ai.CompletionRequest) (<-chan ai.StreamChunk, error) {
+func (d *Driver) Stream(ctx context.Context, req llm.CompletionRequest) (<-chan llm.StreamChunk, error) {
 	if err := d.checkConnected(); err != nil {
 		return nil, err
 	}
@@ -156,13 +156,13 @@ func (d *Driver) Stream(ctx context.Context, req ai.CompletionRequest) (<-chan a
 	// Append ?alt=sse to receive Server-Sent Events format.
 	url := modelURL(d.baseURL, req.Model, "streamGenerateContent") + "?alt=sse"
 
-	ch := make(chan ai.StreamChunk, 16)
+	ch := make(chan llm.StreamChunk, 16)
 	go func() {
 		defer close(ch)
 
 		resp, err := d.doStream(ctx, url, body)
 		if err != nil {
-			ch <- ai.StreamChunk{Done: true, Err: fmt.Errorf("gemini: Stream: %w", err)}
+			ch <- llm.StreamChunk{Done: true, Err: fmt.Errorf("gemini: Stream: %w", err)}
 			return
 		}
 		defer resp.Body.Close()
@@ -179,7 +179,7 @@ func (d *Driver) Stream(ctx context.Context, req ai.CompletionRequest) (<-chan a
 
 			var frame geminiResponse
 			if err := json.Unmarshal([]byte(jsonData), &frame); err != nil {
-				ch <- ai.StreamChunk{Done: true, Err: fmt.Errorf("gemini: Stream: decode: %w", err)}
+				ch <- llm.StreamChunk{Done: true, Err: fmt.Errorf("gemini: Stream: decode: %w", err)}
 				return
 			}
 
@@ -191,9 +191,9 @@ func (d *Driver) Stream(ctx context.Context, req ai.CompletionRequest) (<-chan a
 			content := extractText(cand.Content.Parts)
 			done := cand.FinishReason != ""
 
-			chunk := ai.StreamChunk{Content: content, Done: done}
+			chunk := llm.StreamChunk{Content: content, Done: done}
 			if done {
-				chunk.Usage = ai.TokenUsage{
+				chunk.Usage = llm.TokenUsage{
 					PromptTokens:     frame.UsageMetadata.PromptTokenCount,
 					CompletionTokens: frame.UsageMetadata.CandidatesTokenCount,
 				}
@@ -204,13 +204,13 @@ func (d *Driver) Stream(ctx context.Context, req ai.CompletionRequest) (<-chan a
 				return
 			}
 			if ctx.Err() != nil {
-				ch <- ai.StreamChunk{Done: true, Err: ctx.Err()}
+				ch <- llm.StreamChunk{Done: true, Err: ctx.Err()}
 				return
 			}
 		}
 
 		if err := scanner.Err(); err != nil {
-			ch <- ai.StreamChunk{Done: true, Err: fmt.Errorf("gemini: Stream: scan: %w", err)}
+			ch <- llm.StreamChunk{Done: true, Err: fmt.Errorf("gemini: Stream: scan: %w", err)}
 		}
 	}()
 
@@ -223,7 +223,7 @@ func (d *Driver) checkConnected() error {
 	ok := d.connected
 	d.mu.RUnlock()
 	if !ok {
-		return fmt.Errorf("gemini: %w", ai.ErrNotConnected)
+		return fmt.Errorf("gemini: %w", llm.ErrNotConnected)
 	}
 	return nil
 }
@@ -312,26 +312,26 @@ func mapHTTPError(code int, body []byte) error {
 		switch code {
 		case http.StatusBadRequest:
 			if strings.Contains(strings.ToLower(msg), "token") {
-				return ai.ErrContextTooLong
+				return llm.ErrContextTooLong
 			}
 			return fmt.Errorf("gemini: bad request: %s", msg)
 		case http.StatusUnauthorized, http.StatusForbidden:
-			return ai.ErrUnauthorized
+			return llm.ErrUnauthorized
 		case http.StatusNotFound:
-			return ai.ErrModelNotFound
+			return llm.ErrModelNotFound
 		case http.StatusTooManyRequests:
-			return ai.ErrRateLimit
+			return llm.ErrRateLimit
 		default:
 			return fmt.Errorf("gemini: HTTP %d: %s", code, msg)
 		}
 	}
 	switch code {
 	case http.StatusUnauthorized, http.StatusForbidden:
-		return ai.ErrUnauthorized
+		return llm.ErrUnauthorized
 	case http.StatusNotFound:
-		return ai.ErrModelNotFound
+		return llm.ErrModelNotFound
 	case http.StatusTooManyRequests:
-		return ai.ErrRateLimit
+		return llm.ErrRateLimit
 	default:
 		return fmt.Errorf("gemini: unexpected HTTP %d", code)
 	}
@@ -351,22 +351,22 @@ func supportsGenerateContent(m geminiModelEntry) bool {
 	return slices.Contains(m.SupportedGenerationMethods, "generateContent")
 }
 
-// buildRequest converts an ai.CompletionRequest into the Gemini wire format.
-func buildRequest(req ai.CompletionRequest) geminiRequest {
+// buildRequest converts a llm.CompletionRequest into the Gemini wire format.
+func buildRequest(req llm.CompletionRequest) geminiRequest {
 	gr := geminiRequest{}
 
 	for _, msg := range req.Messages {
 		switch msg.Role {
-		case ai.RoleSystem:
+		case llm.RoleSystem:
 			gr.SystemInstruction = &geminiContent{
 				Parts: []geminiPart{{Text: msg.Content}},
 			}
-		case ai.RoleUser:
+		case llm.RoleUser:
 			gr.Contents = append(gr.Contents, geminiContent{
 				Role:  "user",
 				Parts: []geminiPart{{Text: msg.Content}},
 			})
-		case ai.RoleAssistant:
+		case llm.RoleAssistant:
 			content := geminiContent{Role: "model"}
 			if len(msg.ToolCalls) > 0 {
 				for _, tc := range msg.ToolCalls {
@@ -383,7 +383,7 @@ func buildRequest(req ai.CompletionRequest) geminiRequest {
 				content.Parts = []geminiPart{{Text: msg.Content}}
 			}
 			gr.Contents = append(gr.Contents, content)
-		case ai.RoleTool:
+		case llm.RoleTool:
 			// ToolCallID holds the function name in Gemini's model (Gemini uses
 			// function names as identifiers rather than opaque call IDs).
 			gr.Contents = append(gr.Contents, geminiContent{
@@ -417,24 +417,24 @@ func buildRequest(req ai.CompletionRequest) geminiRequest {
 	return gr
 }
 
-// mapResponse converts a Gemini response into an ai.CompletionResponse.
-func mapResponse(resp geminiResponse) (ai.CompletionResponse, error) {
+// mapResponse converts a Gemini response into a llm.CompletionResponse.
+func mapResponse(resp geminiResponse) (llm.CompletionResponse, error) {
 	if len(resp.Candidates) == 0 {
-		return ai.CompletionResponse{}, fmt.Errorf("empty candidates in response")
+		return llm.CompletionResponse{}, fmt.Errorf("empty candidates in response")
 	}
 	cand := resp.Candidates[0]
 
-	msg := ai.Message{Role: ai.RoleAssistant}
+	msg := llm.Message{Role: llm.RoleAssistant}
 
-	var toolCalls []ai.ToolCall
+	var toolCalls []llm.ToolCall
 	var textParts []string
 	for _, p := range cand.Content.Parts {
 		switch {
 		case p.FunctionCall != nil:
 			argsJSON, _ := json.Marshal(p.FunctionCall.Args)
-			toolCalls = append(toolCalls, ai.ToolCall{
+			toolCalls = append(toolCalls, llm.ToolCall{
 				ID: p.FunctionCall.Name,
-				Function: ai.ToolCallFunction{
+				Function: llm.ToolCallFunction{
 					Name:      p.FunctionCall.Name,
 					Arguments: string(argsJSON),
 				},
@@ -452,9 +452,9 @@ func mapResponse(resp geminiResponse) (ai.CompletionResponse, error) {
 
 	stopReason := mapFinishReason(cand.FinishReason, len(toolCalls) > 0)
 
-	return ai.CompletionResponse{
+	return llm.CompletionResponse{
 		Message: msg,
-		Usage: ai.TokenUsage{
+		Usage: llm.TokenUsage{
 			PromptTokens:     resp.UsageMetadata.PromptTokenCount,
 			CompletionTokens: resp.UsageMetadata.CandidatesTokenCount,
 		},

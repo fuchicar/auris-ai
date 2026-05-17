@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	"auris/pkg/ai"
+	"auris/pkg/llm"
 )
 
 const (
@@ -19,7 +19,7 @@ const (
 	defaultHTTPTimeout = 30 * time.Second
 )
 
-// Driver implements ai.AIProvider against the Ollama REST API.
+// Driver implements llm.AIProvider against the Ollama REST API.
 type Driver struct {
 	baseURL    string
 	apiKey     string
@@ -97,7 +97,7 @@ func (d *Driver) Ping(ctx context.Context) error {
 }
 
 // ListModels returns all models available on this Ollama instance.
-func (d *Driver) ListModels(ctx context.Context) ([]ai.Model, error) {
+func (d *Driver) ListModels(ctx context.Context) ([]llm.Model, error) {
 	if err := d.checkConnected(); err != nil {
 		return nil, err
 	}
@@ -105,32 +105,32 @@ func (d *Driver) ListModels(ctx context.Context) ([]ai.Model, error) {
 	if err := d.doGet(ctx, "/api/tags", &resp); err != nil {
 		return nil, fmt.Errorf("ollama: ListModels: %w", err)
 	}
-	models := make([]ai.Model, len(resp.Models))
+	models := make([]llm.Model, len(resp.Models))
 	for i, m := range resp.Models {
-		models[i] = ai.Model{ID: m.Name, Name: m.Name, Size: m.Size}
+		models[i] = llm.Model{ID: m.Name, Name: m.Name, Size: m.Size}
 	}
 	return models, nil
 }
 
 // Complete sends a non-streaming completion request and returns the full response.
-func (d *Driver) Complete(ctx context.Context, req ai.CompletionRequest) (ai.CompletionResponse, error) {
+func (d *Driver) Complete(ctx context.Context, req llm.CompletionRequest) (llm.CompletionResponse, error) {
 	if err := d.checkConnected(); err != nil {
-		return ai.CompletionResponse{}, err
+		return llm.CompletionResponse{}, err
 	}
 
 	body, err := json.Marshal(buildChatRequest(req, false))
 	if err != nil {
-		return ai.CompletionResponse{}, fmt.Errorf("ollama: Complete: marshal: %w", err)
+		return llm.CompletionResponse{}, fmt.Errorf("ollama: Complete: marshal: %w", err)
 	}
 
 	var chatResp ollamaChatResponse
 	if err := d.doPost(ctx, "/api/chat", body, &chatResp); err != nil {
-		return ai.CompletionResponse{}, fmt.Errorf("ollama: Complete: %w", err)
+		return llm.CompletionResponse{}, fmt.Errorf("ollama: Complete: %w", err)
 	}
 
-	return ai.CompletionResponse{
+	return llm.CompletionResponse{
 		Message: mapMessage(chatResp.Message),
-		Usage: ai.TokenUsage{
+		Usage: llm.TokenUsage{
 			PromptTokens:     chatResp.PromptEvalCount,
 			CompletionTokens: chatResp.EvalCount,
 		},
@@ -140,7 +140,7 @@ func (d *Driver) Complete(ctx context.Context, req ai.CompletionRequest) (ai.Com
 
 // Stream sends a streaming completion request and returns a channel of chunks.
 // The channel is always closed after a Done==true chunk, even on error or cancellation.
-func (d *Driver) Stream(ctx context.Context, req ai.CompletionRequest) (<-chan ai.StreamChunk, error) {
+func (d *Driver) Stream(ctx context.Context, req llm.CompletionRequest) (<-chan llm.StreamChunk, error) {
 	if err := d.checkConnected(); err != nil {
 		return nil, err
 	}
@@ -150,13 +150,13 @@ func (d *Driver) Stream(ctx context.Context, req ai.CompletionRequest) (<-chan a
 		return nil, fmt.Errorf("ollama: Stream: marshal: %w", err)
 	}
 
-	ch := make(chan ai.StreamChunk, 16)
+	ch := make(chan llm.StreamChunk, 16)
 	go func() {
 		defer close(ch)
 
 		resp, err := d.doStream(ctx, "/api/chat", body)
 		if err != nil {
-			ch <- ai.StreamChunk{Done: true, Err: fmt.Errorf("ollama: Stream: %w", err)}
+			ch <- llm.StreamChunk{Done: true, Err: fmt.Errorf("ollama: Stream: %w", err)}
 			return
 		}
 		defer resp.Body.Close()
@@ -172,16 +172,16 @@ func (d *Driver) Stream(ctx context.Context, req ai.CompletionRequest) (<-chan a
 
 			var frame ollamaChatResponse
 			if err := json.Unmarshal(line, &frame); err != nil {
-				ch <- ai.StreamChunk{Done: true, Err: fmt.Errorf("ollama: Stream: decode: %w", err)}
+				ch <- llm.StreamChunk{Done: true, Err: fmt.Errorf("ollama: Stream: decode: %w", err)}
 				return
 			}
 
-			chunk := ai.StreamChunk{
+			chunk := llm.StreamChunk{
 				Content: frame.Message.Content,
 				Done:    frame.Done,
 			}
 			if frame.Done {
-				chunk.Usage = ai.TokenUsage{
+				chunk.Usage = llm.TokenUsage{
 					PromptTokens:     frame.PromptEvalCount,
 					CompletionTokens: frame.EvalCount,
 				}
@@ -192,13 +192,13 @@ func (d *Driver) Stream(ctx context.Context, req ai.CompletionRequest) (<-chan a
 				return
 			}
 			if ctx.Err() != nil {
-				ch <- ai.StreamChunk{Done: true, Err: ctx.Err()}
+				ch <- llm.StreamChunk{Done: true, Err: ctx.Err()}
 				return
 			}
 		}
 
 		if err := scanner.Err(); err != nil {
-			ch <- ai.StreamChunk{Done: true, Err: fmt.Errorf("ollama: Stream: scan: %w", err)}
+			ch <- llm.StreamChunk{Done: true, Err: fmt.Errorf("ollama: Stream: scan: %w", err)}
 		}
 	}()
 
@@ -211,7 +211,7 @@ func (d *Driver) checkConnected() error {
 	ok := d.connected
 	d.mu.RUnlock()
 	if !ok {
-		return fmt.Errorf("ollama: %w", ai.ErrNotConnected)
+		return fmt.Errorf("ollama: %w", llm.ErrNotConnected)
 	}
 	return nil
 }
@@ -292,22 +292,22 @@ func (d *Driver) doStream(ctx context.Context, path string, body []byte) (*http.
 	return resp, nil
 }
 
-// mapHTTPError converts HTTP status codes to ai sentinel errors.
+// mapHTTPError converts HTTP status codes to llm sentinel errors.
 func mapHTTPError(code int) error {
 	switch code {
 	case http.StatusUnauthorized, http.StatusForbidden:
-		return ai.ErrUnauthorized
+		return llm.ErrUnauthorized
 	case http.StatusNotFound:
-		return ai.ErrModelNotFound
+		return llm.ErrModelNotFound
 	case http.StatusTooManyRequests:
-		return ai.ErrRateLimit
+		return llm.ErrRateLimit
 	default:
 		return fmt.Errorf("unexpected HTTP %d", code)
 	}
 }
 
-// buildChatRequest converts an ai.CompletionRequest to the Ollama wire format.
-func buildChatRequest(req ai.CompletionRequest, stream bool) ollamaChatRequest {
+// buildChatRequest converts a llm.CompletionRequest to the Ollama wire format.
+func buildChatRequest(req llm.CompletionRequest, stream bool) ollamaChatRequest {
 	msgs := make([]ollamaMessage, len(req.Messages))
 	for i, m := range req.Messages {
 		msgs[i] = ollamaMessage{
@@ -351,17 +351,17 @@ func buildChatRequest(req ai.CompletionRequest, stream bool) ollamaChatRequest {
 	}
 }
 
-// mapMessage converts an ollamaMessage to an ai.Message.
-func mapMessage(m ollamaMessage) ai.Message {
-	msg := ai.Message{
-		Role:    ai.Role(m.Role),
+// mapMessage converts an ollamaMessage to a llm.Message.
+func mapMessage(m ollamaMessage) llm.Message {
+	msg := llm.Message{
+		Role:    llm.Role(m.Role),
 		Content: m.Content,
 	}
 	if len(m.ToolCalls) > 0 {
-		calls := make([]ai.ToolCall, len(m.ToolCalls))
+		calls := make([]llm.ToolCall, len(m.ToolCalls))
 		for i, tc := range m.ToolCalls {
-			calls[i] = ai.ToolCall{
-				Function: ai.ToolCallFunction{
+			calls[i] = llm.ToolCall{
+				Function: llm.ToolCallFunction{
 					Name:      tc.Function.Name,
 					Arguments: string(tc.Function.Arguments),
 				},

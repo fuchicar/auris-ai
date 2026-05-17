@@ -1,4 +1,4 @@
-// Package fmp implementa el driver de Financial Modeling Prep (FMP) para la interfaz providers.ProviderAPI.
+// Package fmp implementa el driver de Financial Modeling Prep (FMP) para la interfaz market.ProviderAPI.
 // FMP es una API REST con autenticación por API key; no dispone de WebSockets nativos.
 // El streaming se implementa mediante polling periódico configurable.
 package fmp
@@ -15,7 +15,7 @@ import (
 	"sync"
 	"time"
 
-	"auris/pkg/providers"
+	"auris/pkg/market"
 )
 
 const (
@@ -24,7 +24,7 @@ const (
 	defaultPollInterval = 5 * time.Second
 )
 
-// Driver implementa providers.ProviderAPI para Financial Modeling Prep.
+// Driver implementa market.ProviderAPI para Financial Modeling Prep.
 type Driver struct {
 	apiKey       string
 	baseURL      string
@@ -97,13 +97,13 @@ func (d *Driver) doGet(ctx context.Context, path string, params url.Values, dest
 	case http.StatusOK:
 		// continuar
 	case http.StatusUnauthorized, http.StatusForbidden:
-		return providers.ErrUnauthorized
+		return market.ErrUnauthorized
 	case http.StatusNotFound:
-		return providers.ErrNotFound
+		return market.ErrNotFound
 	case http.StatusPaymentRequired:
-		return providers.ErrSubscriptionRequired
+		return market.ErrSubscriptionRequired
 	case http.StatusTooManyRequests:
-		return providers.ErrRateLimit
+		return market.ErrRateLimit
 	default:
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
 		return fmt.Errorf("unexpected HTTP %d: %s", resp.StatusCode, body)
@@ -120,7 +120,7 @@ func (d *Driver) checkConnected() error {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 	if !d.connected {
-		return fmt.Errorf("fmp: %w", providers.ErrNotConnected)
+		return fmt.Errorf("fmp: %w", market.ErrNotConnected)
 	}
 	return nil
 }
@@ -204,12 +204,12 @@ type fmpKeyMetricsTTM struct {
 // Helpers de mapeo de tipos
 // ─────────────────────────────────────────────────────────────────────────────
 
-func profileToInstrument(p fmpProfile) providers.Instrument {
-	assetType := providers.AssetTypeStock
+func profileToInstrument(p fmpProfile) market.Instrument {
+	assetType := market.AssetTypeStock
 	if p.IsEtf || p.IsFund {
-		assetType = providers.AssetTypeETF
+		assetType = market.AssetTypeETF
 	}
-	return providers.Instrument{
+	return market.Instrument{
 		Symbol:   p.Symbol,
 		ISIN:     p.Isin,
 		Name:     p.CompanyName,
@@ -219,36 +219,36 @@ func profileToInstrument(p fmpProfile) providers.Instrument {
 	}
 }
 
-func listEntryToAssetType(t string) providers.AssetType {
+func listEntryToAssetType(t string) market.AssetType {
 	switch t {
 	case "etf", "fund":
-		return providers.AssetTypeETF
+		return market.AssetTypeETF
 	default:
-		return providers.AssetTypeStock
+		return market.AssetTypeStock
 	}
 }
 
-func timeframeToFMPInterval(tf providers.Timeframe) (string, bool) {
-	m := map[providers.Timeframe]string{
-		providers.Timeframe1m:  "1min",
-		providers.Timeframe5m:  "5min",
-		providers.Timeframe15m: "15min",
-		providers.Timeframe1h:  "1hour",
-		providers.Timeframe4h:  "4hour",
+func timeframeToFMPInterval(tf market.Timeframe) (string, bool) {
+	m := map[market.Timeframe]string{
+		market.Timeframe1m:  "1min",
+		market.Timeframe5m:  "5min",
+		market.Timeframe15m: "15min",
+		market.Timeframe1h:  "1hour",
+		market.Timeframe4h:  "4hour",
 	}
 	v, ok := m[tf]
 	return v, ok
 }
 
 // reverseCandles invierte un slice de Candle in-place (FMP devuelve newest-first).
-func reverseCandles(s []providers.Candle) {
+func reverseCandles(s []market.Candle) {
 	for i, j := 0, len(s)-1; i < j; i, j = i+1, j-1 {
 		s[i], s[j] = s[j], s[i]
 	}
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// providers.ProviderAPI — implementación
+// market.ProviderAPI — implementación
 // ─────────────────────────────────────────────────────────────────────────────
 
 // Name returns the human-readable display name of the FMP provider.
@@ -313,7 +313,7 @@ func (d *Driver) Ping(ctx context.Context) error {
 }
 
 // SearchInstrument busca instrumentos por nombre o ticker.
-func (d *Driver) SearchInstrument(ctx context.Context, query string) ([]providers.Instrument, error) {
+func (d *Driver) SearchInstrument(ctx context.Context, query string) ([]market.Instrument, error) {
 	if err := d.checkConnected(); err != nil {
 		return nil, err
 	}
@@ -322,43 +322,43 @@ func (d *Driver) SearchInstrument(ctx context.Context, query string) ([]provider
 	if err := d.doGet(ctx, "/search-symbol", params, &results); err != nil {
 		return nil, fmt.Errorf("fmp: SearchInstrument: %w", err)
 	}
-	instruments := make([]providers.Instrument, 0, len(results))
+	instruments := make([]market.Instrument, 0, len(results))
 	for _, r := range results {
-		instruments = append(instruments, providers.Instrument{
+		instruments = append(instruments, market.Instrument{
 			Symbol:   r.Symbol,
 			Name:     r.Name,
 			Exchange: r.StockExchange,
 			Currency: r.Currency,
-			Type:     providers.AssetTypeStock,
+			Type:     market.AssetTypeStock,
 		})
 	}
 	return instruments, nil
 }
 
 // GetInstrument devuelve los metadatos de un símbolo concreto.
-func (d *Driver) GetInstrument(ctx context.Context, symbol string) (providers.Instrument, error) {
+func (d *Driver) GetInstrument(ctx context.Context, symbol string) (market.Instrument, error) {
 	if err := d.checkConnected(); err != nil {
-		return providers.Instrument{}, err
+		return market.Instrument{}, err
 	}
 	params := url.Values{"symbol": {symbol}}
 	var profiles []fmpProfile
 	if err := d.doGet(ctx, "/profile", params, &profiles); err != nil {
-		return providers.Instrument{}, fmt.Errorf("fmp: GetInstrument %q: %w", symbol, err)
+		return market.Instrument{}, fmt.Errorf("fmp: GetInstrument %q: %w", symbol, err)
 	}
 	if len(profiles) == 0 {
-		return providers.Instrument{}, fmt.Errorf("fmp: GetInstrument %q: %w", symbol, providers.ErrNotFound)
+		return market.Instrument{}, fmt.Errorf("fmp: GetInstrument %q: %w", symbol, market.ErrNotFound)
 	}
 	return profileToInstrument(profiles[0]), nil
 }
 
 // ListInstruments devuelve todos los instrumentos disponibles filtrados por tipo.
 // Para tipos no presentes en FMP (futures, forex, crypto) devuelve slice vacío sin error.
-func (d *Driver) ListInstruments(ctx context.Context, assetType providers.AssetType) ([]providers.Instrument, error) {
+func (d *Driver) ListInstruments(ctx context.Context, assetType market.AssetType) ([]market.Instrument, error) {
 	if err := d.checkConnected(); err != nil {
 		return nil, err
 	}
-	if assetType == providers.AssetTypeFuture || assetType == providers.AssetTypeForex || assetType == providers.AssetTypeCrypto {
-		return []providers.Instrument{}, nil
+	if assetType == market.AssetTypeFuture || assetType == market.AssetTypeForex || assetType == market.AssetTypeCrypto {
+		return []market.Instrument{}, nil
 	}
 
 	var entries []fmpListEntry
@@ -366,13 +366,13 @@ func (d *Driver) ListInstruments(ctx context.Context, assetType providers.AssetT
 		return nil, fmt.Errorf("fmp: ListInstruments: %w", err)
 	}
 
-	instruments := make([]providers.Instrument, 0)
+	instruments := make([]market.Instrument, 0)
 	for _, e := range entries {
 		t := listEntryToAssetType(e.Type)
 		if t != assetType {
 			continue
 		}
-		instruments = append(instruments, providers.Instrument{
+		instruments = append(instruments, market.Instrument{
 			Symbol:   e.Symbol,
 			Name:     e.Name,
 			Exchange: e.Exchange,
@@ -384,7 +384,7 @@ func (d *Driver) ListInstruments(ctx context.Context, assetType providers.AssetT
 
 // GetCandles devuelve velas OHLCV para el símbolo, rango temporal y granularidad indicados.
 // Nota: FMP devuelve timestamps en hora del mercado sin zona horaria; se parsean como UTC.
-func (d *Driver) GetCandles(ctx context.Context, symbol string, from, to time.Time, tf providers.Timeframe) ([]providers.Candle, error) {
+func (d *Driver) GetCandles(ctx context.Context, symbol string, from, to time.Time, tf market.Timeframe) ([]market.Candle, error) {
 	if err := d.checkConnected(); err != nil {
 		return nil, err
 	}
@@ -392,13 +392,13 @@ func (d *Driver) GetCandles(ctx context.Context, symbol string, from, to time.Ti
 	fromStr := from.Format(time.DateOnly)
 	toStr := to.Format(time.DateOnly)
 
-	if tf == providers.Timeframe1d {
+	if tf == market.Timeframe1d {
 		return d.getDailyCandles(ctx, symbol, fromStr, toStr)
 	}
 	return d.getIntradayCandles(ctx, symbol, fromStr, toStr, tf)
 }
 
-func (d *Driver) getDailyCandles(ctx context.Context, symbol, from, to string) ([]providers.Candle, error) {
+func (d *Driver) getDailyCandles(ctx context.Context, symbol, from, to string) ([]market.Candle, error) {
 	params := url.Values{
 		"symbol": {symbol},
 		"from":   {from},
@@ -410,13 +410,13 @@ func (d *Driver) getDailyCandles(ctx context.Context, symbol, from, to string) (
 		return nil, fmt.Errorf("fmp: GetCandles daily %q: %w", symbol, err)
 	}
 
-	candles := make([]providers.Candle, 0, len(raw))
+	candles := make([]market.Candle, 0, len(raw))
 	for _, c := range raw {
 		t, err := time.Parse(time.DateOnly, c.Date)
 		if err != nil {
 			continue
 		}
-		candles = append(candles, providers.Candle{
+		candles = append(candles, market.Candle{
 			Time:   t.UTC(),
 			Open:   c.Open,
 			High:   c.High,
@@ -429,7 +429,7 @@ func (d *Driver) getDailyCandles(ctx context.Context, symbol, from, to string) (
 	return candles, nil
 }
 
-func (d *Driver) getIntradayCandles(ctx context.Context, symbol, from, to string, tf providers.Timeframe) ([]providers.Candle, error) {
+func (d *Driver) getIntradayCandles(ctx context.Context, symbol, from, to string, tf market.Timeframe) ([]market.Candle, error) {
 	interval, ok := timeframeToFMPInterval(tf)
 	if !ok {
 		return nil, fmt.Errorf("fmp: GetCandles: unsupported timeframe %q", tf)
@@ -444,13 +444,13 @@ func (d *Driver) getIntradayCandles(ctx context.Context, symbol, from, to string
 		return nil, fmt.Errorf("fmp: GetCandles %s %q: %w", interval, symbol, err)
 	}
 
-	candles := make([]providers.Candle, 0, len(raw))
+	candles := make([]market.Candle, 0, len(raw))
 	for _, c := range raw {
 		t, err := time.Parse("2006-01-02 15:04:05", c.Date)
 		if err != nil {
 			continue
 		}
-		candles = append(candles, providers.Candle{
+		candles = append(candles, market.Candle{
 			Time:   t.UTC(),
 			Open:   c.Open,
 			High:   c.High,
@@ -464,12 +464,12 @@ func (d *Driver) getIntradayCandles(ctx context.Context, symbol, from, to string
 }
 
 // GetTicks no está soportado por FMP.
-func (d *Driver) GetTicks(_ context.Context, _ string, _, _ time.Time) ([]providers.Tick, error) {
-	return nil, fmt.Errorf("fmp: GetTicks: %w", providers.ErrNotSupported)
+func (d *Driver) GetTicks(_ context.Context, _ string, _, _ time.Time) ([]market.Tick, error) {
+	return nil, fmt.Errorf("fmp: GetTicks: %w", market.ErrNotSupported)
 }
 
 // GetCorporateActions devuelve dividendos y splits para el símbolo y rango indicados.
-func (d *Driver) GetCorporateActions(ctx context.Context, symbol string, from, to time.Time) ([]providers.CorporateAction, error) {
+func (d *Driver) GetCorporateActions(ctx context.Context, symbol string, from, to time.Time) ([]market.CorporateAction, error) {
 	if err := d.checkConnected(); err != nil {
 		return nil, err
 	}
@@ -480,11 +480,11 @@ func (d *Driver) GetCorporateActions(ctx context.Context, symbol string, from, t
 		"to":     {to.Format(time.DateOnly)},
 	}
 
-	var actions []providers.CorporateAction
+	var actions []market.CorporateAction
 
 	// Dividendos — FMP puede ignorar from/to, se filtra client-side.
 	var dividends []fmpDividend
-	if err := d.doGet(ctx, "/dividends", params, &dividends); err != nil && !errors.Is(err, providers.ErrNotFound) {
+	if err := d.doGet(ctx, "/dividends", params, &dividends); err != nil && !errors.Is(err, market.ErrNotFound) {
 		return nil, fmt.Errorf("fmp: GetCorporateActions dividends %q: %w", symbol, err)
 	}
 	for _, div := range dividends {
@@ -495,7 +495,7 @@ func (d *Driver) GetCorporateActions(ctx context.Context, symbol string, from, t
 		if t.Before(from) || t.After(to) {
 			continue
 		}
-		actions = append(actions, providers.CorporateAction{
+		actions = append(actions, market.CorporateAction{
 			Date:        t.UTC(),
 			Type:        "dividend",
 			Value:       div.Dividend,
@@ -505,7 +505,7 @@ func (d *Driver) GetCorporateActions(ctx context.Context, symbol string, from, t
 
 	// Splits — ídem filtrado client-side.
 	var splits []fmpSplit
-	if err := d.doGet(ctx, "/splits", params, &splits); err != nil && !errors.Is(err, providers.ErrNotFound) {
+	if err := d.doGet(ctx, "/splits", params, &splits); err != nil && !errors.Is(err, market.ErrNotFound) {
 		return nil, fmt.Errorf("fmp: GetCorporateActions splits %q: %w", symbol, err)
 	}
 	for _, s := range splits {
@@ -520,7 +520,7 @@ func (d *Driver) GetCorporateActions(ctx context.Context, symbol string, from, t
 		if s.Denominator != 0 {
 			value = s.Numerator / s.Denominator
 		}
-		actions = append(actions, providers.CorporateAction{
+		actions = append(actions, market.CorporateAction{
 			Date:        t.UTC(),
 			Type:        "split",
 			Value:       value,
@@ -536,37 +536,37 @@ func (d *Driver) GetCorporateActions(ctx context.Context, symbol string, from, t
 
 // GetQuote devuelve la cotización actual del símbolo.
 // FMP no proporciona bid/ask en el endpoint stable/quote; Bid y Ask se devuelven como 0.
-func (d *Driver) GetQuote(ctx context.Context, symbol string) (providers.Quote, error) {
+func (d *Driver) GetQuote(ctx context.Context, symbol string) (market.Quote, error) {
 	if err := d.checkConnected(); err != nil {
-		return providers.Quote{}, err
+		return market.Quote{}, err
 	}
 	params := url.Values{"symbol": {symbol}}
 	var quotes []fmpQuote
 	if err := d.doGet(ctx, "/quote", params, &quotes); err != nil {
-		return providers.Quote{}, fmt.Errorf("fmp: GetQuote %q: %w", symbol, err)
+		return market.Quote{}, fmt.Errorf("fmp: GetQuote %q: %w", symbol, err)
 	}
 	if len(quotes) == 0 {
-		return providers.Quote{}, fmt.Errorf("fmp: GetQuote %q: %w", symbol, providers.ErrNotFound)
+		return market.Quote{}, fmt.Errorf("fmp: GetQuote %q: %w", symbol, market.ErrNotFound)
 	}
 	q := quotes[0]
-	return providers.Quote{
+	return market.Quote{
 		Time: time.Unix(q.Timestamp, 0).UTC(),
 		Last: q.Price,
 	}, nil
 }
 
 // GetOrderBook no está soportado por FMP.
-func (d *Driver) GetOrderBook(_ context.Context, _ string, _ int) (providers.OrderBook, error) {
-	return providers.OrderBook{}, fmt.Errorf("fmp: GetOrderBook: %w", providers.ErrNotSupported)
+func (d *Driver) GetOrderBook(_ context.Context, _ string, _ int) (market.OrderBook, error) {
+	return market.OrderBook{}, fmt.Errorf("fmp: GetOrderBook: %w", market.ErrNotSupported)
 }
 
 // SubscribeQuotes suscribe al feed de quotes mediante polling periódico.
 // El canal se cierra cuando se cancela el contexto.
-func (d *Driver) SubscribeQuotes(ctx context.Context, symbol string) (<-chan providers.Quote, error) {
+func (d *Driver) SubscribeQuotes(ctx context.Context, symbol string) (<-chan market.Quote, error) {
 	if err := d.checkConnected(); err != nil {
 		return nil, err
 	}
-	ch := make(chan providers.Quote, 1)
+	ch := make(chan market.Quote, 1)
 	go func() {
 		defer close(ch)
 		ticker := time.NewTicker(d.pollInterval)
@@ -591,30 +591,30 @@ func (d *Driver) SubscribeQuotes(ctx context.Context, symbol string) (<-chan pro
 }
 
 // SubscribeTrades no está soportado por FMP.
-func (d *Driver) SubscribeTrades(_ context.Context, _ string) (<-chan providers.Tick, error) {
-	return nil, fmt.Errorf("fmp: SubscribeTrades: %w", providers.ErrNotSupported)
+func (d *Driver) SubscribeTrades(_ context.Context, _ string) (<-chan market.Tick, error) {
+	return nil, fmt.Errorf("fmp: SubscribeTrades: %w", market.ErrNotSupported)
 }
 
 // SubscribeOrderBook no está soportado por FMP.
-func (d *Driver) SubscribeOrderBook(_ context.Context, _ string, _ int) (<-chan providers.OrderBook, error) {
-	return nil, fmt.Errorf("fmp: SubscribeOrderBook: %w", providers.ErrNotSupported)
+func (d *Driver) SubscribeOrderBook(_ context.Context, _ string, _ int) (<-chan market.OrderBook, error) {
+	return nil, fmt.Errorf("fmp: SubscribeOrderBook: %w", market.ErrNotSupported)
 }
 
 // GetFundamentals devuelve métricas fundamentales TTM del símbolo.
-func (d *Driver) GetFundamentals(ctx context.Context, symbol string) (providers.Fundamental, error) {
+func (d *Driver) GetFundamentals(ctx context.Context, symbol string) (market.Fundamental, error) {
 	if err := d.checkConnected(); err != nil {
-		return providers.Fundamental{}, err
+		return market.Fundamental{}, err
 	}
 	params := url.Values{"symbol": {symbol}}
 	var metrics []fmpKeyMetricsTTM
 	if err := d.doGet(ctx, "/key-metrics-ttm", params, &metrics); err != nil {
-		return providers.Fundamental{}, fmt.Errorf("fmp: GetFundamentals %q: %w", symbol, err)
+		return market.Fundamental{}, fmt.Errorf("fmp: GetFundamentals %q: %w", symbol, err)
 	}
 	if len(metrics) == 0 {
-		return providers.Fundamental{}, fmt.Errorf("fmp: GetFundamentals %q: %w", symbol, providers.ErrNotFound)
+		return market.Fundamental{}, fmt.Errorf("fmp: GetFundamentals %q: %w", symbol, market.ErrNotFound)
 	}
 	m := metrics[0]
-	return providers.Fundamental{
+	return market.Fundamental{
 		Symbol:    m.Symbol,
 		PERatio:   m.PeRatio,
 		EPS:       m.EPS,

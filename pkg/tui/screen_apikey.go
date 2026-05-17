@@ -22,7 +22,7 @@ type connectResultMsg struct{ err error }
 // APIKeyModel collects the user's API key for the selected provider, validates
 // it by calling Connect, and emits [ScreenDoneMsg] on success.
 type APIKeyModel struct {
-	entry      registry.Entry
+	entry      registry.MarketEntry
 	input      textinput.Model
 	spin       spinner.Model
 	connecting bool
@@ -31,7 +31,7 @@ type APIKeyModel struct {
 }
 
 // newAPIKeyModel constructs an [APIKeyModel] for the given provider entry.
-func newAPIKeyModel(entry registry.Entry, s *Styles) *APIKeyModel {
+func newAPIKeyModel(entry registry.MarketEntry, s *Styles) *APIKeyModel {
 	ti := textinput.New()
 	ti.Placeholder = "api key"
 	ti.Focus()
@@ -93,7 +93,7 @@ func (m *APIKeyModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // connectCmd returns a [tea.Cmd] that constructs the driver, calls Connect with
 // a timeout, and wraps the outcome in a [connectResultMsg].
-func connectCmd(entry registry.Entry, apiKey string) tea.Cmd {
+func connectCmd(entry registry.MarketEntry, apiKey string) tea.Cmd {
 	return func() tea.Msg {
 		driver := entry.New(apiKey)
 		ctx, cancel := context.WithTimeout(context.Background(), apiKeyConnectTimeout)

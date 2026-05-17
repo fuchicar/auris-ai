@@ -1,4 +1,4 @@
-package ai
+package llm
 
 // Role identifies the speaker of a message in a conversation.
 type Role string
