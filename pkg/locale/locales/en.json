@@ -303,10 +303,114 @@
     "other": "Enter command:"
   },
   "menu.command.hint": {
-    "other": "Available: /theme [light|dark]  /language [en|es]  /exit · Esc cancel"
+    "other": "Available: /theme [light|dark]  /language [en|es]  /agent  /exit · Esc cancel"
   },
   "menu.command.unknown": {
-    "other": "Unknown command. Try /theme, /language or /exit."
+    "other": "Unknown command. Try /theme, /language, /agent or /exit."
+  },
+  "menu.agent_mode": {
+    "other": "Agent Mode"
+  },
+  "menu.agent_unavailable": {
+    "other": "Configure an AI provider first (re-run with --setup)"
+  },
+
+  "setup.ai.select.label": {
+    "other": "Configure AI providers"
+  },
+  "setup.ai.select.hint": {
+    "other": "↑↓ navigate · Space toggle · Enter confirm · select none to skip"
+  },
+  "setup.ai.config.ollama.mode": {
+    "other": "How do you want to connect to Ollama?"
+  },
+  "setup.ai.config.ollama.local": {
+    "other": "Local (localhost:11434)"
+  },
+  "setup.ai.config.ollama.remote": {
+    "other": "Remote (custom URL)"
+  },
+  "setup.ai.config.baseurl.label": {
+    "other": "Ollama server URL"
+  },
+  "setup.ai.config.baseurl.hint": {
+    "other": "e.g. http://my-server:11434 · Enter confirm"
+  },
+  "setup.ai.config.apikey.label": {
+    "other": "API key (optional — Enter or Esc to skip)"
+  },
+  "setup.ai.config.apikey.hint": {
+    "other": "Leave empty if not required · Esc to skip"
+  },
+  "setup.ai.config.apikey.required.label": {
+    "other": "API key"
+  },
+  "setup.ai.config.apikey.required.hint": {
+    "other": "Enter API key · Enter validate"
+  },
+  "setup.ai.config.connecting": {
+    "other": "Connecting and listing models…"
+  },
+  "setup.ai.config.error": {
+    "other": "Connection failed: {{.Error}}"
+  },
+  "setup.ai.config.retry": {
+    "other": "Press Enter to retry"
+  },
+  "setup.ai.model.provider.label": {
+    "other": "Select the default AI provider"
+  },
+  "setup.ai.model.model.label": {
+    "other": "Select the default model"
+  },
+  "setup.ai.model.hint": {
+    "other": "↑↓ navigate · Enter select"
+  },
+  "setup.ai.model.no_models": {
+    "other": "(no models found)"
+  },
+  "setup.ai.model.esc_back": {
+    "other": "↑↓ navigate · Enter select · Esc back"
+  },
+
+  "agent.title": {
+    "other": "Agent Mode"
+  },
+  "agent.hint": {
+    "other": "Enter send · ↑↓ PgUp/Dn scroll · / commands · Shift+Tab toggle"
+  },
+  "agent.streaming": {
+    "other": "▌"
+  },
+  "agent.placeholder": {
+    "other": "Ask Auris anything…"
+  },
+  "agent.empty": {
+    "other": "(No conversation yet — ask me anything)"
+  },
+  "agent.error": {
+    "other": "Error: {{.Error}}"
+  },
+  "agent.connecting": {
+    "other": "Connecting to AI provider…"
+  },
+  "agent.connect_error": {
+    "other": "Failed to connect: {{.Error}} — press Esc to return to menu"
+  },
+  "agent.cmd.menu": {
+    "other": "Return to menu"
+  },
+  "agent.cmd.theme": {
+    "other": "Change display theme"
+  },
+  "agent.cmd.language": {
+    "other": "Change language"
+  },
+  "agent.cmd.exit": {
+    "other": "Exit Auris"
+  },
+  "agent.cmd.hint": {
+    "other": "↑↓ navigate · Enter select · Esc dismiss"
   },
 
   "error.save_config": {

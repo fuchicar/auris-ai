@@ -23,6 +23,16 @@ type AurisConfig struct {
 	DefaultAIModel   string
 	AIProviders      map[string]*AIProviderConfig
 	AITaskRoutes     map[string]AITaskRoute // keyed by TaskType string
+
+	// ChatHistory stores the persistent conversation log for agent mode.
+	// Stored as plaintext (same policy as FinancialProfile).
+	ChatHistory []ChatTurn
+}
+
+// ChatTurn is a single message in the agent-mode conversation history.
+type ChatTurn struct {
+	Role    string `json:"role"`    // "user" | "assistant"
+	Content string `json:"content"`
 }
 
 // FinancialProfile holds the user's financial background collected during the setup
@@ -87,6 +97,7 @@ type diskConfig struct {
 	DefaultAIModel   string                      `json:"default_ai_model,omitempty"`
 	AIProviders      map[string]*diskAIProvider  `json:"ai_providers,omitempty"`
 	AITaskRoutes     map[string]AITaskRoute      `json:"ai_task_routes,omitempty"`
+	ChatHistory      []ChatTurn                  `json:"chat_history,omitempty"`
 }
 
 type diskAIProvider struct {
@@ -154,6 +165,7 @@ func Load(passphrase string) (*AurisConfig, error) {
 		DefaultAIModel:   disk.DefaultAIModel,
 		AITaskRoutes:     disk.AITaskRoutes,
 		AIProviders:      make(map[string]*AIProviderConfig),
+		ChatHistory:      disk.ChatHistory,
 	}
 	if cfg.AITaskRoutes == nil {
 		cfg.AITaskRoutes = make(map[string]AITaskRoute)
@@ -209,6 +221,7 @@ func Save(cfg *AurisConfig, passphrase string) error {
 		ActiveAIProvider: cfg.ActiveAIProvider,
 		DefaultAIModel:   cfg.DefaultAIModel,
 		AITaskRoutes:     cfg.AITaskRoutes,
+		ChatHistory:      cfg.ChatHistory,
 	}
 
 	if len(cfg.Providers) > 0 {

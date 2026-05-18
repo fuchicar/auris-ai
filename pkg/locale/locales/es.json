@@ -303,10 +303,114 @@
     "other": "Introduzca comando:"
   },
   "menu.command.hint": {
-    "other": "Disponibles: /theme [light|dark]  /language [en|es]  /exit · Esc cancelar"
+    "other": "Disponibles: /theme [light|dark]  /language [en|es]  /agent  /exit · Esc cancelar"
   },
   "menu.command.unknown": {
-    "other": "Comando desconocido. Pruebe /theme, /language o /exit."
+    "other": "Comando desconocido. Pruebe /theme, /language, /agent o /exit."
+  },
+  "menu.agent_mode": {
+    "other": "Modo agente"
+  },
+  "menu.agent_unavailable": {
+    "other": "Configura un proveedor de IA primero (ejecuta --setup)"
+  },
+
+  "setup.ai.select.label": {
+    "other": "Configurar proveedores de IA"
+  },
+  "setup.ai.select.hint": {
+    "other": "↑↓ navegar · Espacio marcar · Enter confirmar · selecciona ninguno para omitir"
+  },
+  "setup.ai.config.ollama.mode": {
+    "other": "¿Cómo quieres conectar a Ollama?"
+  },
+  "setup.ai.config.ollama.local": {
+    "other": "Local (localhost:11434)"
+  },
+  "setup.ai.config.ollama.remote": {
+    "other": "Remota (URL personalizada)"
+  },
+  "setup.ai.config.baseurl.label": {
+    "other": "URL del servidor Ollama"
+  },
+  "setup.ai.config.baseurl.hint": {
+    "other": "ej. http://mi-servidor:11434 · Enter confirmar"
+  },
+  "setup.ai.config.apikey.label": {
+    "other": "Clave API (opcional — Enter o Esc para omitir)"
+  },
+  "setup.ai.config.apikey.hint": {
+    "other": "Déjala vacía si no es necesaria · Esc para omitir"
+  },
+  "setup.ai.config.apikey.required.label": {
+    "other": "Clave API"
+  },
+  "setup.ai.config.apikey.required.hint": {
+    "other": "Introduce la clave API · Enter para validar"
+  },
+  "setup.ai.config.connecting": {
+    "other": "Conectando y listando modelos…"
+  },
+  "setup.ai.config.error": {
+    "other": "Error de conexión: {{.Error}}"
+  },
+  "setup.ai.config.retry": {
+    "other": "Pulsa Enter para reintentar"
+  },
+  "setup.ai.model.provider.label": {
+    "other": "Selecciona el proveedor de IA por defecto"
+  },
+  "setup.ai.model.model.label": {
+    "other": "Selecciona el modelo por defecto"
+  },
+  "setup.ai.model.hint": {
+    "other": "↑↓ navegar · Enter seleccionar"
+  },
+  "setup.ai.model.no_models": {
+    "other": "(no se encontraron modelos)"
+  },
+  "setup.ai.model.esc_back": {
+    "other": "↑↓ navegar · Enter seleccionar · Esc volver"
+  },
+
+  "agent.title": {
+    "other": "Modo Agente"
+  },
+  "agent.hint": {
+    "other": "Enter enviar · ↑↓ PgArriba/Abajo scroll · / comandos · Shift+Tab alternar"
+  },
+  "agent.streaming": {
+    "other": "▌"
+  },
+  "agent.placeholder": {
+    "other": "Pregunta a Auris…"
+  },
+  "agent.empty": {
+    "other": "(Sin conversación — hazme una pregunta)"
+  },
+  "agent.error": {
+    "other": "Error: {{.Error}}"
+  },
+  "agent.connecting": {
+    "other": "Conectando al proveedor de IA…"
+  },
+  "agent.connect_error": {
+    "other": "Error al conectar: {{.Error}} — Esc para volver al menú"
+  },
+  "agent.cmd.menu": {
+    "other": "Volver al menú"
+  },
+  "agent.cmd.theme": {
+    "other": "Cambiar tema visual"
+  },
+  "agent.cmd.language": {
+    "other": "Cambiar idioma"
+  },
+  "agent.cmd.exit": {
+    "other": "Salir de Auris"
+  },
+  "agent.cmd.hint": {
+    "other": "↑↓ navegar · Enter seleccionar · Esc cerrar"
   },
 
   "error.save_config": {

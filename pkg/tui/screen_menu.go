@@ -18,6 +18,7 @@ type menuItem struct {
 
 // menuItems lists the main menu options in display order.
 var menuItems = []menuItem{
+	{"menu.agent_mode", "agent"},
 	{"menu.change_theme", "theme"},
 	{"menu.change_language", "language"},
 	{"menu.exit", ""},
@@ -29,18 +30,19 @@ var menuItems = []menuItem{
 //   - Command mode: activated by pressing "/"; a text input accepts slash
 //     commands (e.g. "/theme dark", "/language es"). Press Esc to cancel.
 type MenuModel struct {
-	cursor      int
-	commandMode bool
-	cmdInput    textinput.Model
-	err         string
-	styles      *Styles
+	cursor         int
+	commandMode    bool
+	cmdInput       textinput.Model
+	err            string
+	styles         *Styles
+	agentAvailable bool
 }
 
 // newMenuModel constructs a [MenuModel] in nav mode.
-func newMenuModel(s *Styles) *MenuModel {
+func newMenuModel(s *Styles, agentAvailable bool) *MenuModel {
 	ti := textinput.New()
 	ti.Placeholder = "/command [args]"
-	return &MenuModel{styles: s, cmdInput: ti}
+	return &MenuModel{styles: s, cmdInput: ti, agentAvailable: agentAvailable}
 }
 
 // Init implements [tea.Model].
@@ -123,6 +125,10 @@ func (m *MenuModel) selectItem(item menuItem) (tea.Model, tea.Cmd) {
 		return m, func() tea.Msg {
 			return ScreenDoneMsg{From: ScreenMenu, Result: nil}
 		}
+	}
+	if item.cmdName == "agent" && !m.agentAvailable {
+		m.err = locale.T("menu.agent_unavailable")
+		return m, nil
 	}
 	return m, func() tea.Msg {
 		return ScreenDoneMsg{From: ScreenMenu, Result: CommandResult{Cmd: item.cmdName}}

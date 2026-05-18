@@ -22,7 +22,7 @@ func AllLLM() []LLMEntry {
 	return []LLMEntry{
 		{
 			Key:         "ollama",
-			DisplayName: "Ollama (local)",
+			DisplayName: "Ollama",
 			New: func(baseURL, apiKey string) llm.AIProvider {
 				var opts []ollama.Option
 				if baseURL != "" {
