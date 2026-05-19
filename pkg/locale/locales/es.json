@@ -412,6 +412,25 @@
   "agent.cmd.hint": {
     "other": "↑↓ navegar · Enter seleccionar · Esc cerrar"
   },
+  "agent.cmd.new": {
+    "other": "Iniciar nueva sesión"
+  },
+  "agent.cmd.session": {
+    "other": "Cambiar de sesión"
+  },
+
+  "session.title": {
+    "other": "Sesiones"
+  },
+  "session.hint": {
+    "other": "↑↓ navegar · Enter seleccionar · Supr borrar · Esc cancelar"
+  },
+  "session.empty": {
+    "other": "Sin sesiones"
+  },
+  "session.delete_confirm": {
+    "other": "¿Borrar sesión? (s/N)"
+  },
 
   "error.save_config": {
     "other": "No se pudo guardar la configuración: {{.Error}}"

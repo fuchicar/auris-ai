@@ -17,6 +17,9 @@ import (
 	"auris/pkg/locale"
 )
 
+// agentTitleMsg carries an AI-generated session title back to the agent model.
+type agentTitleMsg struct{ title string }
+
 // agentState tracks the lifecycle of the agent screen.
 type agentState int
 
@@ -45,6 +48,8 @@ type agentCmd struct {
 // /agent is excluded — it makes no sense from inside the agent screen.
 var agentCommands = []agentCmd{
 	{"menu", "/menu", "agent.cmd.menu", true},
+	{"new", "/new", "agent.cmd.new", true},
+	{"session", "/session", "agent.cmd.session", true},
 	{"theme", "/theme [light|dark]", "agent.cmd.theme", false},
 	{"language", "/language [en|es]", "agent.cmd.language", false},
 	{"exit", "/exit", "agent.cmd.exit", true},
@@ -60,19 +65,20 @@ type streamStartMsg struct{ ch <-chan llm.StreamChunk }
 // streamChunkMsg wraps a single frame from the streaming channel.
 type streamChunkMsg struct{ chunk llm.StreamChunk }
 
-// historyUpdateMsg is emitted when a streaming exchange completes so that
-// AppModel can persist the updated chat history.
-type historyUpdateMsg struct{ history []config.ChatTurn }
+// activeSessionChangedMsg notifies AppModel that the active session ID changed
+// so it can persist the updated config.
+type activeSessionChangedMsg struct{ id string }
 
 // AgentModel is the chat UI screen. It streams responses from the configured
-// LLM provider and persists the conversation history via [historyUpdateMsg].
+// LLM provider and persists the conversation as a [config.Session] file after
+// each completed exchange.
 type AgentModel struct {
 	state     agentState
-	history   []config.ChatTurn
+	session   *config.Session
 	viewport  viewport.Model
 	input     textinput.Model
 	spin      spinner.Model
-	messages  []llm.Message    // multi-turn context sent to the LLM
+	messages  []llm.Message // multi-turn context sent to the LLM
 	provider  llm.AIProvider
 	streaming bool
 	streambuf strings.Builder
@@ -91,11 +97,11 @@ type AgentModel struct {
 	cmdMatches     []agentCmd
 }
 
-// newAgentModel constructs an [AgentModel]. history seeds the conversation from
-// the persisted chat log; modelID selects which model to use for completions.
+// newAgentModel constructs an [AgentModel]. session provides the persisted chat
+// log and metadata; modelID selects which model to use for completions.
 // width and height are the current terminal dimensions; passing them allows the
 // viewport to be initialised immediately without waiting for a WindowSizeMsg.
-func newAgentModel(provider llm.AIProvider, history []config.ChatTurn, modelID string, s *Styles, width, height int) *AgentModel {
+func newAgentModel(provider llm.AIProvider, session *config.Session, modelID string, s *Styles, width, height int) *AgentModel {
 	ti := textinput.New()
 	ti.Placeholder = locale.T("agent.placeholder")
 	ti.Prompt = "" // the ">" prefix is rendered manually in View()
@@ -105,8 +111,8 @@ func newAgentModel(provider llm.AIProvider, history []config.ChatTurn, modelID s
 	sp.Style = s.Spinner
 
 	// Reconstruct the LLM message context from the persisted history.
-	messages := make([]llm.Message, 0, len(history))
-	for _, turn := range history {
+	messages := make([]llm.Message, 0, len(session.History))
+	for _, turn := range session.History {
 		messages = append(messages, llm.Message{
 			Role:    llm.Role(turn.Role),
 			Content: turn.Content,
@@ -115,7 +121,7 @@ func newAgentModel(provider llm.AIProvider, history []config.ChatTurn, modelID s
 
 	m := &AgentModel{
 		state:    agentStateConnecting,
-		history:  history,
+		session:  session,
 		input:    ti,
 		spin:     sp,
 		messages: messages,
@@ -214,6 +220,11 @@ func (m *AgentModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case streamChunkMsg:
 		return m.handleStreamChunk(msg.chunk)
+
+	case agentTitleMsg:
+		m.session.Title = msg.title
+		_ = config.SaveSession(m.session)
+		return m, nil
 
 	case spinner.TickMsg:
 		if m.state == agentStateConnecting || m.streaming {
@@ -495,24 +506,55 @@ func (m *AgentModel) handleStreamChunk(chunk llm.StreamChunk) (tea.Model, tea.Cm
 	m.err = ""
 
 	if content != "" {
-		m.history = append(m.history, config.ChatTurn{Role: "assistant", Content: content})
+		m.session.History = append(m.session.History, config.ChatTurn{Role: "assistant", Content: content})
 		m.messages = append(m.messages, llm.Message{Role: llm.RoleAssistant, Content: content})
 	}
+	m.session.UpdatedAt = time.Now()
+	_ = config.SaveSession(m.session)
+
 	if m.ready {
 		m.viewport.SetContent(m.renderHistory())
 		m.viewport.GotoBottom()
 	}
 	m.input.Focus()
 
-	history := make([]config.ChatTurn, len(m.history))
-	copy(history, m.history)
-	return m, func() tea.Msg { return historyUpdateMsg{history: history} }
+	// Request an AI-generated title on the first completed exchange.
+	if m.session.Title == "new_session" {
+		return m, requestTitleCmd(m.provider, m.modelID, m.session.History)
+	}
+	return m, nil
+}
+
+// requestTitleCmd asks the LLM to produce a short title for the session.
+// It always returns an agentTitleMsg — "new_session" on any error.
+func requestTitleCmd(provider llm.AIProvider, modelID string, history []config.ChatTurn) tea.Cmd {
+	return func() tea.Msg {
+		msgs := make([]llm.Message, 0, len(history)+1)
+		for _, turn := range history {
+			msgs = append(msgs, llm.Message{Role: llm.Role(turn.Role), Content: turn.Content})
+		}
+		msgs = append(msgs, llm.Message{
+			Role:    llm.RoleUser,
+			Content: "Provide a short title (3-5 words) for this conversation. Reply with ONLY the title, nothing else.",
+		})
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		resp, err := provider.Complete(ctx, llm.CompletionRequest{Model: modelID, Messages: msgs})
+		if err != nil {
+			return agentTitleMsg{title: "new_session"}
+		}
+		title := strings.TrimSpace(resp.Message.Content)
+		if title == "" {
+			title = "new_session"
+		}
+		return agentTitleMsg{title: title}
+	}
 }
 
 func (m *AgentModel) sendMessage(text string) (tea.Model, tea.Cmd) {
 	m.input.SetValue("")
 	m.err = ""
-	m.history = append(m.history, config.ChatTurn{Role: "user", Content: text})
+	m.session.History = append(m.session.History, config.ChatTurn{Role: "user", Content: text})
 	m.messages = append(m.messages, llm.Message{Role: llm.RoleUser, Content: text})
 	m.streaming = true
 	m.streambuf.Reset()
@@ -531,7 +573,7 @@ func (m *AgentModel) sendMessage(text string) (tea.Model, tea.Cmd) {
 // Each turn is word-wrapped to m.width so lines never extend beyond the
 // visible area (the viewport does not wrap automatically).
 func (m *AgentModel) renderHistory() string {
-	if len(m.history) == 0 && !m.streaming {
+	if len(m.session.History) == 0 && !m.streaming {
 		return m.styles.Hint.Render(locale.T("agent.empty"))
 	}
 
@@ -543,7 +585,7 @@ func (m *AgentModel) renderHistory() string {
 	}
 
 	var sb strings.Builder
-	for _, turn := range m.history {
+	for _, turn := range m.session.History {
 		var line string
 		if turn.Role == "user" {
 			line = m.styles.Selected.Render("You: ") + turn.Content

@@ -412,6 +412,25 @@
   "agent.cmd.hint": {
     "other": "↑↓ navigate · Enter select · Esc dismiss"
   },
+  "agent.cmd.new": {
+    "other": "Start a new session"
+  },
+  "agent.cmd.session": {
+    "other": "Switch sessions"
+  },
+
+  "session.title": {
+    "other": "Sessions"
+  },
+  "session.hint": {
+    "other": "↑↓ navigate · Enter select · Del delete · Esc cancel"
+  },
+  "session.empty": {
+    "other": "No sessions"
+  },
+  "session.delete_confirm": {
+    "other": "Delete session? (y/N)"
+  },
 
   "error.save_config": {
     "other": "Failed to save configuration: {{.Error}}"

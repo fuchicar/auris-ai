@@ -29,6 +29,7 @@ const (
 	ScreenAIDefaultModel          // select default AI provider and model (setup only)
 	ScreenMenu                    // main menu
 	ScreenAgent                   // agent chat UI
+	ScreenSessionSelect           // session picker
 )
 
 // FlowContext distinguishes whether a settings screen was opened during first-
@@ -113,6 +114,9 @@ type CommandResult struct {
 	Cmd  string   // e.g. "theme", "language", "agent", "exit"
 	Args []string // optional: ["dark"], ["es"]
 }
+
+// SessionSelectResult is the payload emitted by the session picker screen.
+type SessionSelectResult struct{ ID string }
 
 // ─── AppOptions ─────────────────────────────────────────────────────────────
 
@@ -209,8 +213,8 @@ func (a *AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a.toggleMode()
 		}
 
-	case historyUpdateMsg:
-		a.cfg.ChatHistory = msg.history
+	case activeSessionChangedMsg:
+		a.cfg.ActiveSessionID = msg.id
 		a.saveConfig()
 		return a, nil
 
@@ -230,8 +234,8 @@ func (a *AppModel) View() string {
 	if a.width == 0 {
 		return inner // before first resize event
 	}
-	if a.screen == ScreenAgent {
-		return inner // full-terminal chat layout
+	if a.screen == ScreenAgent || a.screen == ScreenSessionSelect {
+		return inner // full-terminal layout
 	}
 	return lipgloss.Place(a.width, a.height,
 		lipgloss.Center, lipgloss.Center, inner)
@@ -402,6 +406,22 @@ func (a *AppModel) transition(msg ScreenDoneMsg) (tea.Model, tea.Cmd) {
 		case CommandResult:
 			return a.handleAgentCommand(r)
 		}
+
+	case ScreenSessionSelect:
+		switch r := msg.Result.(type) {
+		case SessionSelectResult:
+			// Switch to the selected session.
+			if s, err := config.LoadSession(r.ID); err == nil && s != nil {
+				a.cfg.ActiveSessionID = r.ID
+				a.saveConfig()
+				return a.enterAgentModeWithSession(s)
+			}
+			return a.enterAgentMode()
+		default:
+			_ = r
+			// Esc: return to current session unchanged.
+			return a.enterAgentMode()
+		}
 	}
 
 	return a, a.current.Init()
@@ -479,6 +499,19 @@ func (a *AppModel) handleAgentCommand(cmd CommandResult) (tea.Model, tea.Cmd) {
 		a.saveConfig()
 		return a, tea.Quit
 
+	case "new":
+		s := config.NewSession()
+		_ = config.SaveSession(s)
+		a.cfg.ActiveSessionID = s.ID
+		a.saveConfig()
+		return a.enterAgentModeWithSession(s)
+
+	case "session":
+		sessions, _ := config.ListSessions()
+		a.screen = ScreenSessionSelect
+		a.current = newSessionSelectModel(sessions, a.cfg.ActiveSessionID, a.styles, a.width, a.height)
+		return a, a.current.Init()
+
 	case "theme":
 		if len(cmd.Args) == 1 {
 			t := cmd.Args[0]
@@ -508,8 +541,20 @@ func (a *AppModel) handleAgentCommand(cmd CommandResult) (tea.Model, tea.Cmd) {
 	return a, nil
 }
 
-// enterAgentMode switches to the agent chat screen.
+// enterAgentMode resolves the active session (migrating legacy ChatHistory if
+// needed) and switches to the agent chat screen.
 func (a *AppModel) enterAgentMode() (tea.Model, tea.Cmd) {
+	if a.cfg.ActiveAIProvider == "" || a.cfg.DefaultAIModel == "" {
+		return a, nil
+	}
+
+	session := a.resolveActiveSession()
+	return a.enterAgentModeWithSession(session)
+}
+
+// enterAgentModeWithSession switches to the agent chat screen using the
+// provided session.
+func (a *AppModel) enterAgentModeWithSession(session *config.Session) (tea.Model, tea.Cmd) {
 	if a.cfg.ActiveAIProvider == "" || a.cfg.DefaultAIModel == "" {
 		return a, nil
 	}
@@ -525,8 +570,36 @@ func (a *AppModel) enterAgentMode() (tea.Model, tea.Cmd) {
 	provider := entry.New(baseURL, apiKey)
 
 	a.screen = ScreenAgent
-	a.current = newAgentModel(provider, a.cfg.ChatHistory, a.cfg.DefaultAIModel, a.styles, a.width, a.height)
+	a.current = newAgentModel(provider, session, a.cfg.DefaultAIModel, a.styles, a.width, a.height)
 	return a, a.current.Init()
+}
+
+// resolveActiveSession loads the currently active session, creating a new one
+// when none is set. Legacy ChatHistory entries are migrated to a session file.
+func (a *AppModel) resolveActiveSession() *config.Session {
+	// Migrate legacy flat ChatHistory to a session file.
+	if a.cfg.ActiveSessionID == "" && len(a.cfg.ChatHistory) > 0 {
+		s := config.NewSession()
+		s.History = a.cfg.ChatHistory
+		_ = config.SaveSession(s)
+		a.cfg.ChatHistory = nil
+		a.cfg.ActiveSessionID = s.ID
+		a.saveConfig()
+		return s
+	}
+
+	if a.cfg.ActiveSessionID != "" {
+		if s, err := config.LoadSession(a.cfg.ActiveSessionID); err == nil && s != nil {
+			return s
+		}
+	}
+
+	// No active session — create a fresh one.
+	s := config.NewSession()
+	_ = config.SaveSession(s)
+	a.cfg.ActiveSessionID = s.ID
+	a.saveConfig()
+	return s
 }
 
 // toggleMode switches between menu mode and agent mode.

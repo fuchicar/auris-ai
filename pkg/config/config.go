@@ -26,7 +26,12 @@ type AurisConfig struct {
 
 	// ChatHistory stores the persistent conversation log for agent mode.
 	// Stored as plaintext (same policy as FinancialProfile).
+	// Deprecated: kept for migration only; active sessions are stored in the
+	// sessions directory. New code should use Session / ActiveSessionID.
 	ChatHistory []ChatTurn
+
+	// ActiveSessionID is the ID of the session file currently in use.
+	ActiveSessionID string
 }
 
 // ChatTurn is a single message in the agent-mode conversation history.
@@ -98,6 +103,7 @@ type diskConfig struct {
 	AIProviders      map[string]*diskAIProvider  `json:"ai_providers,omitempty"`
 	AITaskRoutes     map[string]AITaskRoute      `json:"ai_task_routes,omitempty"`
 	ChatHistory      []ChatTurn                  `json:"chat_history,omitempty"`
+	ActiveSessionID  string                      `json:"active_session_id,omitempty"`
 }
 
 type diskAIProvider struct {
@@ -166,6 +172,7 @@ func Load(passphrase string) (*AurisConfig, error) {
 		AITaskRoutes:     disk.AITaskRoutes,
 		AIProviders:      make(map[string]*AIProviderConfig),
 		ChatHistory:      disk.ChatHistory,
+		ActiveSessionID:  disk.ActiveSessionID,
 	}
 	if cfg.AITaskRoutes == nil {
 		cfg.AITaskRoutes = make(map[string]AITaskRoute)
@@ -222,6 +229,7 @@ func Save(cfg *AurisConfig, passphrase string) error {
 		DefaultAIModel:   cfg.DefaultAIModel,
 		AITaskRoutes:     cfg.AITaskRoutes,
 		ChatHistory:      cfg.ChatHistory,
+		ActiveSessionID:  cfg.ActiveSessionID,
 	}
 
 	if len(cfg.Providers) > 0 {
