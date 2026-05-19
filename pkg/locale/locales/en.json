@@ -5,6 +5,27 @@
   "welcome.hint": {
     "other": "Press Enter to continue"
   },
+  "welcome.warning": {
+    "other": "AI is a useful tool, but it is not infallible. It can make mistakes with data, overlook your real context, and is not regulated as a financial advisor. Use it to explore ideas, not to make money decisions."
+  },
+  "disclaimer.title": {
+    "other": "Important notice about AI use"
+  },
+  "disclaimer.body": {
+    "other": "This application uses artificial intelligence to help you manage and analyse financial information. However, you should be aware that AI models can produce incorrect or incomplete answers, even with apparent confidence. This phenomenon, known as 'hallucination', can lead to mistaken conclusions about investments, taxes, financial products, or any other economic matter.\n\nUsing this tool does not replace advice from a regulated financial professional in any circumstances. Before making any significant financial decision, we recommend verifying the information with reliable sources and, if necessary, consulting a qualified expert. The developer of this application accepts no liability for decisions made based on the AI-generated responses."
+  },
+  "disclaimer.input.label": {
+    "other": "Type \"yes\" to confirm you have read and understood this notice:"
+  },
+  "disclaimer.input.placeholder": {
+    "other": "yes"
+  },
+  "disclaimer.input.hint": {
+    "other": "Type yes · Enter confirm"
+  },
+  "disclaimer.input.error": {
+    "other": "You must type \"yes\" to proceed."
+  },
 
   "unlock.prompt": {
     "other": "Enter your master passphrase to unlock the configuration:"

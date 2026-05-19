@@ -30,6 +30,7 @@ const (
 	ScreenMenu                    // main menu
 	ScreenAgent                   // agent chat UI
 	ScreenSessionSelect           // session picker
+	ScreenDisclaimer              // AI/financial disclaimer — first-run setup only
 )
 
 // FlowContext distinguishes whether a settings screen was opened during first-
@@ -247,17 +248,21 @@ func (a *AppModel) transition(msg ScreenDoneMsg) (tea.Model, tea.Cmd) {
 
 	case ScreenWelcome:
 		if a.setupMode {
-			if a.showLocaleSelect {
-				a.flowContext = FlowSetup
-				a.screen = ScreenLocale
-				a.current = newLocaleModel(a.styles)
-			} else {
-				a.screen = ScreenTheme
-				a.current = newThemeModel(a.styles)
-			}
+			a.screen = ScreenDisclaimer
+			a.current = newDisclaimerModel(a.styles)
 		} else {
 			a.screen = ScreenUnlock
 			a.current = newUnlockModel(a.styles)
+		}
+
+	case ScreenDisclaimer:
+		if a.showLocaleSelect {
+			a.flowContext = FlowSetup
+			a.screen = ScreenLocale
+			a.current = newLocaleModel(a.styles)
+		} else {
+			a.screen = ScreenTheme
+			a.current = newThemeModel(a.styles)
 		}
 
 	case ScreenLocale:

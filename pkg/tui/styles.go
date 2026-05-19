@@ -41,6 +41,8 @@ type Styles struct {
 	Checkbox   lipgloss.Style // "[x]" / "[ ]" for multi-select
 	Spinner    lipgloss.Style
 	Preview    lipgloss.Style // border box used in the theme preview
+	Warning    lipgloss.Style // amber bold text for advisory warnings
+	WarnBox    lipgloss.Style // amber rounded-border box for warning containers
 }
 
 // NewStyles builds a complete [Styles] set for the given [Theme].
@@ -57,6 +59,7 @@ func newDarkStyles() *Styles {
 	errorC := lipgloss.Color("#F87171")
 	hint := lipgloss.Color("#6B7280")
 	url := lipgloss.Color("#60A5FA")
+	warn := lipgloss.Color("#F59E0B")
 
 	return &Styles{
 		Theme:      ThemeDark,
@@ -73,6 +76,8 @@ func newDarkStyles() *Styles {
 		Checkbox:   lipgloss.NewStyle().Foreground(selected),
 		Spinner:    lipgloss.NewStyle().Foreground(accent),
 		Preview:    lipgloss.NewStyle().BorderStyle(lipgloss.RoundedBorder()).BorderForeground(accent).Padding(0, 1).Width(PanelWidth - 4),
+		Warning:    lipgloss.NewStyle().Foreground(warn).Bold(true),
+		WarnBox:    lipgloss.NewStyle().BorderStyle(lipgloss.RoundedBorder()).BorderForeground(warn).Padding(0, 1).Width(PanelWidth - 4),
 	}
 }
 
@@ -82,6 +87,7 @@ func newLightStyles() *Styles {
 	errorC := lipgloss.Color("#DC2626")
 	hint := lipgloss.Color("#9CA3AF")
 	url := lipgloss.Color("#2563EB")
+	warn := lipgloss.Color("#D97706")
 
 	return &Styles{
 		Theme:      ThemeLight,
@@ -98,5 +104,7 @@ func newLightStyles() *Styles {
 		Checkbox:   lipgloss.NewStyle().Foreground(selected),
 		Spinner:    lipgloss.NewStyle().Foreground(accent),
 		Preview:    lipgloss.NewStyle().BorderStyle(lipgloss.RoundedBorder()).BorderForeground(accent).Padding(0, 1).Width(PanelWidth - 4),
+		Warning:    lipgloss.NewStyle().Foreground(warn).Bold(true),
+		WarnBox:    lipgloss.NewStyle().BorderStyle(lipgloss.RoundedBorder()).BorderForeground(warn).Padding(0, 1).Width(PanelWidth - 4),
 	}
 }

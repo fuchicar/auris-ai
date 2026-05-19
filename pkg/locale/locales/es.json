@@ -5,6 +5,27 @@
   "welcome.hint": {
     "other": "Pulse Enter para continuar"
   },
+  "welcome.warning": {
+    "other": "La IA es una herramienta útil, pero no es infalible. Puede equivocarse en datos, ignorar tu contexto real y no está regulada como asesor financiero. Úsala para explorar ideas, no para tomar decisiones de dinero."
+  },
+  "disclaimer.title": {
+    "other": "Aviso importante sobre el uso de IA"
+  },
+  "disclaimer.body": {
+    "other": "Esta aplicación utiliza inteligencia artificial para ayudarte a gestionar y analizar información financiera. Sin embargo, debes tener en cuenta que los modelos de IA pueden generar respuestas incorrectas o incompletas, incluso con apariencia de certeza. Este fenómeno, conocido como «alucinación», puede llevar a conclusiones erróneas sobre inversiones, impuestos, productos financieros o cualquier otra materia económica.\n\nEl uso de esta herramienta no sustituye en ningún caso el asesoramiento de un profesional financiero regulado. Antes de tomar cualquier decisión relevante sobre tus finanzas, te recomendamos contrastar la información con fuentes fiables y, si es necesario, consultar con un experto colegiado. El desarrollador de esta aplicación no asume responsabilidad por decisiones tomadas a partir de las respuestas generadas por la IA."
+  },
+  "disclaimer.input.label": {
+    "other": "Escribe «yes» o «si» para confirmar que has leído y entendido este aviso:"
+  },
+  "disclaimer.input.placeholder": {
+    "other": "yes / si"
+  },
+  "disclaimer.input.hint": {
+    "other": "Escribe yes o si · Enter confirmar"
+  },
+  "disclaimer.input.error": {
+    "other": "Debes escribir «yes» o «si» para continuar."
+  },
 
   "unlock.prompt": {
     "other": "Introduzca su contraseña maestra para desbloquear la configuración:"

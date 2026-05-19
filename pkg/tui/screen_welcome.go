@@ -33,7 +33,8 @@ func (m *WelcomeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // View implements [tea.Model].
 func (m *WelcomeModel) View() string {
-	title := m.styles.Title.Render(locale.T("welcome.title"))
-	hint := m.styles.Hint.Render(locale.T("welcome.hint"))
-	return lipgloss.JoinVertical(lipgloss.Center, title, hint)
+	title   := m.styles.Title.Render(locale.T("welcome.title"))
+	warning := m.styles.Warning.Width(PanelWidth).Render(locale.T("welcome.warning"))
+	hint    := m.styles.Hint.Render(locale.T("welcome.hint"))
+	return lipgloss.JoinVertical(lipgloss.Center, title, warning, hint)
 }
