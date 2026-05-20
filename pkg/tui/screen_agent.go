@@ -12,9 +12,11 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
+	"auris/pkg/agent"
 	"auris/pkg/config"
 	"auris/pkg/llm"
 	"auris/pkg/locale"
+	"auris/pkg/market"
 )
 
 // agentTitleMsg carries an AI-generated session title back to the agent model.
@@ -58,20 +60,18 @@ var agentCommands = []agentCmd{
 // agentConnectResultMsg carries the outcome of the provider Connect() call.
 type agentConnectResultMsg struct{ err error }
 
-// streamStartMsg carries the channel returned by AIProvider.Stream() so it
-// can be stored on the model without a data race.
-type streamStartMsg struct{ ch <-chan llm.StreamChunk }
-
-// streamChunkMsg wraps a single frame from the streaming channel.
-type streamChunkMsg struct{ chunk llm.StreamChunk }
+// agentResponseMsg carries the final assistant message returned by agent.Chat.
+type agentResponseMsg struct {
+	content string
+	err     error
+}
 
 // activeSessionChangedMsg notifies AppModel that the active session ID changed
 // so it can persist the updated config.
 type activeSessionChangedMsg struct{ id string }
 
-// AgentModel is the chat UI screen. It streams responses from the configured
-// LLM provider and persists the conversation as a [config.Session] file after
-// each completed exchange.
+// AgentModel is the chat UI screen. It runs the agentic loop via agent.Agent
+// and persists the conversation as a [config.Session] file after each exchange.
 type AgentModel struct {
 	state     agentState
 	session   *config.Session
@@ -80,9 +80,9 @@ type AgentModel struct {
 	spin      spinner.Model
 	messages  []llm.Message // multi-turn context sent to the LLM
 	provider  llm.AIProvider
+	ag        *agent.Agent
 	streaming bool
 	streambuf strings.Builder
-	streamCh  <-chan llm.StreamChunk
 	modelID   string
 	styles    *Styles
 	err       string
@@ -101,7 +101,7 @@ type AgentModel struct {
 // log and metadata; modelID selects which model to use for completions.
 // width and height are the current terminal dimensions; passing them allows the
 // viewport to be initialised immediately without waiting for a WindowSizeMsg.
-func newAgentModel(provider llm.AIProvider, session *config.Session, modelID string, s *Styles, width, height int) *AgentModel {
+func newAgentModel(provider llm.AIProvider, mp market.ProviderAPI, session *config.Session, modelID string, s *Styles, width, height int, profile *config.FinancialProfile) *AgentModel {
 	ti := textinput.New()
 	ti.Placeholder = locale.T("agent.placeholder")
 	ti.Prompt = "" // the ">" prefix is rendered manually in View()
@@ -111,7 +111,10 @@ func newAgentModel(provider llm.AIProvider, session *config.Session, modelID str
 	sp.Style = s.Spinner
 
 	// Reconstruct the LLM message context from the persisted history.
-	messages := make([]llm.Message, 0, len(session.History))
+	messages := make([]llm.Message, 0, len(session.History)+1)
+	if sysMsg := agent.BuildSystemMessage(llm.TaskChat, profile); sysMsg != nil {
+		messages = append(messages, *sysMsg)
+	}
 	for _, turn := range session.History {
 		messages = append(messages, llm.Message{
 			Role:    llm.Role(turn.Role),
@@ -126,6 +129,7 @@ func newAgentModel(provider llm.AIProvider, session *config.Session, modelID str
 		spin:     sp,
 		messages: messages,
 		provider: provider,
+		ag:       agent.New(provider, mp, modelID),
 		modelID:  modelID,
 		styles:   s,
 		width:    width,
@@ -161,21 +165,13 @@ func agentConnectCmd(provider llm.AIProvider) tea.Cmd {
 	}
 }
 
-func startStreamCmd(provider llm.AIProvider, modelID string, messages []llm.Message) tea.Cmd {
+func startAgentCmd(ag *agent.Agent, messages []llm.Message) tea.Cmd {
 	return func() tea.Msg {
-		ch, err := provider.Stream(context.Background(), llm.CompletionRequest{
-			Model:    modelID,
-			Messages: messages,
-		})
-		if err != nil {
-			return streamChunkMsg{chunk: llm.StreamChunk{Done: true, Err: err}}
-		}
-		return streamStartMsg{ch: ch}
+		ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+		defer cancel()
+		msg, err := ag.Chat(ctx, messages)
+		return agentResponseMsg{content: msg.Content, err: err}
 	}
-}
-
-func waitForChunk(ch <-chan llm.StreamChunk) tea.Cmd {
-	return func() tea.Msg { return streamChunkMsg{chunk: <-ch} }
 }
 
 // Update implements [tea.Model].
@@ -214,12 +210,8 @@ func (m *AgentModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.input.Focus()
 		return m, textinput.Blink
 
-	case streamStartMsg:
-		m.streamCh = msg.ch
-		return m, waitForChunk(m.streamCh)
-
-	case streamChunkMsg:
-		return m.handleStreamChunk(msg.chunk)
+	case agentResponseMsg:
+		return m.handleAgentResponse(msg)
 
 	case agentTitleMsg:
 		m.session.Title = msg.title
@@ -476,12 +468,12 @@ func (m *AgentModel) emitCommand(name string, args []string) (tea.Model, tea.Cmd
 	}
 }
 
-func (m *AgentModel) handleStreamChunk(chunk llm.StreamChunk) (tea.Model, tea.Cmd) {
-	if chunk.Err != nil {
-		m.err = locale.Tp("agent.error", map[string]any{"Error": chunk.Err.Error()})
-		m.streaming = false
-		m.streamCh = nil
-		m.streambuf.Reset()
+func (m *AgentModel) handleAgentResponse(msg agentResponseMsg) (tea.Model, tea.Cmd) {
+	m.streaming = false
+	m.streambuf.Reset()
+
+	if msg.err != nil {
+		m.err = locale.Tp("agent.error", map[string]any{"Error": msg.err.Error()})
 		if m.ready {
 			m.viewport.SetContent(m.renderHistory())
 			m.viewport.GotoBottom()
@@ -489,25 +481,10 @@ func (m *AgentModel) handleStreamChunk(chunk llm.StreamChunk) (tea.Model, tea.Cm
 		return m, nil
 	}
 
-	if !chunk.Done {
-		m.streambuf.WriteString(chunk.Content)
-		if m.ready {
-			m.viewport.SetContent(m.renderHistory())
-			m.viewport.GotoBottom()
-		}
-		return m, waitForChunk(m.streamCh)
-	}
-
-	// Stream finished: commit the assistant message.
-	content := m.streambuf.String()
-	m.streambuf.Reset()
-	m.streaming = false
-	m.streamCh = nil
 	m.err = ""
-
-	if content != "" {
-		m.session.History = append(m.session.History, config.ChatTurn{Role: "assistant", Content: content})
-		m.messages = append(m.messages, llm.Message{Role: llm.RoleAssistant, Content: content})
+	if msg.content != "" {
+		m.session.History = append(m.session.History, config.ChatTurn{Role: "assistant", Content: msg.content})
+		m.messages = append(m.messages, llm.Message{Role: llm.RoleAssistant, Content: msg.content})
 	}
 	m.session.UpdatedAt = time.Now()
 	_ = config.SaveSession(m.session)
@@ -518,7 +495,6 @@ func (m *AgentModel) handleStreamChunk(chunk llm.StreamChunk) (tea.Model, tea.Cm
 	}
 	m.input.Focus()
 
-	// Request an AI-generated title on the first completed exchange.
 	if m.session.Title == "new_session" {
 		return m, requestTitleCmd(m.provider, m.modelID, m.session.History)
 	}
@@ -566,7 +542,7 @@ func (m *AgentModel) sendMessage(text string) (tea.Model, tea.Cmd) {
 
 	msgs := make([]llm.Message, len(m.messages))
 	copy(msgs, m.messages)
-	return m, tea.Batch(m.spin.Tick, startStreamCmd(m.provider, m.modelID, msgs))
+	return m, tea.Batch(m.spin.Tick, startAgentCmd(m.ag, msgs))
 }
 
 // renderHistory builds the string content for the viewport.

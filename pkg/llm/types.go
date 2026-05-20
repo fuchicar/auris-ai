@@ -27,6 +27,10 @@ type Message struct {
 	ToolCallID string
 	// ToolCalls is populated when Role == RoleAssistant and the model invokes tools.
 	ToolCalls []ToolCall
+	// Extra holds arbitrary provider-specific data that must survive round-trips
+	// through the conversation history (e.g. thought signatures). Drivers store
+	// data here using package-prefixed keys; all other code ignores this field.
+	Extra map[string]any
 }
 
 // ToolCall represents one function call requested by the model.

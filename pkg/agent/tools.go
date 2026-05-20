@@ -101,6 +101,9 @@ func buildTools() []llm.Tool {
 // dispatch executes a single tool call and returns the result as a JSON string,
 // or an error description the model can reason about.
 func (a *Agent) dispatch(ctx context.Context, call llm.ToolCall) string {
+	if a.market == nil {
+		return `{"error":"no market data provider configured"}`
+	}
 	var args map[string]any
 	if err := json.Unmarshal([]byte(call.Function.Arguments), &args); err != nil {
 		return fmt.Sprintf("error: invalid arguments: %s", err)

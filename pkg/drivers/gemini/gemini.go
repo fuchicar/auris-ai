@@ -10,21 +10,19 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/google/generative-ai-go/genai"
-	"google.golang.org/api/googleapi"
-	"google.golang.org/api/iterator"
-	"google.golang.org/api/option"
+	"google.golang.org/genai"
 
 	"auris/pkg/llm"
 )
 
-// Driver implements llm.AIProvider using the official Google generative-ai-go SDK.
+// Driver implements llm.AIProvider using the official google.golang.org/genai SDK.
 type Driver struct {
-	apiKey    string
-	extraOpts []option.ClientOption
-	client    *genai.Client
-	connected bool
-	mu        sync.RWMutex
+	apiKey     string
+	httpClient *http.Client // optional; passed to ClientConfig.HTTPClient
+	baseURL    string       // optional; passed to ClientConfig.HTTPOptions.BaseURL
+	client     *genai.Client
+	connected  bool
+	mu         sync.RWMutex
 }
 
 // Option configures a Driver.
@@ -32,12 +30,12 @@ type Option func(*Driver)
 
 // WithBaseURL overrides the API endpoint (useful for testing or proxies).
 func WithBaseURL(u string) Option {
-	return func(d *Driver) { d.extraOpts = append(d.extraOpts, option.WithEndpoint(u)) }
+	return func(d *Driver) { d.baseURL = u }
 }
 
 // WithHTTPClient replaces the HTTP client used by the SDK.
 func WithHTTPClient(c *http.Client) Option {
-	return func(d *Driver) { d.extraOpts = append(d.extraOpts, option.WithHTTPClient(c)) }
+	return func(d *Driver) { d.httpClient = c }
 }
 
 // New constructs a Driver. apiKey is validated on Connect.
@@ -50,18 +48,22 @@ func New(apiKey string, opts ...Option) *Driver {
 }
 
 func (d *Driver) Name() string        { return "Google Gemini" }
-func (d *Driver) Description() string { return "Google's Gemini language models via the Generative AI SDK" }
+func (d *Driver) Description() string { return "Google's Gemini language models via the GenAI SDK" }
 
 // Connect creates the SDK client and validates the API key by listing models.
 func (d *Driver) Connect(ctx context.Context) error {
-	clientOpts := append([]option.ClientOption{option.WithAPIKey(d.apiKey)}, d.extraOpts...)
-	client, err := genai.NewClient(ctx, clientOpts...)
+	cc := &genai.ClientConfig{APIKey: d.apiKey}
+	if d.httpClient != nil {
+		cc.HTTPClient = d.httpClient
+	}
+	if d.baseURL != "" {
+		cc.HTTPOptions.BaseURL = d.baseURL
+	}
+	client, err := genai.NewClient(ctx, cc)
 	if err != nil {
 		return fmt.Errorf("gemini: Connect: %w", mapErr(err))
 	}
-	iter := client.ListModels(ctx)
-	if _, err := iter.Next(); err != nil && err != iterator.Done {
-		client.Close()
+	if _, err := client.Models.List(ctx, nil); err != nil {
 		return fmt.Errorf("gemini: Connect: %w", mapErr(err))
 	}
 	d.mu.Lock()
@@ -71,14 +73,11 @@ func (d *Driver) Connect(ctx context.Context) error {
 	return nil
 }
 
-// Disconnect closes the SDK client and marks the driver as disconnected.
+// Disconnect marks the driver as disconnected.
 func (d *Driver) Disconnect(_ context.Context) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	if d.client != nil {
-		d.client.Close()
-		d.client = nil
-	}
+	d.client = nil
 	d.connected = false
 	return nil
 }
@@ -96,8 +95,7 @@ func (d *Driver) Ping(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	iter := client.ListModels(ctx)
-	if _, err := iter.Next(); err != nil && err != iterator.Done {
+	if _, err := client.Models.List(ctx, nil); err != nil {
 		return fmt.Errorf("gemini: Ping: %w", mapErr(err))
 	}
 	return nil
@@ -110,16 +108,11 @@ func (d *Driver) ListModels(ctx context.Context) ([]llm.Model, error) {
 		return nil, err
 	}
 	var models []llm.Model
-	iter := client.ListModels(ctx)
-	for {
-		m, err := iter.Next()
-		if err == iterator.Done {
-			break
-		}
+	for m, err := range client.Models.All(ctx) {
 		if err != nil {
 			return nil, fmt.Errorf("gemini: ListModels: %w", mapErr(err))
 		}
-		if slices.Contains(m.SupportedGenerationMethods, "generateContent") {
+		if slices.Contains(m.SupportedActions, "generateContent") {
 			models = append(models, llm.Model{ID: m.Name, Name: m.DisplayName})
 		}
 	}
@@ -135,11 +128,8 @@ func (d *Driver) Complete(ctx context.Context, req llm.CompletionRequest) (llm.C
 	if len(req.Messages) == 0 {
 		return llm.CompletionResponse{}, fmt.Errorf("gemini: Complete: no messages in request")
 	}
-	model := buildModel(client, req)
-	cs := model.StartChat()
-	cs.History = buildHistory(req.Messages)
-	parts := messageToParts(req.Messages[len(req.Messages)-1])
-	resp, err := cs.SendMessage(ctx, parts...)
+	contents, config := buildRequest(req)
+	resp, err := client.Models.GenerateContent(ctx, req.Model, contents, config)
 	if err != nil {
 		return llm.CompletionResponse{}, fmt.Errorf("gemini: Complete: %w", mapErr(err))
 	}
@@ -160,21 +150,12 @@ func (d *Driver) Stream(ctx context.Context, req llm.CompletionRequest) (<-chan 
 	if len(req.Messages) == 0 {
 		return nil, fmt.Errorf("gemini: Stream: no messages in request")
 	}
-	model := buildModel(client, req)
-	cs := model.StartChat()
-	cs.History = buildHistory(req.Messages)
-	parts := messageToParts(req.Messages[len(req.Messages)-1])
+	contents, config := buildRequest(req)
 
 	ch := make(chan llm.StreamChunk, 16)
 	go func() {
 		defer close(ch)
-		iter := cs.SendMessageStream(ctx, parts...)
-		for {
-			resp, err := iter.Next()
-			if err == iterator.Done {
-				ch <- llm.StreamChunk{Done: true}
-				return
-			}
+		for resp, err := range client.Models.GenerateContentStream(ctx, req.Model, contents, config) {
 			if err != nil {
 				ch <- llm.StreamChunk{Done: true, Err: fmt.Errorf("gemini: Stream: %w", mapErr(err))}
 				return
@@ -193,21 +174,17 @@ func (d *Driver) Stream(ctx context.Context, req llm.CompletionRequest) (<-chan 
 				}
 			}
 			ch <- chunk
-			if done {
-				return
-			}
-			if ctx.Err() != nil {
-				ch <- llm.StreamChunk{Done: true, Err: ctx.Err()}
+			if done || ctx.Err() != nil {
 				return
 			}
 		}
+		ch <- llm.StreamChunk{Done: true}
 	}()
 	return ch, nil
 }
 
 // ── Internal helpers ─────────────────────────────────────────────────────────
 
-// getClient returns the SDK client under the read lock, or ErrNotConnected.
 func (d *Driver) getClient() (*genai.Client, error) {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
@@ -217,14 +194,14 @@ func (d *Driver) getClient() (*genai.Client, error) {
 	return d.client, nil
 }
 
-// buildModel creates a configured GenerativeModel from a CompletionRequest.
-func buildModel(client *genai.Client, req llm.CompletionRequest) *genai.GenerativeModel {
-	model := client.GenerativeModel(req.Model)
+// buildRequest converts a CompletionRequest into a content list and config for the API.
+func buildRequest(req llm.CompletionRequest) ([]*genai.Content, *genai.GenerateContentConfig) {
+	config := &genai.GenerateContentConfig{}
 
 	for _, msg := range req.Messages {
 		if msg.Role == llm.RoleSystem {
-			model.SystemInstruction = &genai.Content{
-				Parts: []genai.Part{genai.Text(msg.Content)},
+			config.SystemInstruction = &genai.Content{
+				Parts: []*genai.Part{{Text: msg.Content}},
 			}
 			break
 		}
@@ -239,57 +216,56 @@ func buildModel(client *genai.Client, req llm.CompletionRequest) *genai.Generati
 				Parameters:  schemaFromMap(t.Function.Parameters),
 			}
 		}
-		model.Tools = []*genai.Tool{{FunctionDeclarations: decls}}
+		config.Tools = []*genai.Tool{{FunctionDeclarations: decls}}
 	}
 
 	if req.MaxTokens > 0 {
-		n := int32(req.MaxTokens)
-		model.MaxOutputTokens = &n
+		config.MaxOutputTokens = int32(req.MaxTokens)
 	}
 
-	return model
-}
-
-// buildHistory converts all messages except the last to genai chat history.
-// System messages are excluded (handled via model.SystemInstruction).
-func buildHistory(msgs []llm.Message) []*genai.Content {
-	if len(msgs) <= 1 {
-		return nil
-	}
-	var history []*genai.Content
-	for _, msg := range msgs[:len(msgs)-1] {
+	var contents []*genai.Content
+	for _, msg := range req.Messages {
 		if msg.Role == llm.RoleSystem {
 			continue
 		}
 		if c := msgToContent(msg); c != nil {
-			history = append(history, c)
+			contents = append(contents, c)
 		}
 	}
-	return history
+	return contents, config
 }
 
-// msgToContent converts an llm.Message to a *genai.Content for chat history.
+// msgToContent converts an llm.Message to a *genai.Content for the API.
 func msgToContent(msg llm.Message) *genai.Content {
 	switch msg.Role {
 	case llm.RoleUser:
-		return &genai.Content{Role: "user", Parts: []genai.Part{genai.Text(msg.Content)}}
+		return &genai.Content{Role: "user", Parts: []*genai.Part{{Text: msg.Content}}}
 	case llm.RoleAssistant:
 		if len(msg.ToolCalls) > 0 {
-			parts := make([]genai.Part, len(msg.ToolCalls))
+			// Use the preserved original Content when available so that
+			// provider-specific fields (e.g. thought_signature) are not lost.
+			if msg.Extra != nil {
+				if raw, ok := msg.Extra["gemini:content"].(*genai.Content); ok && raw != nil {
+					return raw
+				}
+			}
+			parts := make([]*genai.Part, len(msg.ToolCalls))
 			for i, tc := range msg.ToolCalls {
 				var args map[string]any
 				_ = json.Unmarshal([]byte(tc.Function.Arguments), &args)
-				parts[i] = genai.FunctionCall{Name: tc.Function.Name, Args: args}
+				parts[i] = &genai.Part{FunctionCall: &genai.FunctionCall{Name: tc.Function.Name, Args: args}}
 			}
 			return &genai.Content{Role: "model", Parts: parts}
 		}
-		return &genai.Content{Role: "model", Parts: []genai.Part{genai.Text(msg.Content)}}
+		return &genai.Content{Role: "model", Parts: []*genai.Part{{Text: msg.Content}}}
 	case llm.RoleTool:
 		return &genai.Content{
 			Role: "user",
-			Parts: []genai.Part{genai.FunctionResponse{
-				Name:     msg.ToolCallID,
-				Response: map[string]any{"result": msg.Content},
+			Parts: []*genai.Part{{
+				FunctionResponse: &genai.FunctionResponse{
+					Name:     msg.ToolCallID,
+					Response: map[string]any{"result": msg.Content},
+				},
 			}},
 		}
 	default:
@@ -297,33 +273,7 @@ func msgToContent(msg llm.Message) *genai.Content {
 	}
 }
 
-// messageToParts converts an llm.Message to []genai.Part for SendMessage.
-func messageToParts(msg llm.Message) []genai.Part {
-	switch msg.Role {
-	case llm.RoleUser:
-		return []genai.Part{genai.Text(msg.Content)}
-	case llm.RoleAssistant:
-		if len(msg.ToolCalls) > 0 {
-			parts := make([]genai.Part, len(msg.ToolCalls))
-			for i, tc := range msg.ToolCalls {
-				var args map[string]any
-				_ = json.Unmarshal([]byte(tc.Function.Arguments), &args)
-				parts[i] = genai.FunctionCall{Name: tc.Function.Name, Args: args}
-			}
-			return parts
-		}
-		return []genai.Part{genai.Text(msg.Content)}
-	case llm.RoleTool:
-		return []genai.Part{genai.FunctionResponse{
-			Name:     msg.ToolCallID,
-			Response: map[string]any{"result": msg.Content},
-		}}
-	default:
-		return []genai.Part{genai.Text(msg.Content)}
-	}
-}
-
-// mapResponse converts a genai.GenerateContentResponse to llm.CompletionResponse.
+// mapResponse converts a GenerateContentResponse to llm.CompletionResponse.
 func mapResponse(resp *genai.GenerateContentResponse) (llm.CompletionResponse, error) {
 	if len(resp.Candidates) == 0 {
 		return llm.CompletionResponse{}, fmt.Errorf("empty candidates in response")
@@ -336,24 +286,29 @@ func mapResponse(resp *genai.GenerateContentResponse) (llm.CompletionResponse, e
 
 	if cand.Content != nil {
 		for _, part := range cand.Content.Parts {
-			switch p := part.(type) {
-			case genai.FunctionCall:
-				argsJSON, _ := json.Marshal(p.Args)
+			switch {
+			case part.FunctionCall != nil:
+				argsJSON, _ := json.Marshal(part.FunctionCall.Args)
 				toolCalls = append(toolCalls, llm.ToolCall{
-					ID: p.Name,
+					ID: part.FunctionCall.Name,
 					Function: llm.ToolCallFunction{
-						Name:      p.Name,
+						Name:      part.FunctionCall.Name,
 						Arguments: string(argsJSON),
 					},
 				})
-			case genai.Text:
-				textParts = append(textParts, string(p))
+			case part.Text != "":
+				textParts = append(textParts, part.Text)
 			}
 		}
 	}
 
 	if len(toolCalls) > 0 {
 		msg.ToolCalls = toolCalls
+		// Preserve the original Content so that thought_signature in Parts
+		// survives round-trips through the conversation history.
+		if cand.Content != nil {
+			msg.Extra = map[string]any{"gemini:content": cand.Content}
+		}
 	} else {
 		msg.Content = strings.Join(textParts, "")
 	}
@@ -380,8 +335,8 @@ func extractText(c *genai.Content) string {
 	}
 	var sb strings.Builder
 	for _, part := range c.Parts {
-		if t, ok := part.(genai.Text); ok {
-			sb.WriteString(string(t))
+		if part.Text != "" {
+			sb.WriteString(part.Text)
 		}
 	}
 	return sb.String()
@@ -457,7 +412,7 @@ func parseType(t string) genai.Type {
 	case "object":
 		return genai.TypeObject
 	default:
-		return genai.TypeUnspecified
+		return ""
 	}
 }
 
@@ -466,7 +421,7 @@ func mapErr(err error) error {
 	if err == nil {
 		return nil
 	}
-	var apiErr *googleapi.Error
+	var apiErr genai.APIError
 	if errors.As(err, &apiErr) {
 		switch apiErr.Code {
 		case http.StatusUnauthorized, http.StatusForbidden:

@@ -9,6 +9,7 @@ import (
 	"auris/pkg/config"
 	"auris/pkg/llm"
 	"auris/pkg/locale"
+	"auris/pkg/market"
 	"auris/pkg/registry"
 )
 
@@ -574,8 +575,20 @@ func (a *AppModel) enterAgentModeWithSession(session *config.Session) (tea.Model
 	}
 	provider := entry.New(baseURL, apiKey)
 
+	var mp market.ProviderAPI
+	if a.cfg.ActiveProvider != "" {
+		if pc, ok := a.cfg.Providers[a.cfg.ActiveProvider]; ok {
+			for _, e := range registry.AllMarket() {
+				if e.Key == a.cfg.ActiveProvider {
+					mp = e.New(pc.APIKey)
+					break
+				}
+			}
+		}
+	}
+
 	a.screen = ScreenAgent
-	a.current = newAgentModel(provider, session, a.cfg.DefaultAIModel, a.styles, a.width, a.height)
+	a.current = newAgentModel(provider, mp, session, a.cfg.DefaultAIModel, a.styles, a.width, a.height, a.cfg.FinancialProfile)
 	return a, a.current.Init()
 }
 
