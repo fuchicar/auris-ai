@@ -95,12 +95,46 @@ func buildTools() []llm.Tool {
 				"symbol": str("Ticker symbol, e.g. AAPL"),
 			}, []string{"symbol"}),
 		),
+
+		// Time tools — allow the model to orient itself in time.
+		tool("time_now",
+			"Get the current date and time in UTC. Returns ISO 8601 datetime, date, time, day of week, year, month, and yesterday's date.",
+			obj(map[string]any{}, []string{}),
+		),
+		tool("time_today",
+			"Get today's date in YYYY-MM-DD format (UTC).",
+			obj(map[string]any{}, []string{}),
+		),
+		tool("time_yesterday",
+			"Get yesterday's date in YYYY-MM-DD format (UTC).",
+			obj(map[string]any{}, []string{}),
+		),
 	}
 }
 
 // dispatch executes a single tool call and returns the result as a JSON string,
 // or an error description the model can reason about.
 func (a *Agent) dispatch(ctx context.Context, call llm.ToolCall) string {
+	// Time tools — no market provider needed.
+	switch call.Function.Name {
+	case "time_now":
+		now := time.Now().UTC()
+		b, _ := json.Marshal(map[string]any{
+			"iso8601":     now.Format(time.RFC3339),
+			"date":        now.Format("2006-01-02"),
+			"time":        now.Format("15:04:05"),
+			"day_of_week": now.Weekday().String(),
+			"year":        now.Year(),
+			"month":       now.Month().String(),
+			"yesterday":   now.AddDate(0, 0, -1).Format("2006-01-02"),
+		})
+		return string(b)
+	case "time_today":
+		return `"` + time.Now().UTC().Format("2006-01-02") + `"`
+	case "time_yesterday":
+		return `"` + time.Now().UTC().AddDate(0, 0, -1).Format("2006-01-02") + `"`
+	}
+
 	if a.market == nil {
 		return `{"error":"no market data provider configured"}`
 	}

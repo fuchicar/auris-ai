@@ -226,6 +226,57 @@ func readOllamaToolModel(t *testing.T) string {
 
 // ── integration test ──────────────────────────────────────────────────────────
 
+func TestAgentChat_TodayDate_Ollama(t *testing.T) {
+	requireOllamaRunning(t)
+	modelID := readOllamaToolModel(t)
+
+	ctx := context.Background()
+
+	ollamaDriver := ollama.New()
+	if err := ollamaDriver.Connect(ctx); err != nil {
+		t.Fatalf("ollama Connect: %v", err)
+	}
+	t.Cleanup(func() { _ = ollamaDriver.Disconnect(context.Background()) })
+	t.Logf("using model: %s", modelID)
+
+	// No market provider needed — time tools work without one.
+	a := agent.New(ollamaDriver, nil, modelID)
+
+	runCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
+	defer cancel()
+
+	resp, err := a.Chat(runCtx, []llm.Message{
+		{Role: llm.RoleUser, Content: "Dime exactamente qué día es hoy. Usa las herramientas disponibles para averiguarlo."},
+	})
+	if err != nil {
+		t.Fatalf("Chat: %v", err)
+	}
+	if resp.Content == "" {
+		t.Fatal("expected non-empty response content")
+	}
+	t.Logf("response: %s", resp.Content)
+
+	// Accept both ISO format ("2026-05-20") and natural language variants
+	// ("20 de mayo de 2026", "May 20, 2026", etc.).
+	now := time.Now().UTC()
+	isoDate := now.Format("2006-01-02")
+	monthSpanish := map[time.Month]string{
+		time.January: "enero", time.February: "febrero", time.March: "marzo",
+		time.April: "abril", time.May: "mayo", time.June: "junio",
+		time.July: "julio", time.August: "agosto", time.September: "septiembre",
+		time.October: "octubre", time.November: "noviembre", time.December: "diciembre",
+	}
+	lower := strings.ToLower(resp.Content)
+	yearStr := now.Format("2006")
+	monthOK := strings.Contains(lower, monthSpanish[now.Month()]) ||
+		strings.Contains(lower, strings.ToLower(now.Month().String()))
+	dateOK := strings.Contains(resp.Content, isoDate) ||
+		(strings.Contains(resp.Content, yearStr) && monthOK)
+	if !dateOK {
+		t.Errorf("expected response to contain today's date (got %q), response: %q", isoDate, resp.Content)
+	}
+}
+
 func TestAgentChat_AAPLQuote_UsesTools_Ollama(t *testing.T) {
 	requireOllamaRunning(t)
 	modelID := readOllamaToolModel(t)
