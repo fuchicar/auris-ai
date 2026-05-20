@@ -80,6 +80,7 @@ type AgentModel struct {
 	spin      spinner.Model
 	messages  []llm.Message // multi-turn context sent to the LLM
 	provider  llm.AIProvider
+	mp        market.ProviderAPI
 	ag        *agent.Agent
 	streaming bool
 	streambuf strings.Builder
@@ -129,6 +130,7 @@ func newAgentModel(provider llm.AIProvider, mp market.ProviderAPI, session *conf
 		spin:     sp,
 		messages: messages,
 		provider: provider,
+		mp:       mp,
 		ag:       agent.New(provider, mp, modelID),
 		modelID:  modelID,
 		styles:   s,
@@ -154,14 +156,20 @@ func newAgentModel(provider llm.AIProvider, mp market.ProviderAPI, session *conf
 
 // Init implements [tea.Model]. Kicks off the provider connection.
 func (m *AgentModel) Init() tea.Cmd {
-	return tea.Batch(m.spin.Tick, agentConnectCmd(m.provider))
+	return tea.Batch(m.spin.Tick, agentConnectCmd(m.provider, m.mp))
 }
 
-func agentConnectCmd(provider llm.AIProvider) tea.Cmd {
+func agentConnectCmd(provider llm.AIProvider, mp market.ProviderAPI) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
-		return agentConnectResultMsg{err: provider.Connect(ctx)}
+		if err := provider.Connect(ctx); err != nil {
+			return agentConnectResultMsg{err: err}
+		}
+		if mp != nil {
+			_ = mp.Connect(ctx) // best-effort; errors surface through tool call results
+		}
+		return agentConnectResultMsg{err: nil}
 	}
 }
 
