@@ -14,6 +14,7 @@ import (
 	"auris/pkg/agent"
 	"auris/pkg/drivers/fmp"
 	"auris/pkg/drivers/gemini"
+	"auris/pkg/drivers/ollama"
 	"auris/pkg/llm"
 	"auris/pkg/market"
 )
@@ -192,7 +193,87 @@ func (s *spyMarket) GetFundamentals(ctx context.Context, symbol string) (market.
 	return s.ProviderAPI.GetFundamentals(ctx, symbol)
 }
 
+// requireOllamaRunning skips if Ollama is not reachable at localhost:11434.
+func requireOllamaRunning(t *testing.T) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://localhost:11434/api/tags", nil)
+	if err != nil {
+		t.Skip("Ollama not running at localhost:11434; skipping integration test")
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil || resp.StatusCode != http.StatusOK {
+		t.Skip("Ollama not running at localhost:11434; skipping integration test")
+	}
+	resp.Body.Close()
+}
+
+// readOllamaToolModel reads a model name from a file.
+// Not all Ollama models support function calling, so an explicit file is required.
+func readOllamaToolModel(t *testing.T) string {
+	t.Helper()
+	data, err := os.ReadFile("../drivers/ollama/test_data/ollama_tool_model")
+	if err != nil {
+		t.Skip("no model in pkg/drivers/ollama/test_data/ollama_tool_model; skipping integration test")
+	}
+	model := strings.TrimSpace(string(data))
+	if model == "" {
+		t.Skip("empty model in pkg/drivers/ollama/test_data/ollama_tool_model; skipping integration test")
+	}
+	return model
+}
+
 // ── integration test ──────────────────────────────────────────────────────────
+
+func TestAgentChat_AAPLQuote_UsesTools_Ollama(t *testing.T) {
+	requireOllamaRunning(t)
+	modelID := readOllamaToolModel(t)
+	fmpKey := readFMPKey(t)
+
+	ctx := context.Background()
+
+	ollamaDriver := ollama.New()
+	if err := ollamaDriver.Connect(ctx); err != nil {
+		t.Fatalf("ollama Connect: %v", err)
+	}
+	t.Cleanup(func() { _ = ollamaDriver.Disconnect(context.Background()) })
+	t.Logf("using model: %s", modelID)
+
+	fmpDriver := fmp.New(fmpKey)
+	if err := fmpDriver.Connect(ctx); err != nil {
+		t.Fatalf("fmp Connect: %v", err)
+	}
+	t.Cleanup(func() { _ = fmpDriver.Disconnect(context.Background()) })
+
+	spy := &spyMarket{ProviderAPI: fmpDriver, t: t}
+
+	a := agent.New(ollamaDriver, spy, modelID)
+
+	sysMsg := agent.BuildSystemMessage(llm.TaskChat, nil)
+	messages := []llm.Message{}
+	if sysMsg != nil {
+		messages = append(messages, *sysMsg)
+	}
+	messages = append(messages, llm.Message{
+		Role:    llm.RoleUser,
+		Content: "Responde únicamente con el valor de la acción de Apple de ayer",
+	})
+
+	runCtx, cancel := context.WithTimeout(ctx, 120*time.Second)
+	defer cancel()
+
+	resp, err := a.Chat(runCtx, messages)
+	if err != nil {
+		t.Fatalf("Chat: %v", err)
+	}
+	if resp.Content == "" {
+		t.Error("expected non-empty response content")
+	}
+	if !spy.called {
+		t.Error("agent did not call any market tool; expected at least one tool call to fetch the data")
+	}
+}
 
 func TestAgentChat_AAPLQuote_UsesTools(t *testing.T) {
 	geminiKey := readGeminiKey(t)
