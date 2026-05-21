@@ -10,6 +10,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/lipgloss"
 
 	"auris/pkg/agent"
@@ -90,6 +91,10 @@ type AgentModel struct {
 	ready     bool // true once the viewport has been sized
 	width     int
 	height    int
+
+	// Markdown renderer — recreated when viewport width changes.
+	renderer      *glamour.TermRenderer
+	rendererWidth int
 
 	// Command palette state.
 	showCmdPalette bool
@@ -553,6 +558,38 @@ func (m *AgentModel) sendMessage(text string) (tea.Model, tea.Cmd) {
 	return m, tea.Batch(m.spin.Tick, startAgentCmd(m.ag, msgs))
 }
 
+// ensureRenderer creates or recreates the TermRenderer when m.width has changed.
+func (m *AgentModel) ensureRenderer() {
+	if m.renderer != nil && m.rendererWidth == m.width {
+		return
+	}
+	if m.width <= 0 {
+		return
+	}
+	r, err := glamour.NewTermRenderer(
+		glamour.WithAutoStyle(),
+		glamour.WithWordWrap(m.width),
+	)
+	if err != nil {
+		return
+	}
+	m.renderer = r
+	m.rendererWidth = m.width
+}
+
+// renderMarkdown renders s as Markdown. Falls back to s on any error.
+func (m *AgentModel) renderMarkdown(s string) string {
+	m.ensureRenderer()
+	if m.renderer == nil {
+		return s
+	}
+	out, err := m.renderer.Render(s)
+	if err != nil {
+		return s
+	}
+	return out
+}
+
 // renderHistory builds the string content for the viewport.
 // Each turn is word-wrapped to m.width so lines never extend beyond the
 // visible area (the viewport does not wrap automatically).
@@ -570,14 +607,16 @@ func (m *AgentModel) renderHistory() string {
 
 	var sb strings.Builder
 	for _, turn := range m.session.History {
-		var line string
 		if turn.Role == "user" {
-			line = m.styles.Selected.Render("You: ") + turn.Content
+			sb.WriteString(wrap(m.styles.Selected.Render("You: ") + turn.Content))
+			sb.WriteString("\n\n")
 		} else {
-			line = m.styles.Hint.Render("Auris: ") + turn.Content
+			rendered := m.renderMarkdown(turn.Content)
+			// glamour adds its own word-wrap and newlines; skip the lipgloss re-wrap.
+			sb.WriteString(m.styles.Hint.Render("Auris:") + "\n")
+			sb.WriteString(strings.TrimRight(rendered, "\n"))
+			sb.WriteString("\n\n")
 		}
-		sb.WriteString(wrap(line))
-		sb.WriteString("\n\n")
 	}
 
 	if m.streaming {
