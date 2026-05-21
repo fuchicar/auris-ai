@@ -455,9 +455,9 @@ func (a *AppModel) handleCommand(cmd CommandResult) (tea.Model, tea.Cmd) {
 
 	case "theme":
 		if len(cmd.Args) == 1 {
-			// Immediate apply: /theme dark or /theme light
+			// Immediate apply: /theme <name>
 			t := cmd.Args[0]
-			if t == string(ThemeLight) || t == string(ThemeDark) {
+			if IsValidTheme(t) {
 				a.cfg.Theme = t
 				a.styles = NewStyles(Theme(t))
 				a.saveConfig()
@@ -521,7 +521,7 @@ func (a *AppModel) handleAgentCommand(cmd CommandResult) (tea.Model, tea.Cmd) {
 	case "theme":
 		if len(cmd.Args) == 1 {
 			t := cmd.Args[0]
-			if t == string(ThemeLight) || t == string(ThemeDark) {
+			if IsValidTheme(t) {
 				a.cfg.Theme = t
 				a.styles = NewStyles(Theme(t))
 				if agent, ok := a.current.(*AgentModel); ok {

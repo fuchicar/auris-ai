@@ -10,30 +10,37 @@ import (
 )
 
 // themeOptions lists the available themes in display order.
-// Index 0 = Light, Index 1 = Dark — must match previews slice order.
 var themeOptions = []struct {
 	key      Theme
 	labelKey string
 }{
-	{ThemeLight, "setup.theme.light"},
-	{ThemeDark, "setup.theme.dark"},
+	{ThemeLight,      "setup.theme.light"},
+	{ThemeDark,       "setup.theme.dark"},
+	{ThemeGreenLight, "setup.theme.greenlight"},
+	{ThemeGreenDark,  "setup.theme.greendark"},
+	{ThemeBoxLight,   "setup.theme.boxlight"},
+	{ThemeBoxDark,    "setup.theme.boxdark"},
 }
 
-// ThemeModel lets the user choose between the light and dark themes.
+// ThemeModel lets the user choose a display theme.
 // A live preview panel updates immediately as the cursor moves so the user
 // can see the visual difference before confirming.
 type ThemeModel struct {
 	cursor   int
-	previews [2]*Styles // one pre-built Styles per theme option
-	styles   *Styles    // current UI style set (for the screen chrome itself)
+	previews []*Styles // one pre-built Styles per theme option
+	styles   *Styles   // current UI style set (for the screen chrome itself)
 }
 
-// newThemeModel constructs a [ThemeModel]. Both theme previews are built once
+// newThemeModel constructs a [ThemeModel]. All theme previews are built once
 // at construction time so cursor movement has no allocation cost.
 func newThemeModel(s *Styles) *ThemeModel {
+	previews := make([]*Styles, len(themeOptions))
+	for i, opt := range themeOptions {
+		previews[i] = NewStyles(opt.key)
+	}
 	return &ThemeModel{
 		cursor:   1, // default cursor on Dark
-		previews: [2]*Styles{NewStyles(ThemeLight), NewStyles(ThemeDark)},
+		previews: previews,
 		styles:   s,
 	}
 }
@@ -64,22 +71,28 @@ func (m *ThemeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 // renderPreview builds a bordered sample box rendered with the given Styles.
-// It shows representative elements so the user can judge contrast and colours.
+// It shows representative elements so the user can judge contrast and colours,
+// including a sample agent message to preview the chat appearance.
 func renderPreview(s *Styles) string {
 	title := s.Title.Render("Auris AI")
 	selected := fmt.Sprintf("%s %s", s.Cursor.Render(">"), s.Selected.Render("Selected option"))
 	unselected := fmt.Sprintf("  %s", s.Unselected.Render("Unselected option"))
-	checkbox := fmt.Sprintf("  %s %s", s.Checkbox.Render("[x]"), s.Unselected.Render("Checked item"))
-	errLine := s.Error.Render("✗ Error message example")
 	hintLine := s.Hint.Render("↑↓ navigate · Enter select")
+
+	previewW := PanelWidth - 4 // account for Preview border + padding
+	youLine := lipgloss.NewStyle().Width(previewW).Render(
+		s.Selected.Render("You: ") + "What is the P/E ratio of AAPL?",
+	)
+	agentBlock := RenderAgentBlock(s, "Apple's P/E ratio is ~28.5x, above\nthe sector average of ~25x.", previewW)
 
 	content := lipgloss.JoinVertical(lipgloss.Left,
 		title,
 		selected,
 		unselected,
-		checkbox,
-		errLine,
 		hintLine,
+		"",
+		youLine,
+		agentBlock,
 	)
 	return s.Preview.Render(content)
 }

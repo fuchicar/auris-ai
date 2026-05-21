@@ -53,7 +53,7 @@ var agentCommands = []agentCmd{
 	{"menu", "/menu", "agent.cmd.menu", true},
 	{"new", "/new", "agent.cmd.new", true},
 	{"session", "/session", "agent.cmd.session", true},
-	{"theme", "/theme [light|dark]", "agent.cmd.theme", false},
+	{"theme", "/theme [light|dark|greenlight|greendark|boxlight|boxdark]", "agent.cmd.theme", false},
 	{"language", "/language [en|es]", "agent.cmd.language", false},
 	{"exit", "/exit", "agent.cmd.exit", true},
 }
@@ -92,9 +92,10 @@ type AgentModel struct {
 	width     int
 	height    int
 
-	// Markdown renderer — recreated when viewport width changes.
+	// Markdown renderer — recreated when viewport width or light/dark base changes.
 	renderer      *glamour.TermRenderer
 	rendererWidth int
+	rendererLight bool
 
 	// Command palette state.
 	showCmdPalette bool
@@ -558,16 +559,22 @@ func (m *AgentModel) sendMessage(text string) (tea.Model, tea.Cmd) {
 	return m, tea.Batch(m.spin.Tick, startAgentCmd(m.ag, msgs))
 }
 
-// ensureRenderer creates or recreates the TermRenderer when m.width has changed.
+// ensureRenderer creates or recreates the TermRenderer when the viewport width or
+// the light/dark base of the active theme has changed.
 func (m *AgentModel) ensureRenderer() {
-	if m.renderer != nil && m.rendererWidth == m.width {
+	wantLight := m.styles.IsLight()
+	if m.renderer != nil && m.rendererWidth == m.width && m.rendererLight == wantLight {
 		return
 	}
 	if m.width <= 0 {
 		return
 	}
+	glamourStyle := "dark"
+	if wantLight {
+		glamourStyle = "light"
+	}
 	r, err := glamour.NewTermRenderer(
-		glamour.WithStandardStyle(string(m.styles.Theme)),
+		glamour.WithStandardStyle(glamourStyle),
 		glamour.WithWordWrap(m.width),
 	)
 	if err != nil {
@@ -575,6 +582,7 @@ func (m *AgentModel) ensureRenderer() {
 	}
 	m.renderer = r
 	m.rendererWidth = m.width
+	m.rendererLight = wantLight
 }
 
 // renderMarkdown renders s as Markdown. Falls back to s on any error.
@@ -612,9 +620,7 @@ func (m *AgentModel) renderHistory() string {
 			sb.WriteString("\n\n")
 		} else {
 			rendered := m.renderMarkdown(turn.Content)
-			// glamour adds its own word-wrap and newlines; skip the lipgloss re-wrap.
-			sb.WriteString(m.styles.Hint.Render("Auris:") + "\n")
-			sb.WriteString(strings.TrimRight(rendered, "\n"))
+			sb.WriteString(RenderAgentBlock(m.styles, rendered, m.width))
 			sb.WriteString("\n\n")
 		}
 	}

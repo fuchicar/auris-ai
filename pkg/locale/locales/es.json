@@ -43,6 +43,18 @@
   "setup.theme.dark": {
     "other": "Oscuro"
   },
+  "setup.theme.greenlight": {
+    "other": "Verde claro"
+  },
+  "setup.theme.greendark": {
+    "other": "Verde oscuro"
+  },
+  "setup.theme.boxlight": {
+    "other": "Caja claro"
+  },
+  "setup.theme.boxdark": {
+    "other": "Caja oscuro"
+  },
   "setup.theme.hint": {
     "other": "↑↓ navegar · Enter seleccionar"
   },
@@ -324,7 +336,7 @@
     "other": "Introduzca comando:"
   },
   "menu.command.hint": {
-    "other": "Disponibles: /theme [light|dark]  /language [en|es]  /agent  /exit · Esc cancelar"
+    "other": "Disponibles: /theme [light|dark|greenlight|greendark|boxlight|boxdark]  /language [en|es]  /agent  /exit · Esc cancelar"
   },
   "menu.command.unknown": {
     "other": "Comando desconocido. Pruebe /theme, /language, /agent o /exit."

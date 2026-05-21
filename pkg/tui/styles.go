@@ -8,10 +8,18 @@ import "github.com/charmbracelet/lipgloss"
 type Theme string
 
 const (
-	// ThemeLight uses a bright background and dark text accents.
+	// ThemeLight uses a bright background and dark text accents, with a tinted agent block.
 	ThemeLight Theme = "light"
-	// ThemeDark uses a dark background and bright text accents.
+	// ThemeDark uses a dark background and bright text accents, with a tinted agent block.
 	ThemeDark Theme = "dark"
+	// ThemeGreenLight is a light-base theme with green badge-style agent messages.
+	ThemeGreenLight Theme = "greenlight"
+	// ThemeGreenDark is a dark-base theme with green badge-style agent messages.
+	ThemeGreenDark Theme = "greendark"
+	// ThemeBoxLight is a light-base theme with rounded-box agent messages.
+	ThemeBoxLight Theme = "boxlight"
+	// ThemeBoxDark is a dark-base theme with rounded-box agent messages.
+	ThemeBoxDark Theme = "boxdark"
 )
 
 // PanelWidth is the fixed content width used by all screens.
@@ -46,11 +54,32 @@ type Styles struct {
 }
 
 // NewStyles builds a complete [Styles] set for the given [Theme].
+// Green and Box variants share the base light/dark palette; only s.Theme differs,
+// which controls how agent messages are rendered in the chat screen.
 func NewStyles(t Theme) *Styles {
-	if t == ThemeLight {
-		return newLightStyles()
+	var s *Styles
+	switch t {
+	case ThemeLight, ThemeGreenLight, ThemeBoxLight:
+		s = newLightStyles()
+	default:
+		s = newDarkStyles()
 	}
-	return newDarkStyles()
+	s.Theme = t
+	return s
+}
+
+// IsLight reports whether the theme uses a light (bright) base palette.
+func (s *Styles) IsLight() bool {
+	return s.Theme == ThemeLight || s.Theme == ThemeGreenLight || s.Theme == ThemeBoxLight
+}
+
+// IsValidTheme reports whether t is a known theme identifier.
+func IsValidTheme(t string) bool {
+	switch Theme(t) {
+	case ThemeLight, ThemeDark, ThemeGreenLight, ThemeGreenDark, ThemeBoxLight, ThemeBoxDark:
+		return true
+	}
+	return false
 }
 
 func newDarkStyles() *Styles {

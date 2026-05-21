@@ -43,6 +43,18 @@
   "setup.theme.dark": {
     "other": "Dark"
   },
+  "setup.theme.greenlight": {
+    "other": "Green Light"
+  },
+  "setup.theme.greendark": {
+    "other": "Green Dark"
+  },
+  "setup.theme.boxlight": {
+    "other": "Box Light"
+  },
+  "setup.theme.boxdark": {
+    "other": "Box Dark"
+  },
   "setup.theme.hint": {
     "other": "↑↓ navigate · Enter select"
   },
@@ -324,7 +336,7 @@
     "other": "Enter command:"
   },
   "menu.command.hint": {
-    "other": "Available: /theme [light|dark]  /language [en|es]  /agent  /exit · Esc cancel"
+    "other": "Available: /theme [light|dark|greenlight|greendark|boxlight|boxdark]  /language [en|es]  /agent  /exit · Esc cancel"
   },
   "menu.command.unknown": {
     "other": "Unknown command. Try /theme, /language, /agent or /exit."
