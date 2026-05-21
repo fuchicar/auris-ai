@@ -567,7 +567,7 @@ func (m *AgentModel) ensureRenderer() {
 		return
 	}
 	r, err := glamour.NewTermRenderer(
-		glamour.WithAutoStyle(),
+		glamour.WithStandardStyle(string(m.styles.Theme)),
 		glamour.WithWordWrap(m.width),
 	)
 	if err != nil {
