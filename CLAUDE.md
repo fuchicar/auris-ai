@@ -128,3 +128,7 @@ Each screen emits a typed `ScreenDoneMsg.Result` (e.g. `UnlockResult`, `APIKeyRe
 4. Add compile-time check: `var _ llm.AIProvider = (*Driver)(nil)`.
 5. Register in `pkg/registry/llm.go`.
 6. Integration tests must `t.Skip` if credentials are absent.
+
+### Adding or removing agent tools
+
+When `buildTools()` in `pkg/agent/tools.go` is modified, update the hardcoded count in `TestBuildTools_Count` (`pkg/agent/agent_test.go`) to match the new total.
