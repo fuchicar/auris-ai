@@ -344,6 +344,15 @@
   "menu.agent_mode": {
     "other": "Modo agente"
   },
+  "menu.configuration": {
+    "other": "Configuración"
+  },
+  "menu.back": {
+    "other": "← Atrás"
+  },
+  "menu.hint_submenu": {
+    "other": "↑↓ navegar · Enter seleccionar · Esc volver"
+  },
   "menu.agent_unavailable": {
     "other": "Configura un proveedor de IA primero (ejecuta --setup)"
   },

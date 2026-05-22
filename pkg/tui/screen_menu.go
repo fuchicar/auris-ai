@@ -10,18 +10,24 @@ import (
 	"auris/pkg/locale"
 )
 
-// menuItem represents a single navigable entry in the main menu.
+// menuItem represents a single navigable entry in the menu. If subItems is
+// non-nil, selecting this item opens a submenu instead of emitting a command.
 type menuItem struct {
 	labelKey string
-	cmdName  string // slash command to emit when selected (empty = exit)
+	cmdName  string     // "exit", "back", or a slash command name; empty for submenu parents
+	subItems []menuItem // non-nil = entering this item opens a nested menu
 }
 
-// menuItems lists the main menu options in display order.
-var menuItems = []menuItem{
-	{"menu.agent_mode", "agent"},
-	{"menu.change_theme", "theme"},
-	{"menu.change_language", "language"},
-	{"menu.exit", ""},
+var configMenuItems = []menuItem{
+	{"menu.change_language", "language", nil},
+	{"menu.change_theme", "theme", nil},
+	{"menu.back", "back", nil},
+}
+
+var mainMenuItems = []menuItem{
+	{"menu.agent_mode", "agent", nil},
+	{"menu.configuration", "", configMenuItems},
+	{"menu.exit", "exit", nil},
 }
 
 // MenuModel renders the main menu. It supports two interaction modes:
@@ -31,6 +37,9 @@ var menuItems = []menuItem{
 //     commands (e.g. "/theme dark", "/language es"). Press Esc to cancel.
 type MenuModel struct {
 	cursor         int
+	items          []menuItem // currently visible items (main or submenu)
+	parentItems    []menuItem // non-nil when inside a submenu
+	titleKey       string     // locale key for the current screen title
 	commandMode    bool
 	cmdInput       textinput.Model
 	err            string
@@ -42,7 +51,13 @@ type MenuModel struct {
 func newMenuModel(s *Styles, agentAvailable bool) *MenuModel {
 	ti := textinput.New()
 	ti.Placeholder = "/command [args]"
-	return &MenuModel{styles: s, cmdInput: ti, agentAvailable: agentAvailable}
+	return &MenuModel{
+		styles:         s,
+		cmdInput:       ti,
+		agentAvailable: agentAvailable,
+		items:          mainMenuItems,
+		titleKey:       "menu.title",
+	}
 }
 
 // Init implements [tea.Model].
@@ -68,11 +83,20 @@ func (m *MenuModel) updateNavMode(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.cursor--
 		}
 	case tea.KeyDown:
-		if m.cursor < len(menuItems)-1 {
+		if m.cursor < len(m.items)-1 {
 			m.cursor++
 		}
 	case tea.KeyEnter:
-		return m.selectItem(menuItems[m.cursor])
+		return m.selectItem(m.items[m.cursor])
+	case tea.KeyEsc:
+		// Go back to the parent menu when inside a submenu.
+		if m.parentItems != nil {
+			m.items = m.parentItems
+			m.parentItems = nil
+			m.titleKey = "menu.title"
+			m.cursor = 0
+			m.err = ""
+		}
 	default:
 		// "/" activates command mode.
 		if key.Type == tea.KeyRunes && key.String() == "/" {
@@ -120,8 +144,26 @@ func (m *MenuModel) updateCommandMode(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // selectItem is called when the user confirms a menu item in nav mode.
 func (m *MenuModel) selectItem(item menuItem) (tea.Model, tea.Cmd) {
-	if item.cmdName == "" {
-		// Exit item.
+	// Submenu: push current items and enter the nested list.
+	if item.subItems != nil {
+		m.parentItems = m.items
+		m.items = item.subItems
+		m.titleKey = item.labelKey
+		m.cursor = 0
+		m.err = ""
+		return m, nil
+	}
+	// Back: return to the parent menu.
+	if item.cmdName == "back" {
+		m.items = m.parentItems
+		m.parentItems = nil
+		m.titleKey = "menu.title"
+		m.cursor = 0
+		m.err = ""
+		return m, nil
+	}
+	// Exit.
+	if item.cmdName == "exit" {
 		return m, func() tea.Msg {
 			return ScreenDoneMsg{From: ScreenMenu, Result: nil}
 		}
@@ -137,10 +179,10 @@ func (m *MenuModel) selectItem(item menuItem) (tea.Model, tea.Cmd) {
 
 // View implements [tea.Model].
 func (m *MenuModel) View() string {
-	title := m.styles.Title.Render(locale.T("menu.title"))
+	title := m.styles.Title.Render(locale.T(m.titleKey))
 
 	var rows []string
-	for i, item := range menuItems {
+	for i, item := range m.items {
 		label := locale.T(item.labelKey)
 		var row string
 		if i == m.cursor && !m.commandMode {
@@ -164,7 +206,11 @@ func (m *MenuModel) View() string {
 		if m.err != "" {
 			parts = append(parts, m.styles.Error.Render(fmt.Sprintf("✗ %s", m.err)))
 		}
-		parts = append(parts, m.styles.Hint.Render(locale.T("menu.hint")))
+		hintKey := "menu.hint"
+		if m.parentItems != nil {
+			hintKey = "menu.hint_submenu"
+		}
+		parts = append(parts, m.styles.Hint.Render(locale.T(hintKey)))
 	}
 
 	return lipgloss.JoinVertical(lipgloss.Left, parts...)
