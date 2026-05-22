@@ -309,14 +309,20 @@ func (a *AppModel) transition(msg ScreenDoneMsg) (tea.Model, tea.Cmd) {
 			a.passphrase = r.Passphrase
 		}
 		a.screen = ScreenProfile
-		a.current = newProfileModel(a.styles)
+		a.current = newProfileModel(a.styles, nil)
 
 	case ScreenProfile:
 		if r, ok := msg.Result.(ProfileResult); ok {
 			a.cfg.FinancialProfile = &r.Profile
 		}
-		a.screen = ScreenProvider
-		a.current = newProviderModel(a.styles)
+		if a.flowContext == FlowMenu {
+			a.saveConfig()
+			a.screen = ScreenMenu
+			a.current = newMenuModel(a.styles, a.cfg.ActiveAIProvider != "")
+		} else {
+			a.screen = ScreenProvider
+			a.current = newProviderModel(a.styles)
+		}
 
 	case ScreenProvider:
 		if r, ok := msg.Result.(ProviderResult); ok {
@@ -486,6 +492,11 @@ func (a *AppModel) handleCommand(cmd CommandResult) (tea.Model, tea.Cmd) {
 		a.flowContext = FlowMenu
 		a.screen = ScreenLocale
 		a.current = newLocaleModel(a.styles)
+
+	case "profile":
+		a.flowContext = FlowMenu
+		a.screen = ScreenProfile
+		a.current = newProfileModel(a.styles, a.cfg.FinancialProfile)
 	}
 
 	return a, a.current.Init()

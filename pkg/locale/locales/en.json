@@ -344,6 +344,9 @@
   "menu.agent_mode": {
     "other": "Agent Mode"
   },
+  "menu.edit_profile": {
+    "other": "Edit Profile"
+  },
   "menu.configuration": {
     "other": "Configuration"
   },

@@ -27,17 +27,64 @@ type ProfileModel struct {
 	styles     *Styles
 }
 
-// newProfileModel constructs a [ProfileModel] at question 0.
-func newProfileModel(s *Styles) *ProfileModel {
+// newProfileModel constructs a [ProfileModel] at question 0. If existing is
+// non-nil the model is pre-populated with the stored answers so the user only
+// needs to change what they want to update.
+func newProfileModel(s *Styles, existing *config.FinancialProfile) *ProfileModel {
 	ti := textinput.New()
 	ti.Placeholder = "..."
-	return &ProfileModel{
+	m := &ProfileModel{
 		singleSel:  make(map[int]string),
 		multiSel:   make(map[int]map[string]bool),
 		textValues: make(map[int]map[string]string),
 		freeInput:  ti,
 		styles:     s,
 	}
+	if existing != nil {
+		m.initFromProfile(existing)
+	}
+	return m
+}
+
+// initFromProfile pre-populates the answer maps from a previously saved
+// FinancialProfile, mirroring the inverse of buildProfile.
+func (m *ProfileModel) initFromProfile(p *config.FinancialProfile) {
+	setSingle := func(q int, v string) {
+		if v != "" {
+			m.singleSel[q] = v
+		}
+	}
+	setMulti := func(q int, keys []string) {
+		if len(keys) == 0 {
+			return
+		}
+		m.multiSel[q] = make(map[string]bool)
+		for _, k := range keys {
+			m.multiSel[q][k] = true
+		}
+	}
+	setText := func(q int, key, val string) {
+		if val == "" {
+			return
+		}
+		if m.textValues[q] == nil {
+			m.textValues[q] = make(map[string]string)
+		}
+		m.textValues[q][key] = val
+	}
+
+	setSingle(0, p.LifeStage)
+	setSingle(1, p.IncomeStability)
+	setSingle(2, p.EmergencyFund)
+	setMulti(3, p.InvestmentGoals)
+	setText(3, "other", p.InvestmentGoalsOther)
+	setSingle(4, p.TimeHorizon)
+	setSingle(5, p.LossScenario)
+	setSingle(6, p.MaxAcceptableLoss)
+	setMulti(7, p.FinancialExperience)
+	setSingle(8, p.InvestmentPriority)
+	setMulti(9, p.Restrictions)
+	setText(9, "country_only", p.RestrictionsCountry)
 }
 
 // Init implements [tea.Model].
