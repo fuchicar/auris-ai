@@ -555,3 +555,56 @@ func TestCalcStats_LabelInSummary(t *testing.T) {
 		t.Errorf("summary should contain label, got %q", r.Summary)
 	}
 }
+
+// ---- probit ------------------------------------------------------------------
+
+func TestProbit_BoundaryZero(t *testing.T) {
+	if !math.IsInf(probit(0), -1) {
+		t.Errorf("probit(0) should be -Inf")
+	}
+}
+
+func TestProbit_BoundaryOne(t *testing.T) {
+	if !math.IsInf(probit(1), 1) {
+		t.Errorf("probit(1) should be +Inf")
+	}
+}
+
+func TestProbit_Midpoint(t *testing.T) {
+	// A&S 26.2.17 has a maximum error of ~4.5e-4; midpoint is near 0 but not exact.
+	if !approxEqual(probit(0.5), 0.0, 1e-3) {
+		t.Errorf("probit(0.5) should be ~0, got %v", probit(0.5))
+	}
+}
+
+func TestProbit_KnownValues(t *testing.T) {
+	cases := []struct{ p, want float64 }{
+		{0.90, 1.2816},
+		{0.95, 1.6449},
+		{0.99, 2.3263},
+	}
+	for _, tc := range cases {
+		got := probit(tc.p)
+		if !approxEqual(got, tc.want, 0.001) {
+			t.Errorf("probit(%.2f): want ~%.4f, got %.4f", tc.p, tc.want, got)
+		}
+	}
+}
+
+// ---- percentileInterp --------------------------------------------------------
+
+func TestPercentileInterp_AtOne(t *testing.T) {
+	// p=1.0 → lo = n-1, hi = n → boundary branch → return last element.
+	s := []float64{10, 20, 30}
+	got := percentileInterp(s, 1.0)
+	if got != 30 {
+		t.Errorf("percentileInterp at p=1: want 30, got %v", got)
+	}
+}
+
+func TestPercentileInterp_SingleElement(t *testing.T) {
+	got := percentileInterp([]float64{42}, 0.5)
+	if got != 42 {
+		t.Errorf("single-element slice: want 42, got %v", got)
+	}
+}

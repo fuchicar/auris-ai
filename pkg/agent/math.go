@@ -333,6 +333,7 @@ func calcVaR(returns []float64, confidenceLevel, portfolioValue float64, method 
 }
 
 // probit approximates the standard normal inverse CDF (A&S 26.2.17, error < 4.5e-4).
+// Returns the z such that Φ(z) = p: negative for p < 0.5, positive for p > 0.5.
 func probit(p float64) float64 {
 	const (
 		c0, c1, c2 = 2.515517, 0.802853, 0.010328
@@ -344,11 +345,13 @@ func probit(p float64) float64 {
 	if p >= 1 {
 		return math.Inf(1)
 	}
-	sign := 1.0
+	// Work with the smaller tail probability q; the formula always returns a
+	// positive approximation, and sign restores the correct direction.
+	sign := -1.0 // p < 0.5 → left tail → negative quantile
 	q := p
 	if q > 0.5 {
 		q = 1 - p
-		sign = -1
+		sign = 1 // p > 0.5 → right tail → positive quantile
 	}
 	t := math.Sqrt(-2 * math.Log(q))
 	z := t - (c0+c1*t+c2*t*t)/(1+d1*t+d2*t*t+d3*t*t*t)
