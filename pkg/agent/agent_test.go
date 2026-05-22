@@ -111,8 +111,8 @@ func toolCallArgs(t *testing.T, args map[string]any) string {
 
 func TestBuildTools_Count(t *testing.T) {
 	tools := buildTools()
-	if len(tools) != 12 {
-		t.Errorf("expected 12 tools, got %d", len(tools))
+	if len(tools) != 25 {
+		t.Errorf("expected 25 tools, got %d", len(tools))
 	}
 }
 
