@@ -53,6 +53,7 @@ var agentCommands = []agentCmd{
 	{"menu", "/menu", "agent.cmd.menu", true},
 	{"new", "/new", "agent.cmd.new", true},
 	{"session", "/session", "agent.cmd.session", true},
+	{"model", "/model", "agent.cmd.model", true},
 	{"theme", "/theme [light|dark|greenlight|greendark|boxlight|boxdark]", "agent.cmd.theme", false},
 	{"language", "/language [en|es]", "agent.cmd.language", false},
 	{"exit", "/exit", "agent.cmd.exit", true},
@@ -66,6 +67,9 @@ type agentResponseMsg struct {
 	content string
 	err     error
 }
+
+// agentProgressMsg is emitted while the agent executes tools, one per unique ProgressKind.
+type agentProgressMsg struct{ kind agent.ProgressKind }
 
 // activeSessionChangedMsg notifies AppModel that the active session ID changed
 // so it can persist the updated config.
@@ -83,14 +87,17 @@ type AgentModel struct {
 	provider  llm.AIProvider
 	mp        market.ProviderAPI
 	ag        *agent.Agent
-	streaming bool
-	streambuf strings.Builder
-	modelID   string
-	styles    *Styles
-	err       string
-	ready     bool // true once the viewport has been sized
-	width     int
-	height    int
+	streaming    bool
+	streambuf    strings.Builder
+	modelID      string
+	styles       *Styles
+	err          string
+	ready        bool // true once the viewport has been sized
+	width        int
+	height       int
+	progressCh   chan agent.ProgressEvent
+	toolLogs     []string // display-only tool activity lines for the current turn
+	toolLogsTurn int      // index into session.History of the user message that owns toolLogs
 
 	// Markdown renderer — recreated when viewport width or light/dark base changes.
 	renderer      *glamour.TermRenderer
@@ -188,6 +195,18 @@ func startAgentCmd(ag *agent.Agent, messages []llm.Message) tea.Cmd {
 	}
 }
 
+// listenProgressCmd blocks on a single read from ch and returns the event.
+// It returns nil when the channel is closed, ending the listener chain.
+func listenProgressCmd(ch <-chan agent.ProgressEvent) tea.Cmd {
+	return func() tea.Msg {
+		ev, ok := <-ch
+		if !ok {
+			return nil
+		}
+		return agentProgressMsg{kind: ev.Kind}
+	}
+}
+
 // Update implements [tea.Model].
 func (m *AgentModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
@@ -223,6 +242,23 @@ func (m *AgentModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.input.Focus()
 		return m, textinput.Blink
+
+	case agentProgressMsg:
+		var text string
+		switch msg.kind {
+		case agent.ProgressFinancial:
+			text = locale.T("agent.tool_financial")
+		case agent.ProgressCalculation:
+			text = locale.T("agent.tool_calculation")
+		}
+		if text != "" {
+			m.toolLogs = append(m.toolLogs, text)
+			if m.ready {
+				m.viewport.SetContent(m.renderHistory())
+				m.viewport.GotoBottom()
+			}
+		}
+		return m, listenProgressCmd(m.progressCh)
 
 	case agentResponseMsg:
 		return m.handleAgentResponse(msg)
@@ -486,6 +522,13 @@ func (m *AgentModel) handleAgentResponse(msg agentResponseMsg) (tea.Model, tea.C
 	m.streaming = false
 	m.streambuf.Reset()
 
+	// Signal the listener goroutine to stop.
+	if m.progressCh != nil {
+		close(m.progressCh)
+		m.progressCh = nil
+		m.ag.SetProgressCh(nil)
+	}
+
 	if msg.err != nil {
 		m.err = locale.Tp("agent.error", map[string]any{"Error": msg.err.Error()})
 		if m.ready {
@@ -549,6 +592,15 @@ func (m *AgentModel) sendMessage(text string) (tea.Model, tea.Cmd) {
 	m.streaming = true
 	m.streambuf.Reset()
 
+	// Reset tool logs for this new turn.
+	m.toolLogs = nil
+	m.toolLogsTurn = len(m.session.History) - 1
+
+	// Wire up the progress channel so tool activity is reported back to the TUI.
+	ch := make(chan agent.ProgressEvent, 8)
+	m.progressCh = ch
+	m.ag.SetProgressCh(ch)
+
 	if m.ready {
 		m.viewport.SetContent(m.renderHistory())
 		m.viewport.GotoBottom()
@@ -556,7 +608,7 @@ func (m *AgentModel) sendMessage(text string) (tea.Model, tea.Cmd) {
 
 	msgs := make([]llm.Message, len(m.messages))
 	copy(msgs, m.messages)
-	return m, tea.Batch(m.spin.Tick, startAgentCmd(m.ag, msgs))
+	return m, tea.Batch(m.spin.Tick, startAgentCmd(m.ag, msgs), listenProgressCmd(ch))
 }
 
 // ensureRenderer creates or recreates the TermRenderer when the viewport width or
@@ -614,10 +666,17 @@ func (m *AgentModel) renderHistory() string {
 	}
 
 	var sb strings.Builder
-	for _, turn := range m.session.History {
+	for i, turn := range m.session.History {
 		if turn.Role == "user" {
 			sb.WriteString(wrap(m.styles.Selected.Render("You: ") + turn.Content))
 			sb.WriteString("\n\n")
+			// Render tool activity lines associated with this user message.
+			if i == m.toolLogsTurn {
+				for _, log := range m.toolLogs {
+					sb.WriteString(wrap(m.styles.Warning.Render("⚙ " + log)))
+					sb.WriteString("\n\n")
+				}
+			}
 		} else {
 			rendered := m.renderMarkdown(turn.Content)
 			sb.WriteString(RenderAgentBlock(m.styles, rendered, m.width))

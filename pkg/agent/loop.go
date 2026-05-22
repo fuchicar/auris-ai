@@ -11,6 +11,7 @@ func runLoop(ctx context.Context, a *Agent, messages []llm.Message) (llm.Message
 	msgs := make([]llm.Message, len(messages))
 	copy(msgs, messages)
 
+	var lastKind ProgressKind
 	for range maxLoopIterations {
 		resp, err := a.llm.Complete(ctx, llm.CompletionRequest{
 			Model:    a.model,
@@ -28,7 +29,7 @@ func runLoop(ctx context.Context, a *Agent, messages []llm.Message) (llm.Message
 		}
 
 		for _, call := range resp.Message.ToolCalls {
-			result := a.dispatch(ctx, call)
+			result := a.dispatch(ctx, call, &lastKind)
 			msgs = append(msgs, llm.Message{
 				Role:       llm.RoleTool,
 				Content:    result,

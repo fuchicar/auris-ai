@@ -226,13 +226,14 @@ func TestDispatch_GetQuote_OK(t *testing.T) {
 	mp := &mockMarket{quote: market.Quote{Time: ts, Bid: 100, Ask: 101, Last: 100.5}}
 	a := New(&mockLLM{}, mp, "")
 
+	var lk ProgressKind
 	result := a.dispatch(context.Background(), llm.ToolCall{
 		ID: "c1",
 		Function: llm.ToolCallFunction{
 			Name:      "market_get_quote",
 			Arguments: `{"symbol":"AAPL"}`,
 		},
-	})
+	}, &lk)
 
 	var q market.Quote
 	if err := json.Unmarshal([]byte(result), &q); err != nil {
@@ -247,13 +248,14 @@ func TestDispatch_GetQuote_MarketError(t *testing.T) {
 	mp := &mockMarket{quoteErr: market.ErrNotFound}
 	a := New(&mockLLM{}, mp, "")
 
+	var lk ProgressKind
 	result := a.dispatch(context.Background(), llm.ToolCall{
 		ID: "c1",
 		Function: llm.ToolCallFunction{
 			Name:      "market_get_quote",
 			Arguments: `{"symbol":"UNKNOWN"}`,
 		},
-	})
+	}, &lk)
 
 	if result == "" || result[:6] != "error:" {
 		t.Errorf("expected error prefix, got %q", result)
@@ -262,12 +264,13 @@ func TestDispatch_GetQuote_MarketError(t *testing.T) {
 
 func TestDispatch_InvalidArgs(t *testing.T) {
 	a := New(&mockLLM{}, &mockMarket{}, "")
+	var lk ProgressKind
 	result := a.dispatch(context.Background(), llm.ToolCall{
 		Function: llm.ToolCallFunction{
 			Name:      "market_get_quote",
 			Arguments: `not json`,
 		},
-	})
+	}, &lk)
 	if result[:6] != "error:" {
 		t.Errorf("expected error prefix, got %q", result)
 	}
@@ -275,12 +278,13 @@ func TestDispatch_InvalidArgs(t *testing.T) {
 
 func TestDispatch_UnknownTool(t *testing.T) {
 	a := New(&mockLLM{}, &mockMarket{}, "")
+	var lk ProgressKind
 	result := a.dispatch(context.Background(), llm.ToolCall{
 		Function: llm.ToolCallFunction{
 			Name:      "market_nonexistent",
 			Arguments: `{}`,
 		},
-	})
+	}, &lk)
 	if result[:6] != "error:" {
 		t.Errorf("expected error prefix, got %q", result)
 	}
@@ -288,12 +292,13 @@ func TestDispatch_UnknownTool(t *testing.T) {
 
 func TestDispatch_GetCandles_InvalidTime(t *testing.T) {
 	a := New(&mockLLM{}, &mockMarket{}, "")
+	var lk ProgressKind
 	result := a.dispatch(context.Background(), llm.ToolCall{
 		Function: llm.ToolCallFunction{
 			Name:      "market_get_candles",
 			Arguments: `{"symbol":"AAPL","from":"not-a-date","to":"2024-01-01T00:00:00Z","timeframe":"1d"}`,
 		},
-	})
+	}, &lk)
 	if result[:6] != "error:" {
 		t.Errorf("expected error prefix, got %q", result)
 	}

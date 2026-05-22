@@ -323,6 +323,9 @@
   "menu.change_theme": {
     "other": "Cambiar tema"
   },
+  "menu.change_model": {
+    "other": "Cambiar modelo por defecto"
+  },
   "menu.change_language": {
     "other": "Cambiar idioma"
   },
@@ -414,6 +417,12 @@
   "setup.ai.model.no_models": {
     "other": "(no se encontraron modelos)"
   },
+  "setup.ai.model.scroll_up": {
+    "other": "↑ más arriba"
+  },
+  "setup.ai.model.scroll_down": {
+    "other": "↓ más abajo"
+  },
   "setup.ai.model.esc_back": {
     "other": "↑↓ navegar · Enter seleccionar · Esc volver"
   },
@@ -462,6 +471,15 @@
   },
   "agent.cmd.session": {
     "other": "Cambiar de sesión"
+  },
+  "agent.cmd.model": {
+    "other": "Cambiar modelo por defecto"
+  },
+  "agent.tool_financial": {
+    "other": "Consultando datos financieros..."
+  },
+  "agent.tool_calculation": {
+    "other": "Calculando..."
   },
 
   "session.title": {

@@ -13,12 +13,13 @@ import (
 
 func dispatchMath(t *testing.T, a *Agent, name string, args map[string]any) map[string]any {
 	t.Helper()
+	var lk ProgressKind
 	result := a.dispatch(context.Background(), llm.ToolCall{
 		Function: llm.ToolCallFunction{
 			Name:      name,
 			Arguments: toolCallArgs(t, args),
 		},
-	})
+	}, &lk)
 	var r map[string]any
 	if err := json.Unmarshal([]byte(result), &r); err != nil {
 		t.Fatalf("%s: result is not valid JSON: %s — %v", name, result, err)
@@ -28,12 +29,13 @@ func dispatchMath(t *testing.T, a *Agent, name string, args map[string]any) map[
 
 func dispatchMathErr(t *testing.T, a *Agent, name string, args map[string]any) string {
 	t.Helper()
+	var lk ProgressKind
 	return a.dispatch(context.Background(), llm.ToolCall{
 		Function: llm.ToolCallFunction{
 			Name:      name,
 			Arguments: toolCallArgs(t, args),
 		},
-	})
+	}, &lk)
 }
 
 // TestDispatch_MathTools_OK verifies that every math tool returns valid JSON

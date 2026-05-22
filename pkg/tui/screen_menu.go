@@ -22,6 +22,7 @@ var configMenuItems = []menuItem{
 	{"menu.edit_profile", "profile", nil},
 	{"menu.change_language", "language", nil},
 	{"menu.change_theme", "theme", nil},
+	{"menu.change_model", "model", nil},
 	{"menu.back", "back", nil},
 }
 

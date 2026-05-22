@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"os"
 
 	"github.com/charmbracelet/lipgloss"
@@ -44,6 +45,8 @@ const (
 	FlowSetup FlowContext = iota
 	// FlowMenu means settings changes save to disk and return to the main menu.
 	FlowMenu
+	// FlowAgent means settings changes save to disk and return to agent mode.
+	FlowAgent
 )
 
 // ─── Message types ──────────────────────────────────────────────────────────
@@ -57,6 +60,14 @@ type ScreenDoneMsg struct {
 
 // ErrMsg carries a displayable error back to AppModel.
 type ErrMsg struct{ Err error }
+
+// modelsLoadedMsg carries the result of an async connect+list-models call
+// initiated by the /model command.
+type modelsLoadedMsg struct {
+	entries []registry.LLMEntry
+	byProv  map[string][]llm.Model
+	err     error
+}
 
 // ─── Per-screen result payloads ─────────────────────────────────────────────
 
@@ -219,6 +230,15 @@ func (a *AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.cfg.ActiveSessionID = msg.id
 		a.saveConfig()
 		return a, nil
+
+	case modelsLoadedMsg:
+		if msg.err != nil {
+			// Loading failed — stay on current screen silently.
+			return a, nil
+		}
+		a.screen = ScreenAIDefaultModel
+		a.current = newAIDefaultModelModel(msg.entries, msg.byProv, a.styles)
+		return a, a.current.Init()
 
 	case ScreenDoneMsg:
 		return a.transition(msg)
@@ -397,6 +417,9 @@ func (a *AppModel) transition(msg ScreenDoneMsg) (tea.Model, tea.Cmd) {
 			a.cfg.DefaultAIModel = r.Model
 		}
 		a.saveConfig()
+		if a.flowContext == FlowAgent {
+			return a.enterAgentMode()
+		}
 		a.screen = ScreenMenu
 		a.current = newMenuModel(a.styles, a.cfg.ActiveAIProvider != "")
 
@@ -497,6 +520,14 @@ func (a *AppModel) handleCommand(cmd CommandResult) (tea.Model, tea.Cmd) {
 		a.flowContext = FlowMenu
 		a.screen = ScreenProfile
 		a.current = newProfileModel(a.styles, a.cfg.FinancialProfile)
+
+	case "model":
+		if a.cfg.ActiveAIProvider == "" {
+			a.current = newMenuModel(a.styles, false)
+			return a, a.current.Init()
+		}
+		a.flowContext = FlowMenu
+		return a, a.loadModelsCmd()
 	}
 
 	return a, a.current.Init()
@@ -553,6 +584,10 @@ func (a *AppModel) handleAgentCommand(cmd CommandResult) (tea.Model, tea.Cmd) {
 			}
 		}
 		return a, nil
+
+	case "model":
+		a.flowContext = FlowAgent
+		return a, a.loadModelsCmd()
 	}
 
 	return a, nil
@@ -671,4 +706,34 @@ func findLLMEntry(key string) (registry.LLMEntry, bool) {
 		}
 	}
 	return registry.LLMEntry{}, false
+}
+
+// loadModelsCmd connects to the active AI provider, lists its models, and
+// returns the result as a [modelsLoadedMsg]. Used by the /model command.
+func (a *AppModel) loadModelsCmd() tea.Cmd {
+	entry, ok := findLLMEntry(a.cfg.ActiveAIProvider)
+	if !ok {
+		return func() tea.Msg { return modelsLoadedMsg{err: context.DeadlineExceeded} }
+	}
+	var baseURL, apiKey string
+	if aiCfg, exists := a.cfg.AIProviders[a.cfg.ActiveAIProvider]; exists {
+		baseURL = aiCfg.BaseURL
+		apiKey = aiCfg.APIKey
+	}
+	return func() tea.Msg {
+		drv := entry.New(baseURL, apiKey)
+		ctx, cancel := context.WithTimeout(context.Background(), aiConnectTimeout)
+		defer cancel()
+		if err := drv.Connect(ctx); err != nil {
+			return modelsLoadedMsg{err: err}
+		}
+		models, err := drv.ListModels(ctx)
+		if err != nil {
+			return modelsLoadedMsg{err: err}
+		}
+		return modelsLoadedMsg{
+			entries: []registry.LLMEntry{entry},
+			byProv:  map[string][]llm.Model{entry.Key: models},
+		}
+	}
 }

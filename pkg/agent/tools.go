@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"auris/pkg/llm"
@@ -231,8 +232,27 @@ func buildTools() []llm.Tool {
 }
 
 // dispatch executes a single tool call and returns the result as a JSON string,
-// or an error description the model can reason about.
-func (a *Agent) dispatch(ctx context.Context, call llm.ToolCall) string {
+// or an error description the model can reason about. lastKind tracks the last
+// ProgressKind emitted this turn so consecutive same-category events are skipped.
+func (a *Agent) dispatch(ctx context.Context, call llm.ToolCall, lastKind *ProgressKind) string {
+	// Emit a progress event for market and calculation tools (deduplicated).
+	var kind ProgressKind
+	switch {
+	case strings.HasPrefix(call.Function.Name, "market_"):
+		kind = ProgressFinancial
+	case strings.HasPrefix(call.Function.Name, "calculate_"), call.Function.Name == "convert_currency":
+		kind = ProgressCalculation
+	}
+	if kind != "" && kind != *lastKind {
+		*lastKind = kind
+		if a.progressCh != nil {
+			select {
+			case a.progressCh <- ProgressEvent{Kind: kind}:
+			default:
+			}
+		}
+	}
+
 	// Time tools — no market provider needed.
 	switch call.Function.Name {
 	case "time_now":
