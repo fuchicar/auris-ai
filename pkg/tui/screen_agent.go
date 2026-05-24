@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"fmt"
+	"log"
 	"strings"
 	"time"
 
@@ -18,6 +19,7 @@ import (
 	"auris/pkg/llm"
 	"auris/pkg/locale"
 	"auris/pkg/market"
+	"auris/pkg/news"
 )
 
 // agentTitleMsg carries an AI-generated session title back to the agent model.
@@ -115,7 +117,7 @@ type AgentModel struct {
 // log and metadata; modelID selects which model to use for completions.
 // width and height are the current terminal dimensions; passing them allows the
 // viewport to be initialised immediately without waiting for a WindowSizeMsg.
-func newAgentModel(provider llm.AIProvider, mp market.ProviderAPI, session *config.Session, modelID string, s *Styles, width, height int, profile *config.FinancialProfile) *AgentModel {
+func newAgentModel(provider llm.AIProvider, mp market.ProviderAPI, session *config.Session, modelID string, s *Styles, width, height int, profile *config.FinancialProfile, newsFeeds []news.FeedConfig, debugLogger *log.Logger) *AgentModel {
 	ti := textinput.New()
 	ti.Placeholder = locale.T("agent.placeholder")
 	ti.Prompt = "" // the ">" prefix is rendered manually in View()
@@ -144,12 +146,14 @@ func newAgentModel(provider llm.AIProvider, mp market.ProviderAPI, session *conf
 		messages: messages,
 		provider: provider,
 		mp:       mp,
-		ag:       agent.New(provider, mp, modelID),
-		modelID:  modelID,
+		ag:      agent.New(provider, mp, modelID, agent.WithDebugLogger(debugLogger)),
+		modelID: modelID,
 		styles:   s,
 		width:    width,
 		height:   height,
 	}
+
+	m.ag.SetNewsProvider(news.NewProvider(newsFeeds))
 
 	// Initialise the viewport now so it is ready as soon as the connection
 	// succeeds. BubbleTea only sends WindowSizeMsg once (at startup), so new
@@ -250,6 +254,8 @@ func (m *AgentModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			text = locale.T("agent.tool_financial")
 		case agent.ProgressCalculation:
 			text = locale.T("agent.tool_calculation")
+		case agent.ProgressNews:
+			text = locale.T("agent.tool_news")
 		}
 		if text != "" {
 			m.toolLogs = append(m.toolLogs, text)
