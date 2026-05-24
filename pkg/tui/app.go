@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"log"
 	"os"
 
 	"github.com/charmbracelet/lipgloss"
@@ -144,6 +145,9 @@ type AppOptions struct {
 	// ShowLocaleSelect is true when auto-detection was uncertain and the user
 	// should be prompted to choose a language explicitly.
 	ShowLocaleSelect bool
+	// DebugLogger, when non-nil, receives diagnostic output from the agent loop
+	// and tool dispatcher. Activated by the `-debug <path>` CLI flag.
+	DebugLogger *log.Logger
 }
 
 // ─── AppModel ───────────────────────────────────────────────────────────────
@@ -167,6 +171,9 @@ type AppModel struct {
 	pendingLLMProviders []string              // provider keys still to be configured
 	pendingLLMIdx       int                   // index of the provider currently being configured
 	pendingLLMModels    map[string][]llm.Model // models discovered per provider key
+
+	// debugLogger, when non-nil, is forwarded to the agent for diagnostic output.
+	debugLogger *log.Logger
 }
 
 // NewApp constructs the root model. The Welcome screen is always shown first.
@@ -182,6 +189,7 @@ func NewApp(opts AppOptions) *AppModel {
 			AIProviders: make(map[string]*config.AIProviderConfig),
 		},
 		pendingLLMModels: make(map[string][]llm.Model),
+		debugLogger:      opts.DebugLogger,
 	}
 	a.current = newWelcomeModel(styles)
 	a.screen = ScreenWelcome
@@ -634,7 +642,7 @@ func (a *AppModel) enterAgentModeWithSession(session *config.Session) (tea.Model
 	}
 
 	a.screen = ScreenAgent
-	a.current = newAgentModel(provider, mp, session, a.cfg.DefaultAIModel, a.styles, a.width, a.height, a.cfg.FinancialProfile)
+	a.current = newAgentModel(provider, mp, session, a.cfg.DefaultAIModel, a.styles, a.width, a.height, a.cfg.FinancialProfile, a.cfg.NewsFeeds, a.debugLogger)
 	return a, a.current.Init()
 }
 

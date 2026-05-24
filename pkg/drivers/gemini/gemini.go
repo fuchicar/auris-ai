@@ -223,14 +223,31 @@ func buildRequest(req llm.CompletionRequest) ([]*genai.Content, *genai.GenerateC
 		config.MaxOutputTokens = int32(req.MaxTokens)
 	}
 
+	// Build contents, merging consecutive RoleTool messages into a single user
+	// turn. The Gemini API requires that all FunctionResponses for a given model
+	// turn be in ONE Content with multiple Parts — sending them as separate
+	// Content objects violates the spec and produces incoherent responses.
 	var contents []*genai.Content
-	for _, msg := range req.Messages {
+	msgs := req.Messages
+	for i := 0; i < len(msgs); {
+		msg := msgs[i]
 		if msg.Role == llm.RoleSystem {
+			i++
 			continue
 		}
-		if c := msgToContent(msg); c != nil {
-			contents = append(contents, c)
+		if msg.Role != llm.RoleTool {
+			if c := msgToContent(msg); c != nil {
+				contents = append(contents, c)
+			}
+			i++
+			continue
 		}
+		merged := &genai.Content{Role: "user"}
+		for i < len(msgs) && msgs[i].Role == llm.RoleTool {
+			merged.Parts = append(merged.Parts, toolResponsePart(msgs[i]))
+			i++
+		}
+		contents = append(contents, merged)
 	}
 	return contents, config
 }
@@ -259,17 +276,25 @@ func msgToContent(msg llm.Message) *genai.Content {
 		}
 		return &genai.Content{Role: "model", Parts: []*genai.Part{{Text: msg.Content}}}
 	case llm.RoleTool:
-		return &genai.Content{
-			Role: "user",
-			Parts: []*genai.Part{{
-				FunctionResponse: &genai.FunctionResponse{
-					Name:     msg.ToolCallID,
-					Response: map[string]any{"result": msg.Content},
-				},
-			}},
-		}
+		return &genai.Content{Role: "user", Parts: []*genai.Part{toolResponsePart(msg)}}
 	default:
 		return nil
+	}
+}
+
+// toolResponsePart converts a RoleTool message to a FunctionResponse Part.
+// Unmarshals the JSON content so the SDK encodes structured data instead of a
+// quoted string; falls back to a plain string for non-JSON error messages.
+func toolResponsePart(msg llm.Message) *genai.Part {
+	var responseVal any
+	if err := json.Unmarshal([]byte(msg.Content), &responseVal); err != nil {
+		responseVal = msg.Content
+	}
+	return &genai.Part{
+		FunctionResponse: &genai.FunctionResponse{
+			Name:     msg.ToolCallID,
+			Response: map[string]any{"result": responseVal},
+		},
 	}
 }
 
@@ -376,12 +401,15 @@ func schemaFromMap(m map[string]any) *genai.Schema {
 			}
 		}
 	}
-	if req, ok := m["required"].([]any); ok {
+	switch req := m["required"].(type) {
+	case []any:
 		for _, r := range req {
 			if rs, ok := r.(string); ok {
 				s.Required = append(s.Required, rs)
 			}
 		}
+	case []string:
+		s.Required = append(s.Required, req...)
 	}
 	if items, ok := m["items"].(map[string]any); ok {
 		s.Items = schemaFromMap(items)

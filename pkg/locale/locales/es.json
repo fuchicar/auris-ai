@@ -481,6 +481,9 @@
   "agent.tool_calculation": {
     "other": "Calculando..."
   },
+  "agent.tool_news": {
+    "other": "Obteniendo noticias..."
+  },
 
   "session.title": {
     "other": "Sesiones"

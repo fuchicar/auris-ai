@@ -22,6 +22,8 @@ var systemPrompts = map[llm.TaskType]string{
 ## Uso de herramientas:
 - Para cualquier dato de mercado en tiempo real (precios, cotizaciones, fundamentales, velas, volúmenes, etc.), utiliza SIEMPRE las herramientas disponibles.
 - No respondas con datos de mercado desde tu conocimiento de entrenamiento, ya que pueden estar desactualizados. Usa las herramientas aunque creas conocer la respuesta.
+- Para cualquier solicitud de noticias financieras o económicas, resúmenes del mercado o análisis de eventos actuales, utiliza SIEMPRE el tool fetch_news. No respondas diciendo que no tienes acceso a noticias en tiempo real — fetch_news te proporciona ese acceso. Para noticias generales sin tema específico, llama con keywords=[].
+- Cuando fetch_news devuelva artículos (campos: title, summary, source, url, published_at), úsalos directamente para construir tu respuesta. Si devuelve {"status":"no_results",...} o {"status":"error",...}, informa al usuario en su idioma y sugiere intentarlo más tarde o con criterios distintos.
 
 ## Mathematical expressions
 Mathematical expressions MUST be rendered using terminal-safe Unicode text.

@@ -17,6 +17,12 @@ import (
 const (
 	defaultBaseURL     = "http://localhost:11434"
 	defaultHTTPTimeout = 30 * time.Second
+	// defaultNumCtx is the per-request context window passed to Ollama via
+	// options.num_ctx. Ollama's own default is 2048-4096, which truncates
+	// tool-calling conversations on the first follow-up turn. 32768 gives
+	// generous headroom while keeping KV-cache RAM use moderate on small
+	// models (~2GB for a 2B-param model). Override with AURIS_OLLAMA_NUM_CTX.
+	defaultNumCtx = 32768
 )
 
 // Driver implements llm.AIProvider against the Ollama REST API.
@@ -24,6 +30,7 @@ type Driver struct {
 	baseURL    string
 	apiKey     string
 	httpClient *http.Client
+	numCtx     int
 	connected  bool
 	mu         sync.RWMutex
 }
@@ -39,11 +46,22 @@ func WithTimeout(t time.Duration) Option   { return func(d *Driver) { d.httpClie
 // remote Ollama instance. Leave empty for local (unauthenticated) Ollama.
 func WithAPIKey(k string) Option { return func(d *Driver) { d.apiKey = k } }
 
+// WithContextSize overrides the per-request num_ctx sent to Ollama. Values <= 0
+// are ignored (the default is kept). See [defaultNumCtx] for the rationale.
+func WithContextSize(n int) Option {
+	return func(d *Driver) {
+		if n > 0 {
+			d.numCtx = n
+		}
+	}
+}
+
 // New constructs a Driver. All options are optional; sensible defaults are applied.
 func New(opts ...Option) *Driver {
 	d := &Driver{
 		baseURL:    defaultBaseURL,
 		httpClient: &http.Client{Timeout: defaultHTTPTimeout},
+		numCtx:     defaultNumCtx,
 	}
 	for _, o := range opts {
 		o(d)
@@ -118,7 +136,7 @@ func (d *Driver) Complete(ctx context.Context, req llm.CompletionRequest) (llm.C
 		return llm.CompletionResponse{}, err
 	}
 
-	body, err := json.Marshal(buildChatRequest(req, false))
+	body, err := json.Marshal(d.buildChatRequest(req, false))
 	if err != nil {
 		return llm.CompletionResponse{}, fmt.Errorf("ollama: Complete: marshal: %w", err)
 	}
@@ -145,7 +163,7 @@ func (d *Driver) Stream(ctx context.Context, req llm.CompletionRequest) (<-chan 
 		return nil, err
 	}
 
-	body, err := json.Marshal(buildChatRequest(req, true))
+	body, err := json.Marshal(d.buildChatRequest(req, true))
 	if err != nil {
 		return nil, fmt.Errorf("ollama: Stream: marshal: %w", err)
 	}
@@ -307,7 +325,8 @@ func mapHTTPError(code int) error {
 }
 
 // buildChatRequest converts a llm.CompletionRequest to the Ollama wire format.
-func buildChatRequest(req llm.CompletionRequest, stream bool) ollamaChatRequest {
+// Driver-level settings (e.g. num_ctx) are merged into the request options.
+func (d *Driver) buildChatRequest(req llm.CompletionRequest, stream bool) ollamaChatRequest {
 	msgs := make([]ollamaMessage, len(req.Messages))
 	for i, m := range req.Messages {
 		msgs[i] = ollamaMessage{
@@ -343,11 +362,17 @@ func buildChatRequest(req llm.CompletionRequest, stream bool) ollamaChatRequest 
 		}
 	}
 
+	var opts *ollamaOptions
+	if d.numCtx > 0 {
+		opts = &ollamaOptions{NumCtx: d.numCtx}
+	}
+
 	return ollamaChatRequest{
 		Model:    req.Model,
 		Messages: msgs,
 		Stream:   stream,
 		Tools:    tools,
+		Options:  opts,
 	}
 }
 
@@ -396,6 +421,15 @@ type ollamaChatRequest struct {
 	Messages []ollamaMessage `json:"messages"`
 	Stream   bool            `json:"stream"`
 	Tools    []ollamaTool    `json:"tools,omitempty"`
+	Options  *ollamaOptions  `json:"options,omitempty"`
+}
+
+// ollamaOptions maps to the Ollama API's per-request options block. Only the
+// fields we actually use are declared.
+type ollamaOptions struct {
+	// NumCtx is the context window in tokens. Ollama's default is small
+	// (2048-4096) and truncates the conversation; we override per request.
+	NumCtx int `json:"num_ctx,omitempty"`
 }
 
 type ollamaMessage struct {

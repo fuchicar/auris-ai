@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"auris/pkg/news"
 )
 
 // AurisConfig is the in-memory representation of the agent configuration.
@@ -32,6 +34,11 @@ type AurisConfig struct {
 
 	// ActiveSessionID is the ID of the session file currently in use.
 	ActiveSessionID string
+
+	// NewsFeeds is the list of RSS/Atom feeds used by the fetch_news tool.
+	// Stored as plaintext JSON (no credentials). Defaults to DefaultFeeds on
+	// first run.
+	NewsFeeds []news.FeedConfig
 }
 
 // ChatTurn is a single message in the agent-mode conversation history.
@@ -104,6 +111,7 @@ type diskConfig struct {
 	AITaskRoutes     map[string]AITaskRoute      `json:"ai_task_routes,omitempty"`
 	ChatHistory      []ChatTurn                  `json:"chat_history,omitempty"`
 	ActiveSessionID  string                      `json:"active_session_id,omitempty"`
+	NewsFeeds        []news.FeedConfig           `json:"news_feeds,omitempty"`
 }
 
 type diskAIProvider struct {
@@ -138,6 +146,7 @@ func Load(passphrase string) (*AurisConfig, error) {
 				Providers:    make(map[string]*ProviderConfig),
 				AIProviders:  make(map[string]*AIProviderConfig),
 				AITaskRoutes: make(map[string]AITaskRoute),
+				NewsFeeds:    news.DefaultFeeds,
 			}, nil
 		}
 		return nil, fmt.Errorf("config: Load: read file: %w", err)
@@ -161,6 +170,11 @@ func Load(passphrase string) (*AurisConfig, error) {
 	}
 	key := deriveKey(passphrase, params)
 
+	newsFeeds := disk.NewsFeeds
+	if len(newsFeeds) == 0 {
+		newsFeeds = news.DefaultFeeds
+	}
+
 	cfg := &AurisConfig{
 		ActiveProvider:   disk.ActiveProvider,
 		Providers:        make(map[string]*ProviderConfig, len(disk.Providers)),
@@ -173,6 +187,7 @@ func Load(passphrase string) (*AurisConfig, error) {
 		AIProviders:      make(map[string]*AIProviderConfig),
 		ChatHistory:      disk.ChatHistory,
 		ActiveSessionID:  disk.ActiveSessionID,
+		NewsFeeds:        newsFeeds,
 	}
 	if cfg.AITaskRoutes == nil {
 		cfg.AITaskRoutes = make(map[string]AITaskRoute)
@@ -230,6 +245,7 @@ func Save(cfg *AurisConfig, passphrase string) error {
 		AITaskRoutes:     cfg.AITaskRoutes,
 		ChatHistory:      cfg.ChatHistory,
 		ActiveSessionID:  cfg.ActiveSessionID,
+		NewsFeeds:        cfg.NewsFeeds,
 	}
 
 	if len(cfg.Providers) > 0 {

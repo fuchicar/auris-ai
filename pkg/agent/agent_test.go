@@ -111,8 +111,8 @@ func toolCallArgs(t *testing.T, args map[string]any) string {
 
 func TestBuildTools_Count(t *testing.T) {
 	tools := buildTools()
-	if len(tools) != 25 {
-		t.Errorf("expected 25 tools, got %d", len(tools))
+	if len(tools) != 26 {
+		t.Errorf("expected 26 tools, got %d", len(tools))
 	}
 }
 
@@ -287,6 +287,20 @@ func TestDispatch_UnknownTool(t *testing.T) {
 	}, &lk)
 	if result[:6] != "error:" {
 		t.Errorf("expected error prefix, got %q", result)
+	}
+}
+
+func TestDispatch_FetchNews_NoProvider(t *testing.T) {
+	a := New(&mockLLM{}, &mockMarket{}, "")
+	var lk ProgressKind
+	result := a.dispatch(context.Background(), llm.ToolCall{
+		Function: llm.ToolCallFunction{
+			Name:      "fetch_news",
+			Arguments: `{"keywords":["IBEX"]}`,
+		},
+	}, &lk)
+	if result != `{"error":"no news provider configured"}` {
+		t.Errorf("unexpected result when news provider is nil: %q", result)
 	}
 }
 

@@ -9,6 +9,7 @@ import (
 
 	"auris/pkg/llm"
 	"auris/pkg/market"
+	"auris/pkg/news"
 )
 
 func buildTools() []llm.Tool {
@@ -228,6 +229,8 @@ func buildTools() []llm.Tool {
 				"label":  str("Name of the series used in the summary (e.g. \"AAPL daily returns\")"),
 			}, []string{"values", "label"}),
 		),
+
+		tool(news.ToolName, news.ToolDescription, news.ToolParams()),
 	}
 }
 
@@ -235,6 +238,16 @@ func buildTools() []llm.Tool {
 // or an error description the model can reason about. lastKind tracks the last
 // ProgressKind emitted this turn so consecutive same-category events are skipped.
 func (a *Agent) dispatch(ctx context.Context, call llm.ToolCall, lastKind *ProgressKind) string {
+	a.debugf("[dispatch] tool=%s args=%s", call.Function.Name, truncate(call.Function.Arguments, 300))
+	start := time.Now()
+	result := a.dispatchInner(ctx, call, lastKind)
+	a.debugf("[dispatch] tool=%s done duration=%dms result=%s",
+		call.Function.Name, time.Since(start).Milliseconds(), truncate(result, 300))
+	return result
+}
+
+// dispatchInner is the actual tool dispatch logic; dispatch wraps it with logging.
+func (a *Agent) dispatchInner(ctx context.Context, call llm.ToolCall, lastKind *ProgressKind) string {
 	// Emit a progress event for market and calculation tools (deduplicated).
 	var kind ProgressKind
 	switch {
@@ -382,6 +395,40 @@ func (a *Agent) dispatch(ctx context.Context, call llm.ToolCall, lastKind *Progr
 			return `error: values must be an array of numbers`
 		}
 		return encode(calcStats(vals, str("label")))
+	}
+
+	// News tool — no market provider needed.
+	if call.Function.Name == news.ToolName {
+		if kind := ProgressNews; kind != *lastKind {
+			*lastKind = kind
+			if a.progressCh != nil {
+				select {
+				case a.progressCh <- ProgressEvent{Kind: kind}:
+				default:
+				}
+			}
+		}
+		if a.news == nil {
+			return `{"error":"no news provider configured"}`
+		}
+		var params news.FetchNewsParams
+		if err := json.Unmarshal([]byte(call.Function.Arguments), &params); err != nil {
+			return fmt.Sprintf("error: invalid arguments: %s", err)
+		}
+		items, err := a.news.HandleFetchNews(ctx, params)
+		if err != nil {
+			b, _ := json.Marshal(map[string]any{"status": "error", "message": err.Error()})
+			return string(b)
+		}
+		if len(items) == 0 {
+			b, _ := json.Marshal(map[string]any{
+				"status":  "no_results",
+				"message": "No se encontraron noticias recientes con los criterios especificados.",
+			})
+			return string(b)
+		}
+		b, _ := json.Marshal(items)
+		return string(b)
 	}
 
 	if a.market == nil {

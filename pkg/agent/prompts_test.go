@@ -133,6 +133,48 @@ func TestFormatProfile_PartialFields(t *testing.T) {
 	}
 }
 
+// TestSystemPrompt_FetchNewsAlways verifies that the system prompt uses the same prescriptive
+// "SIEMPRE" pattern for fetch_news as it does for market data tools.
+// Without this, models with "no internet access" training prior ignore the tool.
+func TestSystemPrompt_FetchNewsAlways(t *testing.T) {
+	msg := BuildSystemMessage(llm.TaskChat, nil)
+	if msg == nil {
+		t.Fatal("BuildSystemMessage returned nil")
+	}
+	if !strings.Contains(msg.Content, "fetch_news") {
+		t.Error("system prompt must explicitly mention fetch_news")
+	}
+	fetchNewsIdx := strings.Index(msg.Content, "fetch_news")
+	start := fetchNewsIdx - 300
+	if start < 0 {
+		start = 0
+	}
+	end := fetchNewsIdx + 300
+	if end > len(msg.Content) {
+		end = len(msg.Content)
+	}
+	ctx := msg.Content[start:end]
+	if !strings.Contains(ctx, "SIEMPRE") {
+		t.Error("system prompt must include SIEMPRE directive near fetch_news (same pattern as market data)")
+	}
+}
+
+// TestSystemPrompt_FetchNewsCountersPrior verifies that the system prompt explicitly
+// counters the LLM training prior "no tengo acceso a noticias en tiempo real".
+// Without an explicit counter, models trained to say "I can't access the internet" will
+// ignore fetch_news even when it's available as a tool.
+func TestSystemPrompt_FetchNewsCountersPrior(t *testing.T) {
+	msg := BuildSystemMessage(llm.TaskChat, nil)
+	if msg == nil {
+		t.Fatal("BuildSystemMessage returned nil")
+	}
+	lower := strings.ToLower(msg.Content)
+	hasCounter := strings.Contains(lower, "no respondas") || strings.Contains(lower, "tiempo real")
+	if !hasCounter {
+		t.Error("system prompt must counter the 'no tengo acceso a noticias en tiempo real' training prior")
+	}
+}
+
 func TestFormatProfile_RestrictionsCountryOnlyWhenSet(t *testing.T) {
 	// RestrictionsCountry has an explicit conditional — test both branches.
 	withCountry := &config.FinancialProfile{RestrictionsCountry: "Germany"}
