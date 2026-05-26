@@ -7,7 +7,7 @@ import (
 
 // knownCommands lists all slash commands recognized by the main menu.
 // This slice is used for hint display and autocompletion in the future.
-var knownCommands = []string{"theme", "language", "profile", "model", "agent", "menu", "exit"}
+var knownCommands = []string{"theme", "language", "profile", "model", "aiproviders", "agent", "menu", "exit"}
 
 // parseCommand parses a slash-prefixed user input string into a [CommandResult].
 // Input examples: "/theme", "/theme dark", "/language es".

@@ -22,26 +22,28 @@ const (
 // AIDefaultModelModel lets the user pick a default AI provider and then a
 // default model from that provider's available model list.
 type AIDefaultModelModel struct {
-	entries       []registry.LLMEntry    // configured providers in order
-	modelsByProv  map[string][]llm.Model // models per provider key
-	step          aiModelStep
-	provCursor    int
-	provScrollOff int // first visible provider index
-	modelCursor   int
+	entries        []registry.LLMEntry    // configured providers in order
+	modelsByProv   map[string][]llm.Model // models per provider key
+	step           aiModelStep
+	provCursor     int
+	provScrollOff  int // first visible provider index
+	modelCursor    int
 	modelScrollOff int // first visible model index
-	selProvider   string
-	height        int // terminal height (updated by WindowSizeMsg)
-	styles        *Styles
+	selProvider    string
+	height         int // terminal height (updated by WindowSizeMsg)
+	styles         *Styles
+	canGoBack      bool
 }
 
 // newAIDefaultModelModel constructs an [AIDefaultModelModel].
 // entries contains only the providers that were successfully configured.
 // modelsByProv maps each provider key to its discovered model list.
-func newAIDefaultModelModel(entries []registry.LLMEntry, modelsByProv map[string][]llm.Model, s *Styles) *AIDefaultModelModel {
+func newAIDefaultModelModel(entries []registry.LLMEntry, modelsByProv map[string][]llm.Model, s *Styles, canGoBack bool) *AIDefaultModelModel {
 	m := &AIDefaultModelModel{
 		entries:      entries,
 		modelsByProv: modelsByProv,
 		styles:       s,
+		canGoBack:    canGoBack,
 	}
 	// If there is only one provider, skip directly to model selection.
 	if len(entries) == 1 {
@@ -104,6 +106,12 @@ func (m *AIDefaultModelModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.provCursor++
 				m.provScrollOff = clampScrollOff(m.provCursor, m.provScrollOff, maxVis)
 			}
+		case tea.KeyEsc:
+			if m.canGoBack {
+				return m, func() tea.Msg {
+					return ScreenDoneMsg{From: ScreenAIDefaultModel, Result: nil}
+				}
+			}
 		case tea.KeyEnter:
 			m.selProvider = m.entries[m.provCursor].Key
 			m.modelCursor = 0
@@ -126,7 +134,13 @@ func (m *AIDefaultModelModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case tea.KeyEsc:
 			if len(m.entries) > 1 {
+				// Multiple providers: go back to provider selection step.
 				m.step = aiModelStepProvider
+			} else if m.canGoBack {
+				// Single provider: escape goes back to the calling screen.
+				return m, func() tea.Msg {
+					return ScreenDoneMsg{From: ScreenAIDefaultModel, Result: nil}
+				}
 			}
 		case tea.KeyEnter:
 			if len(models) == 0 {
@@ -184,13 +198,28 @@ func (m *AIDefaultModelModel) View() string {
 			labels[i] = e.DisplayName
 		}
 		rows := m.renderScrollList(labels, m.provCursor, m.provScrollOff)
-		hint := m.styles.Hint.Render(locale.T("setup.ai.model.hint"))
+		hintText := locale.T("setup.ai.model.hint")
+		if m.canGoBack {
+			hintText += "  " + locale.T("hint.esc_back")
+		}
+		hint := m.styles.Hint.Render(hintText)
 		parts := append([]string{title}, rows...)
 		parts = append(parts, hint)
 		return lipgloss.JoinVertical(lipgloss.Left, parts...)
 
 	case aiModelStepModel:
-		title := m.styles.Subtitle.Render(locale.T("setup.ai.model.model.label"))
+		var provName string
+		for _, e := range m.entries {
+			if e.Key == m.selProvider {
+				provName = e.DisplayName
+				break
+			}
+		}
+		titleText := locale.T("setup.ai.model.model.label")
+		if provName != "" {
+			titleText = fmt.Sprintf("%s — %s", titleText, provName)
+		}
+		title := m.styles.Subtitle.Render(titleText)
 		models := m.modelsByProv[m.selProvider]
 
 		var rows []string
@@ -208,13 +237,16 @@ func (m *AIDefaultModelModel) View() string {
 			rows = m.renderScrollList(labels, m.modelCursor, m.modelScrollOff)
 		}
 
-		var hintKey string
+		var hintText string
 		if len(m.entries) > 1 {
-			hintKey = "setup.ai.model.esc_back"
+			hintText = locale.T("setup.ai.model.esc_back")
 		} else {
-			hintKey = "setup.ai.model.hint"
+			hintText = locale.T("setup.ai.model.hint")
+			if m.canGoBack {
+				hintText += "  " + locale.T("hint.esc_back")
+			}
 		}
-		hint := m.styles.Hint.Render(locale.T(hintKey))
+		hint := m.styles.Hint.Render(hintText)
 		parts := append([]string{title}, rows...)
 		parts = append(parts, hint)
 		return lipgloss.JoinVertical(lipgloss.Left, parts...)

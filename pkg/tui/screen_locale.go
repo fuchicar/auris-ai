@@ -23,19 +23,20 @@ var localeOptions = []struct {
 // It is shown during first-run setup when automatic detection is uncertain,
 // and can also be reached from the main menu via the /language command.
 type LocaleModel struct {
-	cursor int
-	styles *Styles
+	cursor    int
+	styles    *Styles
+	canGoBack bool
 }
 
 // newLocaleModel constructs a [LocaleModel].
-func newLocaleModel(s *Styles) *LocaleModel {
-	return &LocaleModel{styles: s}
+func newLocaleModel(s *Styles, canGoBack bool) *LocaleModel {
+	return &LocaleModel{styles: s, canGoBack: canGoBack}
 }
 
 // Init implements [tea.Model].
 func (m *LocaleModel) Init() tea.Cmd { return nil }
 
-// Update implements [tea.Model]. Arrow keys navigate; Enter confirms.
+// Update implements [tea.Model]. Arrow keys navigate; Enter confirms; Esc goes back.
 func (m *LocaleModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if key, ok := msg.(tea.KeyMsg); ok {
 		switch key.Type {
@@ -46,6 +47,12 @@ func (m *LocaleModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case tea.KeyDown:
 			if m.cursor < len(localeOptions)-1 {
 				m.cursor++
+			}
+		case tea.KeyEsc:
+			if m.canGoBack {
+				return m, func() tea.Msg {
+					return ScreenDoneMsg{From: ScreenLocale, Result: nil}
+				}
 			}
 		case tea.KeyEnter:
 			chosen := localeOptions[m.cursor].tag
@@ -73,7 +80,11 @@ func (m *LocaleModel) View() string {
 		rows = append(rows, row)
 	}
 
-	hint := m.styles.Hint.Render(locale.T("setup.locale.hint"))
+	hintText := locale.T("setup.locale.hint")
+	if m.canGoBack {
+		hintText += "  " + locale.T("hint.esc_back")
+	}
+	hint := m.styles.Hint.Render(hintText)
 	parts := append([]string{label}, rows...)
 	parts = append(parts, hint)
 	return lipgloss.JoinVertical(lipgloss.Left, parts...)

@@ -4,14 +4,17 @@ import (
 	"context"
 	"log"
 	"os"
+	"sync"
 
 	"github.com/charmbracelet/lipgloss"
 	tea "github.com/charmbracelet/bubbletea"
 
+	"auris/pkg/agent"
 	"auris/pkg/config"
 	"auris/pkg/llm"
 	"auris/pkg/locale"
 	"auris/pkg/market"
+	"auris/pkg/portfolio"
 	"auris/pkg/registry"
 )
 
@@ -34,6 +37,12 @@ const (
 	ScreenAgent                   // agent chat UI
 	ScreenSessionSelect           // session picker
 	ScreenDisclaimer              // AI/financial disclaimer — first-run setup only
+	ScreenPortfolioMenu           // portfolio list
+	ScreenPortfolioCreate         // portfolio create/edit form
+	ScreenPortfolioView           // portfolio dashboard
+	ScreenPortfolioInstruments    // instrument list for a portfolio
+	ScreenInstrumentSearch        // search + add instrument flow
+	ScreenPortfolioInstrumentView // single instrument detail
 )
 
 // FlowContext distinguishes whether a settings screen was opened during first-
@@ -48,6 +57,8 @@ const (
 	FlowMenu
 	// FlowAgent means settings changes save to disk and return to agent mode.
 	FlowAgent
+	// FlowPortfolio means settings changes save to disk and return to the active portfolio view.
+	FlowPortfolio
 )
 
 // ─── Message types ──────────────────────────────────────────────────────────
@@ -167,13 +178,21 @@ type AppModel struct {
 	selectedEntry    registry.MarketEntry // provider chosen in ScreenProvider
 	width, height    int            // current terminal dimensions (from WindowSizeMsg)
 
-	// AI setup state — used during the setup wizard.
-	pendingLLMProviders []string              // provider keys still to be configured
-	pendingLLMIdx       int                   // index of the provider currently being configured
+	// AI setup state — used during the setup wizard and /aiproviders management.
+	pendingLLMProviders []string               // provider keys still to be configured
+	pendingLLMIdx       int                    // index of the provider currently being configured
 	pendingLLMModels    map[string][]llm.Model // models discovered per provider key
+	managingProviders   bool                   // true when in /aiproviders flow (not initial setup)
 
 	// debugLogger, when non-nil, is forwarded to the agent for diagnostic output.
 	debugLogger *log.Logger
+
+	// Portfolio management state.
+	activePortfolio        *portfolio.Portfolio  // portfolio currently being viewed
+	activeInstrument       *portfolio.Instrument // instrument currently being viewed
+	instrumentSearchOrigin Screen                // where to return after instrument search
+	pendingPortfolioCreate bool                  // waiting for modelsLoadedMsg to open create form
+	pendingPortfolioEdit   bool                  // waiting for modelsLoadedMsg to open edit form
 }
 
 // NewApp constructs the root model. The Welcome screen is always shown first.
@@ -244,8 +263,22 @@ func (a *AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Loading failed — stay on current screen silently.
 			return a, nil
 		}
+		if a.pendingPortfolioCreate {
+			a.pendingPortfolioCreate = false
+			allPortfolios, _ := portfolio.ListPortfolios()
+			a.screen = ScreenPortfolioCreate
+			a.current = newPortfolioCreateModel(a.styles, nil, allPortfolios, msg.entries, msg.byProv)
+			return a, a.current.Init()
+		}
+		if a.pendingPortfolioEdit {
+			a.pendingPortfolioEdit = false
+			allPortfolios, _ := portfolio.ListPortfolios()
+			a.screen = ScreenPortfolioCreate
+			a.current = newPortfolioCreateModel(a.styles, a.activePortfolio, allPortfolios, msg.entries, msg.byProv)
+			return a, a.current.Init()
+		}
 		a.screen = ScreenAIDefaultModel
-		a.current = newAIDefaultModelModel(msg.entries, msg.byProv, a.styles)
+		a.current = newAIDefaultModelModel(msg.entries, msg.byProv, a.styles, true)
 		return a, a.current.Init()
 
 	case ScreenDoneMsg:
@@ -288,10 +321,10 @@ func (a *AppModel) transition(msg ScreenDoneMsg) (tea.Model, tea.Cmd) {
 		if a.showLocaleSelect {
 			a.flowContext = FlowSetup
 			a.screen = ScreenLocale
-			a.current = newLocaleModel(a.styles)
+			a.current = newLocaleModel(a.styles, false)
 		} else {
 			a.screen = ScreenTheme
-			a.current = newThemeModel(a.styles)
+			a.current = newThemeModel(a.styles, false)
 		}
 
 	case ScreenLocale:
@@ -306,7 +339,7 @@ func (a *AppModel) transition(msg ScreenDoneMsg) (tea.Model, tea.Cmd) {
 			a.current = newMenuModel(a.styles, a.cfg.ActiveAIProvider != "")
 		} else {
 			a.screen = ScreenTheme
-			a.current = newThemeModel(a.styles)
+			a.current = newThemeModel(a.styles, false)
 		}
 
 	case ScreenUnlock:
@@ -337,7 +370,7 @@ func (a *AppModel) transition(msg ScreenDoneMsg) (tea.Model, tea.Cmd) {
 			a.passphrase = r.Passphrase
 		}
 		a.screen = ScreenProfile
-		a.current = newProfileModel(a.styles, nil)
+		a.current = newProfileModel(a.styles, nil, false)
 
 	case ScreenProfile:
 		if r, ok := msg.Result.(ProfileResult); ok {
@@ -370,10 +403,13 @@ func (a *AppModel) transition(msg ScreenDoneMsg) (tea.Model, tea.Cmd) {
 			// Config saved after AI setup completes (or skipped).
 		}
 		a.screen = ScreenAIProviderSelect
-		a.current = newAIProviderSelectModel(a.styles)
+		a.current = newAIProviderSelectModel(a.styles, nil, false)
 
 	case ScreenAIProviderSelect:
 		if r, ok := msg.Result.(AIProviderSelectResult); ok {
+			if a.managingProviders {
+				return a.applyProviderSelection(r.Keys)
+			}
 			if len(r.Keys) == 0 {
 				// User skipped AI setup.
 				a.saveConfig()
@@ -387,7 +423,15 @@ func (a *AppModel) transition(msg ScreenDoneMsg) (tea.Model, tea.Cmd) {
 				entry, _ := findLLMEntry(r.Keys[0])
 				a.current = newAIProviderConfigModel(entry, a.styles)
 			}
+			return a, a.current.Init()
 		}
+		// nil result = cancelled via escape
+		a.managingProviders = false
+		if a.flowContext == FlowAgent && a.cfg.ActiveAIProvider != "" {
+			return a.enterAgentMode()
+		}
+		a.screen = ScreenMenu
+		a.current = newMenuModel(a.styles, a.cfg.ActiveAIProvider != "")
 
 	case ScreenAIProviderConfig:
 		if r, ok := msg.Result.(AIProviderConfigResult); ok {
@@ -406,8 +450,24 @@ func (a *AppModel) transition(msg ScreenDoneMsg) (tea.Model, tea.Cmd) {
 				entry, _ := findLLMEntry(nextKey)
 				a.screen = ScreenAIProviderConfig
 				a.current = newAIProviderConfigModel(entry, a.styles)
+			} else if a.managingProviders {
+				// /aiproviders flow: only go to model selection when no active provider is set.
+				a.managingProviders = false
+				if a.cfg.ActiveAIProvider == "" {
+					var entries []registry.LLMEntry
+					for _, key := range a.pendingLLMProviders {
+						if e, ok := findLLMEntry(key); ok {
+							entries = append(entries, e)
+						}
+					}
+					a.screen = ScreenAIDefaultModel
+					a.current = newAIDefaultModelModel(entries, a.pendingLLMModels, a.styles, true)
+				} else {
+					a.saveConfig()
+					return a.returnFromProviderManagement()
+				}
 			} else {
-				// All providers configured — pick a default model.
+				// Setup flow: pick a default model from the newly configured providers.
 				var entries []registry.LLMEntry
 				for _, key := range a.pendingLLMProviders {
 					if e, ok := findLLMEntry(key); ok {
@@ -415,7 +475,7 @@ func (a *AppModel) transition(msg ScreenDoneMsg) (tea.Model, tea.Cmd) {
 					}
 				}
 				a.screen = ScreenAIDefaultModel
-				a.current = newAIDefaultModelModel(entries, a.pendingLLMModels, a.styles)
+				a.current = newAIDefaultModelModel(entries, a.pendingLLMModels, a.styles, false)
 			}
 		}
 
@@ -453,7 +513,15 @@ func (a *AppModel) transition(msg ScreenDoneMsg) (tea.Model, tea.Cmd) {
 	case ScreenSessionSelect:
 		switch r := msg.Result.(type) {
 		case SessionSelectResult:
-			// Switch to the selected session.
+			if a.flowContext == FlowPortfolio && a.activePortfolio != nil {
+				if s, err := config.LoadSession(r.ID); err == nil && s != nil {
+					a.activePortfolio.ActiveSessionID = r.ID
+					_ = portfolio.SavePortfolio(a.activePortfolio)
+					return a.enterPortfolioAgentModeWithSession(a.activePortfolio, s)
+				}
+				return a.enterPortfolioAgentMode(a.activePortfolio)
+			}
+			// Switch to the selected global session.
 			if s, err := config.LoadSession(r.ID); err == nil && s != nil {
 				a.cfg.ActiveSessionID = r.ID
 				a.saveConfig()
@@ -463,7 +531,149 @@ func (a *AppModel) transition(msg ScreenDoneMsg) (tea.Model, tea.Cmd) {
 		default:
 			_ = r
 			// Esc: return to current session unchanged.
+			if a.flowContext == FlowPortfolio && a.activePortfolio != nil {
+				return a.enterPortfolioAgentMode(a.activePortfolio)
+			}
 			return a.enterAgentMode()
+		}
+
+	case ScreenPortfolioMenu:
+		switch r := msg.Result.(type) {
+		case nil:
+			a.screen = ScreenMenu
+			a.current = newMenuModel(a.styles, a.cfg.ActiveAIProvider != "")
+		case PortfolioMenuResult:
+			switch r.Action {
+			case "create":
+				a.pendingPortfolioCreate = true
+				return a, a.loadModelsCmd()
+			case "view":
+				a.activePortfolio = r.Portfolio
+				mp := a.buildMarketProvider()
+				a.screen = ScreenPortfolioView
+				a.current = newPortfolioViewModel(a.activePortfolio, mp, a.styles)
+			}
+		}
+
+	case ScreenPortfolioCreate:
+		switch r := msg.Result.(type) {
+		case nil:
+			// Cancelled — go back to portfolio menu.
+			portfolios, _ := portfolio.ListPortfolios()
+			a.screen = ScreenPortfolioMenu
+			a.current = newPortfolioMenuModel(a.styles, portfolios)
+		case PortfolioCreateResult:
+			if r.EditID != "" {
+				// Edit existing portfolio.
+				if p, err := portfolio.LoadPortfolio(r.EditID); err == nil && p != nil {
+					p.Name = r.Name
+					p.Description = r.Description
+					p.AIProvider = r.AIProvider
+					p.AIModel = r.AIModel
+					_ = portfolio.SavePortfolio(p)
+					a.activePortfolio = p
+				}
+			} else {
+				// New portfolio.
+				p := portfolio.NewPortfolio(r.Name)
+				p.Description = r.Description
+				p.AIProvider = r.AIProvider
+				p.AIModel = r.AIModel
+				_ = portfolio.SavePortfolio(p)
+				a.activePortfolio = p
+			}
+			mp := a.buildMarketProvider()
+			a.screen = ScreenPortfolioView
+			a.current = newPortfolioViewModel(a.activePortfolio, mp, a.styles)
+		}
+
+	case ScreenPortfolioView:
+		switch r := msg.Result.(type) {
+		case nil:
+			portfolios, _ := portfolio.ListPortfolios()
+			a.screen = ScreenPortfolioMenu
+			a.current = newPortfolioMenuModel(a.styles, portfolios)
+		case PortfolioViewResult:
+			switch r.Action {
+			case "agent":
+				a.activePortfolio = r.Portfolio
+				return a.enterPortfolioAgentMode(r.Portfolio)
+			case "instruments":
+				a.activePortfolio = r.Portfolio
+				a.screen = ScreenPortfolioInstruments
+				a.current = newPortfolioInstrumentsModel(r.Portfolio, a.styles)
+			case "add":
+				a.activePortfolio = r.Portfolio
+				a.instrumentSearchOrigin = ScreenPortfolioView
+				mp := a.buildMarketProvider()
+				a.screen = ScreenInstrumentSearch
+				a.current = newInstrumentSearchModel(mp, a.styles)
+			case "edit":
+				a.activePortfolio = r.Portfolio
+				a.pendingPortfolioEdit = true
+				return a, a.loadModelsCmd()
+			case "deleted":
+				portfolios, _ := portfolio.ListPortfolios()
+				a.screen = ScreenPortfolioMenu
+				a.current = newPortfolioMenuModel(a.styles, portfolios)
+			}
+		}
+
+	case ScreenPortfolioInstruments:
+		switch r := msg.Result.(type) {
+		case PortfolioInstrumentsResult:
+			switch r.Action {
+			case "back":
+				a.activePortfolio = r.Portfolio
+				mp := a.buildMarketProvider()
+				a.screen = ScreenPortfolioView
+				a.current = newPortfolioViewModel(a.activePortfolio, mp, a.styles)
+			case "view":
+				a.activePortfolio = r.Portfolio
+				a.activeInstrument = r.Instrument
+				mp := a.buildMarketProvider()
+				a.screen = ScreenPortfolioInstrumentView
+				a.current = newPortfolioInstrumentViewModel(r.Portfolio, r.Instrument, mp, a.styles)
+			case "add":
+				a.activePortfolio = r.Portfolio
+				a.instrumentSearchOrigin = ScreenPortfolioInstruments
+				mp := a.buildMarketProvider()
+				a.screen = ScreenInstrumentSearch
+				a.current = newInstrumentSearchModel(mp, a.styles)
+			}
+		}
+
+	case ScreenInstrumentSearch:
+		switch r := msg.Result.(type) {
+		case nil:
+			// Cancelled — go back to origin screen.
+			return a.returnFromInstrumentSearch()
+		case InstrumentSearchResult:
+			// Add the instrument to the active portfolio.
+			if a.activePortfolio != nil {
+				ins := portfolio.Instrument{
+					ID:     portfolio.NewInstrumentID(),
+					Symbol: r.Symbol,
+					Name:   r.Name,
+					Type:   r.Type,
+				}
+				if r.Lot != nil {
+					ins.Lots = []portfolio.Lot{*r.Lot}
+				}
+				a.activePortfolio.Instruments = append(a.activePortfolio.Instruments, ins)
+				_ = portfolio.SavePortfolio(a.activePortfolio)
+			}
+			return a.returnFromInstrumentSearch()
+		}
+
+	case ScreenPortfolioInstrumentView:
+		switch r := msg.Result.(type) {
+		case PortfolioInstrumentViewResult:
+			if r.Portfolio != nil {
+				a.activePortfolio = r.Portfolio
+			}
+			a.screen = ScreenPortfolioInstruments
+			a.current = newPortfolioInstrumentsModel(a.activePortfolio, a.styles)
 		}
 	}
 
@@ -505,7 +715,7 @@ func (a *AppModel) handleCommand(cmd CommandResult) (tea.Model, tea.Cmd) {
 		// Navigate to theme picker.
 		a.flowContext = FlowMenu
 		a.screen = ScreenTheme
-		a.current = newThemeModel(a.styles)
+		a.current = newThemeModel(a.styles, true)
 
 	case "language":
 		if len(cmd.Args) == 1 {
@@ -522,12 +732,12 @@ func (a *AppModel) handleCommand(cmd CommandResult) (tea.Model, tea.Cmd) {
 		// Navigate to language picker.
 		a.flowContext = FlowMenu
 		a.screen = ScreenLocale
-		a.current = newLocaleModel(a.styles)
+		a.current = newLocaleModel(a.styles, true)
 
 	case "profile":
 		a.flowContext = FlowMenu
 		a.screen = ScreenProfile
-		a.current = newProfileModel(a.styles, a.cfg.FinancialProfile)
+		a.current = newProfileModel(a.styles, a.cfg.FinancialProfile, true)
 
 	case "model":
 		if a.cfg.ActiveAIProvider == "" {
@@ -536,6 +746,21 @@ func (a *AppModel) handleCommand(cmd CommandResult) (tea.Model, tea.Cmd) {
 		}
 		a.flowContext = FlowMenu
 		return a, a.loadModelsCmd()
+
+	case "aiproviders":
+		preSelected := make(map[string]bool, len(a.cfg.AIProviders))
+		for k := range a.cfg.AIProviders {
+			preSelected[k] = true
+		}
+		a.flowContext = FlowMenu
+		a.managingProviders = true
+		a.screen = ScreenAIProviderSelect
+		a.current = newAIProviderSelectModel(a.styles, preSelected, true)
+
+	case "portfolios":
+		portfolios, _ := portfolio.ListPortfolios()
+		a.screen = ScreenPortfolioMenu
+		a.current = newPortfolioMenuModel(a.styles, portfolios)
 	}
 
 	return a, a.current.Init()
@@ -547,6 +772,13 @@ func (a *AppModel) handleAgentCommand(cmd CommandResult) (tea.Model, tea.Cmd) {
 	switch cmd.Cmd {
 	case "menu":
 		a.saveConfig()
+		if a.flowContext == FlowPortfolio && a.activePortfolio != nil {
+			// Return to portfolio view instead of main menu.
+			mp := a.buildMarketProvider()
+			a.screen = ScreenPortfolioView
+			a.current = newPortfolioViewModel(a.activePortfolio, mp, a.styles)
+			return a, a.current.Init()
+		}
 		a.screen = ScreenMenu
 		a.current = newMenuModel(a.styles, a.cfg.ActiveAIProvider != "")
 		return a, a.current.Init()
@@ -556,6 +788,14 @@ func (a *AppModel) handleAgentCommand(cmd CommandResult) (tea.Model, tea.Cmd) {
 		return a, tea.Quit
 
 	case "new":
+		if a.flowContext == FlowPortfolio && a.activePortfolio != nil {
+			s := config.NewSession()
+			s.PortfolioID = a.activePortfolio.ID
+			_ = config.SaveSession(s)
+			a.activePortfolio.ActiveSessionID = s.ID
+			_ = portfolio.SavePortfolio(a.activePortfolio)
+			return a.enterPortfolioAgentModeWithSession(a.activePortfolio, s)
+		}
 		s := config.NewSession()
 		_ = config.SaveSession(s)
 		a.cfg.ActiveSessionID = s.ID
@@ -563,6 +803,12 @@ func (a *AppModel) handleAgentCommand(cmd CommandResult) (tea.Model, tea.Cmd) {
 		return a.enterAgentModeWithSession(s)
 
 	case "session":
+		if a.flowContext == FlowPortfolio && a.activePortfolio != nil {
+			sessions, _ := config.ListPortfolioSessions(a.activePortfolio.ID)
+			a.screen = ScreenSessionSelect
+			a.current = newSessionSelectModel(sessions, a.activePortfolio.ActiveSessionID, a.styles, a.width, a.height)
+			return a, a.current.Init()
+		}
 		sessions, _ := config.ListSessions()
 		a.screen = ScreenSessionSelect
 		a.current = newSessionSelectModel(sessions, a.cfg.ActiveSessionID, a.styles, a.width, a.height)
@@ -596,6 +842,17 @@ func (a *AppModel) handleAgentCommand(cmd CommandResult) (tea.Model, tea.Cmd) {
 	case "model":
 		a.flowContext = FlowAgent
 		return a, a.loadModelsCmd()
+
+	case "aiproviders":
+		preSelected := make(map[string]bool, len(a.cfg.AIProviders))
+		for k := range a.cfg.AIProviders {
+			preSelected[k] = true
+		}
+		a.flowContext = FlowAgent
+		a.managingProviders = true
+		a.screen = ScreenAIProviderSelect
+		a.current = newAIProviderSelectModel(a.styles, preSelected, true)
+		return a, a.current.Init()
 	}
 
 	return a, nil
@@ -642,7 +899,7 @@ func (a *AppModel) enterAgentModeWithSession(session *config.Session) (tea.Model
 	}
 
 	a.screen = ScreenAgent
-	a.current = newAgentModel(provider, mp, session, a.cfg.DefaultAIModel, a.styles, a.width, a.height, a.cfg.FinancialProfile, a.cfg.NewsFeeds, a.debugLogger)
+	a.current = newAgentModel(provider, mp, session, a.cfg.DefaultAIModel, a.styles, a.width, a.height, a.cfg.FinancialProfile, a.cfg.NewsFeeds, a.debugLogger, nil)
 	return a, a.current.Init()
 }
 
@@ -706,6 +963,69 @@ func (a *AppModel) applyStoredTheme() {
 	}
 }
 
+// applyProviderSelection processes the diff from /aiproviders: removes providers
+// the user unchecked, then queues newly added providers for configuration.
+func (a *AppModel) applyProviderSelection(newKeys []string) (tea.Model, tea.Cmd) {
+	newSet := make(map[string]bool, len(newKeys))
+	for _, k := range newKeys {
+		newSet[k] = true
+	}
+
+	// Remove providers the user deselected.
+	for k := range a.cfg.AIProviders {
+		if !newSet[k] {
+			delete(a.cfg.AIProviders, k)
+			if a.cfg.ActiveAIProvider == k {
+				a.cfg.ActiveAIProvider = ""
+				a.cfg.DefaultAIModel = ""
+			}
+		}
+	}
+
+	// Collect providers that need to be added (not yet in config).
+	var toAdd []string
+	for _, k := range newKeys {
+		if _, exists := a.cfg.AIProviders[k]; !exists {
+			toAdd = append(toAdd, k)
+		}
+	}
+
+	if len(toAdd) > 0 {
+		a.pendingLLMProviders = toAdd
+		a.pendingLLMIdx = 0
+		a.pendingLLMModels = make(map[string][]llm.Model)
+		a.screen = ScreenAIProviderConfig
+		entry, _ := findLLMEntry(toAdd[0])
+		a.current = newAIProviderConfigModel(entry, a.styles)
+		return a, a.current.Init()
+	}
+
+	// Only removals — finalise without configuring new providers.
+	a.managingProviders = false
+	if a.cfg.ActiveAIProvider == "" && len(a.cfg.AIProviders) > 0 {
+		// Active provider was removed; pick any remaining one and load its models
+		// so the user can choose a new default via AIDefaultModelModel.
+		for k := range a.cfg.AIProviders {
+			a.cfg.ActiveAIProvider = k
+			break
+		}
+		return a, a.loadModelsCmd()
+	}
+	a.saveConfig()
+	return a.returnFromProviderManagement()
+}
+
+// returnFromProviderManagement navigates back to the menu or agent depending on
+// the active flow context after /aiproviders completes.
+func (a *AppModel) returnFromProviderManagement() (tea.Model, tea.Cmd) {
+	if a.flowContext == FlowAgent && a.cfg.ActiveAIProvider != "" {
+		return a.enterAgentMode()
+	}
+	a.screen = ScreenMenu
+	a.current = newMenuModel(a.styles, a.cfg.ActiveAIProvider != "")
+	return a, a.current.Init()
+}
+
 // findLLMEntry looks up a registered LLM provider by its stable key.
 func findLLMEntry(key string) (registry.LLMEntry, bool) {
 	for _, e := range registry.AllLLM() {
@@ -716,32 +1036,154 @@ func findLLMEntry(key string) (registry.LLMEntry, bool) {
 	return registry.LLMEntry{}, false
 }
 
-// loadModelsCmd connects to the active AI provider, lists its models, and
-// returns the result as a [modelsLoadedMsg]. Used by the /model command.
-func (a *AppModel) loadModelsCmd() tea.Cmd {
-	entry, ok := findLLMEntry(a.cfg.ActiveAIProvider)
+// buildMarketProvider instantiates the configured market data provider, or nil if none.
+func (a *AppModel) buildMarketProvider() market.ProviderAPI {
+	if a.cfg.ActiveProvider == "" {
+		return nil
+	}
+	pc, ok := a.cfg.Providers[a.cfg.ActiveProvider]
 	if !ok {
-		return func() tea.Msg { return modelsLoadedMsg{err: context.DeadlineExceeded} }
+		return nil
+	}
+	for _, e := range registry.AllMarket() {
+		if e.Key == a.cfg.ActiveProvider {
+			return e.New(pc.APIKey)
+		}
+	}
+	return nil
+}
+
+// resolvePortfolioSession returns the active session for a portfolio, creating
+// and persisting a new portfolio-scoped session when none exists.
+func (a *AppModel) resolvePortfolioSession(p *portfolio.Portfolio) *config.Session {
+	if p.ActiveSessionID != "" {
+		if s, err := config.LoadSession(p.ActiveSessionID); err == nil && s != nil {
+			return s
+		}
+	}
+	s := config.NewSession()
+	s.PortfolioID = p.ID
+	_ = config.SaveSession(s)
+	p.ActiveSessionID = s.ID
+	_ = portfolio.SavePortfolio(p)
+	return s
+}
+
+// enterPortfolioAgentMode launches agent mode scoped to a portfolio.
+func (a *AppModel) enterPortfolioAgentMode(p *portfolio.Portfolio) (tea.Model, tea.Cmd) {
+	if p == nil {
+		return a, nil
+	}
+	session := a.resolvePortfolioSession(p)
+	return a.enterPortfolioAgentModeWithSession(p, session)
+}
+
+// enterPortfolioAgentModeWithSession launches portfolio agent mode using the
+// provided session. It uses the portfolio's assigned AI provider and model,
+// and injects a portfolio-specific system prompt.
+func (a *AppModel) enterPortfolioAgentModeWithSession(p *portfolio.Portfolio, session *config.Session) (tea.Model, tea.Cmd) {
+	if p == nil {
+		return a, nil
+	}
+	providerKey := p.AIProvider
+	modelID := p.AIModel
+	if providerKey == "" || modelID == "" {
+		// Fall back to global defaults.
+		providerKey = a.cfg.ActiveAIProvider
+		modelID = a.cfg.DefaultAIModel
+	}
+	entry, ok := findLLMEntry(providerKey)
+	if !ok {
+		return a, nil
 	}
 	var baseURL, apiKey string
-	if aiCfg, exists := a.cfg.AIProviders[a.cfg.ActiveAIProvider]; exists {
+	if aiCfg, exists := a.cfg.AIProviders[providerKey]; exists {
 		baseURL = aiCfg.BaseURL
 		apiKey = aiCfg.APIKey
 	}
+	provider := entry.New(baseURL, apiKey)
+
+	mp := a.buildMarketProvider()
+	sysMsg := agent.BuildPortfolioSystemMessage(p, a.cfg.FinancialProfile)
+
+	a.screen = ScreenAgent
+	a.flowContext = FlowPortfolio
+	a.current = newAgentModel(provider, mp, session, modelID, a.styles, a.width, a.height, a.cfg.FinancialProfile, a.cfg.NewsFeeds, a.debugLogger, sysMsg)
+	return a, a.current.Init()
+}
+
+// returnFromInstrumentSearch returns to whichever screen launched the instrument search.
+func (a *AppModel) returnFromInstrumentSearch() (tea.Model, tea.Cmd) {
+	switch a.instrumentSearchOrigin {
+	case ScreenPortfolioInstruments:
+		a.screen = ScreenPortfolioInstruments
+		a.current = newPortfolioInstrumentsModel(a.activePortfolio, a.styles)
+	default:
+		mp := a.buildMarketProvider()
+		a.screen = ScreenPortfolioView
+		a.current = newPortfolioViewModel(a.activePortfolio, mp, a.styles)
+	}
+	return a, a.current.Init()
+}
+
+// loadModelsCmd connects to all configured AI providers in parallel, lists
+// their models, and returns the aggregated result as a [modelsLoadedMsg].
+// Providers that fail to connect are silently skipped. Used by /model command.
+func (a *AppModel) loadModelsCmd() tea.Cmd {
+	type provCfg struct {
+		entry   registry.LLMEntry
+		baseURL string
+		apiKey  string
+	}
+	// Snapshot provider configs in registry order before entering the goroutine.
+	var cfgs []provCfg
+	for _, e := range registry.AllLLM() {
+		if aiCfg, ok := a.cfg.AIProviders[e.Key]; ok {
+			cfgs = append(cfgs, provCfg{entry: e, baseURL: aiCfg.BaseURL, apiKey: aiCfg.APIKey})
+		}
+	}
+	if len(cfgs) == 0 {
+		return func() tea.Msg { return modelsLoadedMsg{err: context.DeadlineExceeded} }
+	}
+
 	return func() tea.Msg {
-		drv := entry.New(baseURL, apiKey)
-		ctx, cancel := context.WithTimeout(context.Background(), aiConnectTimeout)
-		defer cancel()
-		if err := drv.Connect(ctx); err != nil {
-			return modelsLoadedMsg{err: err}
+		type result struct {
+			entry  registry.LLMEntry
+			models []llm.Model
 		}
-		models, err := drv.ListModels(ctx)
-		if err != nil {
-			return modelsLoadedMsg{err: err}
+		results := make([]result, len(cfgs))
+		var wg sync.WaitGroup
+		for i, cfg := range cfgs {
+			wg.Add(1)
+			go func(i int, cfg provCfg) {
+				defer wg.Done()
+				drv := cfg.entry.New(cfg.baseURL, cfg.apiKey)
+				ctx, cancel := context.WithTimeout(context.Background(), aiConnectTimeout)
+				defer cancel()
+				if err := drv.Connect(ctx); err != nil {
+					return
+				}
+				models, err := drv.ListModels(ctx)
+				if err != nil {
+					return
+				}
+				results[i] = result{entry: cfg.entry, models: models}
+			}(i, cfg)
 		}
-		return modelsLoadedMsg{
-			entries: []registry.LLMEntry{entry},
-			byProv:  map[string][]llm.Model{entry.Key: models},
+		wg.Wait()
+
+		byProv := make(map[string][]llm.Model, len(cfgs))
+		var entries []registry.LLMEntry
+		for _, r := range results {
+			if r.entry.Key == "" {
+				continue // provider failed to load
+			}
+			entries = append(entries, r.entry)
+			byProv[r.entry.Key] = r.models
 		}
+		if len(entries) == 0 {
+			return modelsLoadedMsg{err: context.DeadlineExceeded}
+		}
+		return modelsLoadedMsg{entries: entries, byProv: byProv}
 	}
 }

@@ -2,8 +2,11 @@ package tui
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -56,9 +59,17 @@ var agentCommands = []agentCmd{
 	{"new", "/new", "agent.cmd.new", true},
 	{"session", "/session", "agent.cmd.session", true},
 	{"model", "/model", "agent.cmd.model", true},
+	{"aiproviders", "/aiproviders", "agent.cmd.aiproviders", true},
+	{"export", "/export [filename]", "agent.cmd.export", true},
 	{"theme", "/theme [light|dark|greenlight|greendark|boxlight|boxdark]", "agent.cmd.theme", false},
 	{"language", "/language [en|es]", "agent.cmd.language", false},
 	{"exit", "/exit", "agent.cmd.exit", true},
+}
+
+// agentExportMsg carries the result of an /export command (file path or error).
+type agentExportMsg struct {
+	path string
+	err  error
 }
 
 // agentConnectResultMsg carries the outcome of the provider Connect() call.
@@ -76,6 +87,9 @@ type agentProgressMsg struct{ kind agent.ProgressKind }
 // activeSessionChangedMsg notifies AppModel that the active session ID changed
 // so it can persist the updated config.
 type activeSessionChangedMsg struct{ id string }
+
+// inferenceTickMsg drives the animation and timer while the agent is running.
+type inferenceTickMsg struct{}
 
 // AgentModel is the chat UI screen. It runs the agentic loop via agent.Agent
 // and persists the conversation as a [config.Session] file after each exchange.
@@ -101,6 +115,9 @@ type AgentModel struct {
 	toolLogs     []string // display-only tool activity lines for the current turn
 	toolLogsTurn int      // index into session.History of the user message that owns toolLogs
 
+	// infoMsg is a transient status line shown after /export (cleared on next send).
+	infoMsg string
+
 	// Markdown renderer — recreated when viewport width or light/dark base changes.
 	renderer      *glamour.TermRenderer
 	rendererWidth int
@@ -111,13 +128,20 @@ type AgentModel struct {
 	cmdCursor      int
 	cmdOffset      int
 	cmdMatches     []agentCmd
+
+	// Inference timer and animation.
+	inferenceStart   time.Time
+	inferenceElapsed time.Duration
+	inferenceCancel  context.CancelFunc
+	boxFrame         int // 0–9, progressive-fill cycle
 }
 
 // newAgentModel constructs an [AgentModel]. session provides the persisted chat
 // log and metadata; modelID selects which model to use for completions.
 // width and height are the current terminal dimensions; passing them allows the
 // viewport to be initialised immediately without waiting for a WindowSizeMsg.
-func newAgentModel(provider llm.AIProvider, mp market.ProviderAPI, session *config.Session, modelID string, s *Styles, width, height int, profile *config.FinancialProfile, newsFeeds []news.FeedConfig, debugLogger *log.Logger) *AgentModel {
+// sysMsg overrides the default system prompt when non-nil (e.g. portfolio agent).
+func newAgentModel(provider llm.AIProvider, mp market.ProviderAPI, session *config.Session, modelID string, s *Styles, width, height int, profile *config.FinancialProfile, newsFeeds []news.FeedConfig, debugLogger *log.Logger, sysMsg *llm.Message) *AgentModel {
 	ti := textinput.New()
 	ti.Placeholder = locale.T("agent.placeholder")
 	ti.Prompt = "" // the ">" prefix is rendered manually in View()
@@ -128,8 +152,12 @@ func newAgentModel(provider llm.AIProvider, mp market.ProviderAPI, session *conf
 
 	// Reconstruct the LLM message context from the persisted history.
 	messages := make([]llm.Message, 0, len(session.History)+1)
-	if sysMsg := agent.BuildSystemMessage(llm.TaskChat, profile); sysMsg != nil {
-		messages = append(messages, *sysMsg)
+	effectiveSysMsg := sysMsg
+	if effectiveSysMsg == nil {
+		effectiveSysMsg = agent.BuildSystemMessage(llm.TaskChat, profile)
+	}
+	if effectiveSysMsg != nil {
+		messages = append(messages, *effectiveSysMsg)
 	}
 	for _, turn := range session.History {
 		messages = append(messages, llm.Message{
@@ -190,13 +218,17 @@ func agentConnectCmd(provider llm.AIProvider, mp market.ProviderAPI) tea.Cmd {
 	}
 }
 
-func startAgentCmd(ag *agent.Agent, messages []llm.Message) tea.Cmd {
+func startAgentCmd(ag *agent.Agent, messages []llm.Message, ctx context.Context) tea.Cmd {
 	return func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
-		defer cancel()
 		msg, err := ag.Chat(ctx, messages)
 		return agentResponseMsg{content: msg.Content, err: err}
 	}
+}
+
+func inferenceTickCmd() tea.Cmd {
+	return tea.Tick(100*time.Millisecond, func(time.Time) tea.Msg {
+		return inferenceTickMsg{}
+	})
 }
 
 // listenProgressCmd blocks on a single read from ch and returns the event.
@@ -266,6 +298,18 @@ func (m *AgentModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, listenProgressCmd(m.progressCh)
 
+	case agentExportMsg:
+		if msg.err != nil {
+			m.err = locale.Tp("agent.export_error", map[string]any{"Error": msg.err.Error()})
+		} else {
+			m.infoMsg = locale.Tp("agent.export_success", map[string]any{"Path": msg.path})
+		}
+		if m.ready {
+			m.viewport.SetContent(m.renderHistory())
+			m.viewport.GotoBottom()
+		}
+		return m, nil
+
 	case agentResponseMsg:
 		return m.handleAgentResponse(msg)
 
@@ -279,6 +323,14 @@ func (m *AgentModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			sp, cmd := m.spin.Update(msg)
 			m.spin = sp
 			return m, cmd
+		}
+		return m, nil
+
+	case inferenceTickMsg:
+		if m.streaming {
+			m.boxFrame = (m.boxFrame + 1) % 10
+			m.inferenceElapsed = time.Since(m.inferenceStart)
+			return m, inferenceTickCmd()
 		}
 		return m, nil
 
@@ -321,8 +373,13 @@ func (m *AgentModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	if m.streaming {
-		// During streaming only scroll keys work.
 		switch msg.Type {
+		case tea.KeyEsc:
+			if m.inferenceCancel != nil {
+				m.inferenceCancel()
+				m.inferenceCancel = nil
+			}
+			return m, nil
 		case tea.KeyUp, tea.KeyDown:
 			vp, cmd := m.viewport.Update(msg)
 			m.viewport = vp
@@ -472,6 +529,9 @@ func (m *AgentModel) handleEnter() (tea.Model, tea.Cmd) {
 	if m.showCmdPalette && len(m.cmdMatches) > 0 {
 		cmd := m.cmdMatches[m.cmdCursor]
 		if cmd.noArgs {
+			if cmd.name == "export" {
+				return m.handleExportCmd(nil)
+			}
 			return m.emitCommand(cmd.name, nil)
 		}
 		// Autocomplete: put "/name " in the input so the user can type the args.
@@ -498,6 +558,9 @@ func (m *AgentModel) handleEnter() (tea.Model, tea.Cmd) {
 			args := parts[1:]
 			for _, cmd := range agentCommands {
 				if cmd.name == name {
+					if name == "export" {
+						return m.handleExportCmd(args)
+					}
 					return m.emitCommand(name, args)
 				}
 			}
@@ -524,15 +587,92 @@ func (m *AgentModel) emitCommand(name string, args []string) (tea.Model, tea.Cmd
 	}
 }
 
+// handleExportCmd resets palette state and dispatches an export command.
+// args[0], if present, is treated as the output filename.
+func (m *AgentModel) handleExportCmd(args []string) (tea.Model, tea.Cmd) {
+	m.showCmdPalette = false
+	m.cmdMatches = nil
+	m.cmdCursor = 0
+	m.cmdOffset = 0
+	m.input.SetValue("")
+	m.updateViewportHeight()
+	m.err = ""
+	m.infoMsg = ""
+	var filename string
+	if len(args) > 0 {
+		filename = args[0]
+	}
+	return m, exportSessionCmd(m.session, filename)
+}
+
+// exportSessionCmd writes the session history to a markdown file and returns
+// an agentExportMsg with the resolved path or an error.
+func exportSessionCmd(session *config.Session, filename string) tea.Cmd {
+	return func() tea.Msg {
+		if filename == "" {
+			ts := time.Now().Format("20060102-150405")
+			filename = fmt.Sprintf("auris-export-%s.md", ts)
+		} else if !strings.HasSuffix(filename, ".md") && !strings.Contains(filename, ".") {
+			filename += ".md"
+		}
+		absPath, err := filepath.Abs(filename)
+		if err != nil {
+			return agentExportMsg{err: err}
+		}
+		f, err := os.Create(absPath)
+		if err != nil {
+			return agentExportMsg{err: err}
+		}
+		defer f.Close()
+
+		title := session.Title
+		if title == "" || title == "new_session" {
+			title = "Untitled"
+		}
+		fmt.Fprintf(f, "# Auris — %s\n\n", title)
+		fmt.Fprintf(f, "**Date:** %s\n\n", session.UpdatedAt.Format("2006-01-02 15:04:05"))
+		fmt.Fprintln(f, "---")
+		for _, turn := range session.History {
+			fmt.Fprintln(f)
+			switch turn.Role {
+			case "user":
+				fmt.Fprintf(f, "**You:** %s\n", turn.Content)
+			case "assistant":
+				fmt.Fprintf(f, "**Auris:** %s\n", turn.Content)
+			}
+		}
+		if err := f.Sync(); err != nil {
+			return agentExportMsg{err: err}
+		}
+		return agentExportMsg{path: absPath}
+	}
+}
+
 func (m *AgentModel) handleAgentResponse(msg agentResponseMsg) (tea.Model, tea.Cmd) {
 	m.streaming = false
 	m.streambuf.Reset()
+	m.inferenceElapsed = time.Since(m.inferenceStart)
+	if m.inferenceCancel != nil {
+		m.inferenceCancel()
+		m.inferenceCancel = nil
+	}
+	m.boxFrame = 0
 
 	// Signal the listener goroutine to stop.
 	if m.progressCh != nil {
 		close(m.progressCh)
 		m.progressCh = nil
 		m.ag.SetProgressCh(nil)
+	}
+
+	if errors.Is(msg.err, context.Canceled) {
+		m.err = ""
+		if m.ready {
+			m.viewport.SetContent(m.renderHistory())
+			m.viewport.GotoBottom()
+		}
+		m.input.Focus()
+		return m, nil
 	}
 
 	if msg.err != nil {
@@ -593,6 +733,7 @@ func requestTitleCmd(provider llm.AIProvider, modelID string, history []config.C
 func (m *AgentModel) sendMessage(text string) (tea.Model, tea.Cmd) {
 	m.input.SetValue("")
 	m.err = ""
+	m.infoMsg = ""
 	m.session.History = append(m.session.History, config.ChatTurn{Role: "user", Content: text})
 	m.messages = append(m.messages, llm.Message{Role: llm.RoleUser, Content: text})
 	m.streaming = true
@@ -607,6 +748,13 @@ func (m *AgentModel) sendMessage(text string) (tea.Model, tea.Cmd) {
 	m.progressCh = ch
 	m.ag.SetProgressCh(ch)
 
+	// Start inference timer and animation.
+	ctx, cancel := context.WithCancel(context.Background())
+	m.inferenceCancel = cancel
+	m.inferenceStart = time.Now()
+	m.inferenceElapsed = 0
+	m.boxFrame = 0
+
 	if m.ready {
 		m.viewport.SetContent(m.renderHistory())
 		m.viewport.GotoBottom()
@@ -614,7 +762,7 @@ func (m *AgentModel) sendMessage(text string) (tea.Model, tea.Cmd) {
 
 	msgs := make([]llm.Message, len(m.messages))
 	copy(msgs, m.messages)
-	return m, tea.Batch(m.spin.Tick, startAgentCmd(m.ag, msgs), listenProgressCmd(ch))
+	return m, tea.Batch(m.spin.Tick, startAgentCmd(m.ag, msgs, ctx), listenProgressCmd(ch), inferenceTickCmd())
 }
 
 // ensureRenderer creates or recreates the TermRenderer when the viewport width or
@@ -701,6 +849,11 @@ func (m *AgentModel) renderHistory() string {
 		sb.WriteString(wrap(m.styles.Error.Render(fmt.Sprintf("✗ %s", m.err))))
 	}
 
+	if m.infoMsg != "" {
+		sb.WriteString("\n")
+		sb.WriteString(wrap(m.styles.Hint.Render(fmt.Sprintf("✓ %s", m.infoMsg))))
+	}
+
 	return sb.String()
 }
 
@@ -724,12 +877,28 @@ func (m *AgentModel) View() string {
 	sep := strings.Repeat("─", m.width)
 	inputRow := m.styles.Cursor.Render(">") + " " + m.input.View()
 
-	var hint string
-	if m.showCmdPalette {
-		hint = m.styles.Hint.Render(locale.T("agent.cmd.hint"))
-	} else {
-		hint = m.styles.Hint.Render(locale.T("agent.hint"))
+	// Left side: normal help hint.
+	var leftHint string
+	switch {
+	case m.showCmdPalette:
+		leftHint = m.styles.Hint.Render(locale.T("agent.cmd.hint"))
+	default:
+		leftHint = m.styles.Hint.Render(locale.T("agent.hint"))
 	}
+
+	// Right side: inference widget (animation + timer, or just timer).
+	var rightWidget string
+	switch {
+	case m.streaming:
+		cancelTxt := m.styles.Hint.Render(locale.T("agent.cancel_hint"))
+		timeTxt := m.styles.Hint.Render(formatInferenceTime(m.inferenceElapsed))
+		rightWidget = cancelTxt + "  " + m.renderInferenceBoxes() + "  " + timeTxt
+	case m.inferenceElapsed > 0:
+		rightWidget = m.styles.Hint.Render(formatInferenceTime(m.inferenceElapsed))
+	}
+
+	// Compose the hint line: left + padding + right, falling back gracefully.
+	hint := m.renderHintLine(leftHint, rightWidget)
 
 	parts := []string{
 		m.styles.Selected.Render(locale.T("agent.title")),
@@ -745,4 +914,55 @@ func (m *AgentModel) View() string {
 	parts = append(parts, inputRow, hint)
 
 	return lipgloss.JoinVertical(lipgloss.Left, parts...)
+}
+
+// renderHintLine composes left and right strings into a single terminal-width
+// line. If both fit with at least one space of padding between them, they are
+// placed on the same line. If there is not enough room, only left is shown
+// while streaming falls back to showing only the right widget.
+func (m *AgentModel) renderHintLine(left, right string) string {
+	if right == "" {
+		return left
+	}
+	leftW := lipgloss.Width(left)
+	rightW := lipgloss.Width(right)
+	gap := m.width - leftW - rightW
+	if gap >= 1 {
+		return left + strings.Repeat(" ", gap) + right
+	}
+	// Not enough room: during streaming the cancel hint is more important.
+	if m.streaming {
+		return right
+	}
+	return left
+}
+
+// renderInferenceBoxes returns the 5-box progressive-fill animation string.
+// Frame 0–5: boxes fill left to right. Frame 6–9: boxes empty left to right.
+func (m *AgentModel) renderInferenceBoxes() string {
+	boxes := make([]string, 5)
+	for i := 0; i < 5; i++ {
+		var filled bool
+		if m.boxFrame <= 5 {
+			filled = i < m.boxFrame
+		} else {
+			filled = i >= m.boxFrame-5
+		}
+		if filled {
+			boxes[i] = m.styles.Spinner.Render("■")
+		} else {
+			boxes[i] = m.styles.Hint.Render("□")
+		}
+	}
+	return strings.Join(boxes, " ")
+}
+
+// formatInferenceTime formats a duration as "0.0s" or "1:23.4s" for display.
+func formatInferenceTime(d time.Duration) string {
+	if d < time.Minute {
+		return fmt.Sprintf("%.1fs", d.Seconds())
+	}
+	mins := int(d.Minutes())
+	secs := d.Seconds() - float64(mins)*60
+	return fmt.Sprintf("%d:%04.1fs", mins, secs)
 }

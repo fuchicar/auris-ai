@@ -359,8 +359,17 @@
   "menu.hint_submenu": {
     "other": "↑↓ navegar · Enter seleccionar · Esc volver"
   },
+  "menu.manage_ai_providers": {
+    "other": "Gestionar proveedores de IA"
+  },
   "menu.agent_unavailable": {
-    "other": "Configura un proveedor de IA primero (ejecuta --setup)"
+    "other": "Configura un proveedor de IA primero — usa /aiproviders"
+  },
+  "menu.exit_confirm": {
+    "other": "Pulse Esc otra vez para salir"
+  },
+  "hint.esc_back": {
+    "other": "· Esc volver"
   },
 
   "setup.ai.select.label": {
@@ -475,6 +484,18 @@
   "agent.cmd.model": {
     "other": "Cambiar modelo por defecto"
   },
+  "agent.cmd.aiproviders": {
+    "other": "Añadir o quitar proveedores de IA"
+  },
+  "agent.cmd.export": {
+    "other": "Exportar conversación a un archivo"
+  },
+  "agent.export_success": {
+    "other": "Conversación exportada a {{.Path}}"
+  },
+  "agent.export_error": {
+    "other": "Error al exportar: {{.Error}}"
+  },
   "agent.tool_financial": {
     "other": "Consultando datos financieros..."
   },
@@ -483,6 +504,9 @@
   },
   "agent.tool_news": {
     "other": "Obteniendo noticias..."
+  },
+  "agent.cancel_hint": {
+    "other": "Esc para cancelar"
   },
 
   "session.title": {
@@ -503,5 +527,299 @@
   },
   "error.connect_provider": {
     "other": "No se pudo conectar con el proveedor: {{.Error}}"
+  },
+
+  "menu.portfolios": {
+    "other": "Carteras"
+  },
+
+  "portfolio.menu.title": {
+    "other": "Carteras"
+  },
+  "portfolio.menu.create": {
+    "other": "Crear cartera"
+  },
+  "portfolio.menu.empty": {
+    "other": "(Aún no hay carteras)"
+  },
+  "portfolio.menu.hint": {
+    "other": "↑↓ navegar · Enter seleccionar · Esc volver"
+  },
+
+  "portfolio.create.title": {
+    "other": "Nueva Cartera"
+  },
+  "portfolio.edit.title": {
+    "other": "Editar Cartera"
+  },
+  "portfolio.create.name.label": {
+    "other": "Nombre de la cartera"
+  },
+  "portfolio.create.name.hint": {
+    "other": "Escribe el nombre · Enter siguiente"
+  },
+  "portfolio.create.name.error_empty": {
+    "other": "El nombre no puede estar vacío."
+  },
+  "portfolio.create.name.error_duplicate": {
+    "other": "Ya existe una cartera con ese nombre."
+  },
+  "portfolio.create.desc.label": {
+    "other": "Descripción (opcional)"
+  },
+  "portfolio.create.desc.hint": {
+    "other": "Escribe la descripción · Enter siguiente · Esc volver"
+  },
+  "portfolio.create.model.label": {
+    "other": "Modelo de IA asignado"
+  },
+  "portfolio.create.model.hint": {
+    "other": "↑↓ navegar · Enter seleccionar · Esc volver"
+  },
+  "portfolio.create.model.connecting": {
+    "other": "Cargando modelos…"
+  },
+  "portfolio.create.model.error": {
+    "other": "No se pudieron cargar los modelos: {{.Error}}"
+  },
+  "portfolio.create.progress": {
+    "other": "Paso {{.Current}} de {{.Total}}"
+  },
+
+  "portfolio.view.title": {
+    "other": "Cartera"
+  },
+  "portfolio.view.hint": {
+    "other": "↑↓ navegar · Enter seleccionar · Esc volver"
+  },
+  "portfolio.view.summary.holdings": {
+    "other": "Posiciones"
+  },
+  "portfolio.view.summary.watchlist": {
+    "other": "Seguimiento"
+  },
+  "portfolio.view.summary.invested": {
+    "other": "Invertido"
+  },
+  "portfolio.view.summary.current_value": {
+    "other": "Valor actual"
+  },
+  "portfolio.view.summary.unrealized_pnl": {
+    "other": "P&G latente"
+  },
+  "portfolio.view.summary.realized_pnl": {
+    "other": "P&G realizado"
+  },
+  "portfolio.view.summary.model": {
+    "other": "Modelo IA"
+  },
+  "portfolio.view.price_loading": {
+    "other": "Cargando precios…"
+  },
+  "portfolio.view.price_unavailable": {
+    "other": "—"
+  },
+  "portfolio.view.action.agent": {
+    "other": "Modo agente en esta cartera"
+  },
+  "portfolio.view.action.instruments": {
+    "other": "Ver posiciones y seguimiento"
+  },
+  "portfolio.view.action.add": {
+    "other": "Añadir instrumento"
+  },
+  "portfolio.view.action.edit": {
+    "other": "Editar cartera"
+  },
+  "portfolio.view.action.delete": {
+    "other": "Eliminar cartera"
+  },
+  "portfolio.view.delete_confirm": {
+    "other": "¿Eliminar cartera y todos sus datos? (s/N)"
+  },
+
+  "portfolio.instruments.title": {
+    "other": "Instrumentos"
+  },
+  "portfolio.instruments.empty": {
+    "other": "(Sin instrumentos — pulsa 'a' para añadir uno)"
+  },
+  "portfolio.instruments.hint": {
+    "other": "↑↓ navegar · Enter ver · a añadir · Esc volver"
+  },
+  "portfolio.instruments.badge.holding": {
+    "other": "POS"
+  },
+  "portfolio.instruments.badge.watchlist": {
+    "other": "SEG"
+  },
+  "portfolio.instruments.lots": {
+    "other": "{{.Count}} lote(s)"
+  },
+
+  "portfolio.search.title": {
+    "other": "Añadir Instrumento"
+  },
+  "portfolio.search.hint": {
+    "other": "Escribe para buscar · Enter seleccionar · Esc cancelar"
+  },
+  "portfolio.search.searching": {
+    "other": "Buscando…"
+  },
+  "portfolio.search.empty": {
+    "other": "(Sin resultados)"
+  },
+  "portfolio.search.error": {
+    "other": "Error de búsqueda: {{.Error}}"
+  },
+  "portfolio.search.manual_hint": {
+    "other": "Sin proveedor de mercado configurado. Introduce símbolo y nombre manualmente."
+  },
+  "portfolio.search.manual.symbol.label": {
+    "other": "Símbolo (ticker)"
+  },
+  "portfolio.search.manual.name.label": {
+    "other": "Nombre del instrumento"
+  },
+  "portfolio.search.step.type.label": {
+    "other": "Añadir como:"
+  },
+  "portfolio.search.step.type.holding": {
+    "other": "Posición (tengo acciones)"
+  },
+  "portfolio.search.step.type.watchlist": {
+    "other": "Seguimiento (sin posición)"
+  },
+  "portfolio.search.step.lot.title": {
+    "other": "Compra inicial (opcional)"
+  },
+  "portfolio.search.step.lot.qty.label": {
+    "other": "Cantidad (p.ej. 10 ó 0,11888)"
+  },
+  "portfolio.search.step.lot.qty.hint": {
+    "other": "Enter confirmar · Esc omitir"
+  },
+  "portfolio.search.step.lot.price.label": {
+    "other": "Precio de compra por unidad"
+  },
+  "portfolio.search.step.lot.price.hint": {
+    "other": "Enter confirmar · Esc omitir"
+  },
+  "portfolio.search.step.lot.date.label": {
+    "other": "Fecha de compra (AAAA-MM-DD)"
+  },
+  "portfolio.search.step.lot.date.hint": {
+    "other": "Enter confirmar · Esc omitir"
+  },
+  "portfolio.search.step.lot.date.error": {
+    "other": "Fecha inválida. Usa el formato AAAA-MM-DD."
+  },
+  "portfolio.search.step.lot.skip_hint": {
+    "other": "Esc omitir · añade lotes después desde el instrumento"
+  },
+  "portfolio.search.step.qty.error": {
+    "other": "Introduce un número positivo."
+  },
+
+  "portfolio.instrument.title": {
+    "other": "Instrumento"
+  },
+  "portfolio.instrument.hint": {
+    "other": "↑↓ navegar · Enter seleccionar · Esc volver"
+  },
+  "portfolio.instrument.badge.holding": {
+    "other": "POSICIÓN"
+  },
+  "portfolio.instrument.badge.watchlist": {
+    "other": "SEGUIMIENTO"
+  },
+  "portfolio.instrument.lot_header": {
+    "other": "Fecha           Cant.        Precio       Valor        P&G"
+  },
+  "portfolio.instrument.no_lots": {
+    "other": "(Sin lotes registrados)"
+  },
+  "portfolio.instrument.summary.qty": {
+    "other": "Cantidad total"
+  },
+  "portfolio.instrument.summary.avg_cost": {
+    "other": "Coste medio"
+  },
+  "portfolio.instrument.summary.invested": {
+    "other": "Total invertido"
+  },
+  "portfolio.instrument.summary.current": {
+    "other": "Valor actual"
+  },
+  "portfolio.instrument.summary.pnl": {
+    "other": "P&G latente"
+  },
+  "portfolio.instrument.action.add_lot": {
+    "other": "Añadir lote"
+  },
+  "portfolio.instrument.action.sell": {
+    "other": "Vender"
+  },
+  "portfolio.instrument.action.change_type": {
+    "other": "Cambiar tipo"
+  },
+  "portfolio.instrument.action.delete": {
+    "other": "Eliminar de la cartera"
+  },
+  "portfolio.instrument.sell.qty.label": {
+    "other": "Cantidad a vender"
+  },
+  "portfolio.instrument.sell.qty.error": {
+    "other": "Introduce un número positivo no superior a la cantidad disponible ({{.Max}})."
+  },
+  "portfolio.instrument.sell.price.label": {
+    "other": "Precio de venta por unidad"
+  },
+  "portfolio.instrument.sell.price.error": {
+    "other": "Introduce un número positivo."
+  },
+  "portfolio.instrument.sell.success": {
+    "other": "Vendido. P&G: {{.PnL}}"
+  },
+  "portfolio.instrument.add_lot.qty.label": {
+    "other": "Cantidad"
+  },
+  "portfolio.instrument.add_lot.price.label": {
+    "other": "Precio de compra por unidad"
+  },
+  "portfolio.instrument.add_lot.date.label": {
+    "other": "Fecha de compra (AAAA-MM-DD)"
+  },
+  "portfolio.instrument.add_lot.date.error": {
+    "other": "Fecha inválida. Usa el formato AAAA-MM-DD."
+  },
+  "portfolio.instrument.add_lot.success": {
+    "other": "Lote añadido."
+  },
+  "portfolio.instrument.change_type.to_watchlist": {
+    "other": "Cambiado a seguimiento. Se han eliminado los lotes existentes."
+  },
+  "portfolio.instrument.change_type.to_holding": {
+    "other": "Cambiado a posición."
+  },
+  "portfolio.instrument.delete_confirm": {
+    "other": "¿Eliminar este instrumento? (s/N)"
+  },
+
+  "portfolio.agent.title": {
+    "other": "Agente — {{.Name}}"
+  },
+  "portfolio.agent.placeholder": {
+    "other": "Pregunta sobre tu cartera…"
+  },
+
+  "portfolio.error.save": {
+    "other": "Error al guardar la cartera: {{.Error}}"
+  },
+  "portfolio.error.load": {
+    "other": "Error al cargar la cartera: {{.Error}}"
+  },
+  "portfolio.error.insufficient_lots": {
+    "other": "No hay suficientes acciones para completar la venta."
   }
 }

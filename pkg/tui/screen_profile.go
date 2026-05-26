@@ -25,12 +25,13 @@ type ProfileModel struct {
 	activeKey  string                    // option key that triggered the text field
 	freeInput  textinput.Model
 	styles     *Styles
+	canGoBack  bool
 }
 
 // newProfileModel constructs a [ProfileModel] at question 0. If existing is
 // non-nil the model is pre-populated with the stored answers so the user only
 // needs to change what they want to update.
-func newProfileModel(s *Styles, existing *config.FinancialProfile) *ProfileModel {
+func newProfileModel(s *Styles, existing *config.FinancialProfile, canGoBack bool) *ProfileModel {
 	ti := textinput.New()
 	ti.Placeholder = "..."
 	m := &ProfileModel{
@@ -39,6 +40,7 @@ func newProfileModel(s *Styles, existing *config.FinancialProfile) *ProfileModel
 		textValues: make(map[int]map[string]string),
 		freeInput:  ti,
 		styles:     s,
+		canGoBack:  canGoBack,
 	}
 	if existing != nil {
 		m.initFromProfile(existing)
@@ -100,15 +102,23 @@ func (m *ProfileModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // updateInputMode handles keystrokes while the free-text input is focused.
 func (m *ProfileModel) updateInputMode(msg tea.Msg) (tea.Model, tea.Cmd) {
-	if key, ok := msg.(tea.KeyMsg); ok && key.Type == tea.KeyEnter {
-		// Persist typed text and return to selection mode.
-		if m.textValues[m.question] == nil {
-			m.textValues[m.question] = make(map[string]string)
+	if key, ok := msg.(tea.KeyMsg); ok {
+		switch key.Type {
+		case tea.KeyEnter:
+			// Persist typed text and return to selection mode.
+			if m.textValues[m.question] == nil {
+				m.textValues[m.question] = make(map[string]string)
+			}
+			m.textValues[m.question][m.activeKey] = m.freeInput.Value()
+			m.inputMode = false
+			m.freeInput.Blur()
+			return m, nil
+		case tea.KeyEsc:
+			// Cancel text editing and return to selection mode.
+			m.inputMode = false
+			m.freeInput.Blur()
+			return m, nil
 		}
-		m.textValues[m.question][m.activeKey] = m.freeInput.Value()
-		m.inputMode = false
-		m.freeInput.Blur()
-		return m, nil
 	}
 	updated, cmd := m.freeInput.Update(msg)
 	m.freeInput = updated
@@ -124,6 +134,12 @@ func (m *ProfileModel) updateSelectMode(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	switch key.Type {
+	case tea.KeyEsc:
+		if m.canGoBack {
+			return m, func() tea.Msg {
+				return ScreenDoneMsg{From: ScreenProfile, Result: nil}
+			}
+		}
 	case tea.KeyUp:
 		if m.cursor > 0 {
 			m.cursor--
@@ -295,7 +311,11 @@ func (m *ProfileModel) View() string {
 	} else {
 		hintKey = "profile.hint.single"
 	}
-	hint := m.styles.Hint.Render(locale.T(hintKey))
+	hintText := locale.T(hintKey)
+	if m.canGoBack && !m.inputMode {
+		hintText += "  " + locale.T("hint.esc_back")
+	}
+	hint := m.styles.Hint.Render(hintText)
 
 	parts := []string{progress, label}
 	parts = append(parts, rows...)

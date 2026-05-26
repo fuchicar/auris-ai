@@ -26,29 +26,31 @@ var themeOptions = []struct {
 // A live preview panel updates immediately as the cursor moves so the user
 // can see the visual difference before confirming.
 type ThemeModel struct {
-	cursor   int
-	previews []*Styles // one pre-built Styles per theme option
-	styles   *Styles   // current UI style set (for the screen chrome itself)
+	cursor     int
+	previews   []*Styles // one pre-built Styles per theme option
+	styles     *Styles   // current UI style set (for the screen chrome itself)
+	canGoBack  bool
 }
 
 // newThemeModel constructs a [ThemeModel]. All theme previews are built once
 // at construction time so cursor movement has no allocation cost.
-func newThemeModel(s *Styles) *ThemeModel {
+func newThemeModel(s *Styles, canGoBack bool) *ThemeModel {
 	previews := make([]*Styles, len(themeOptions))
 	for i, opt := range themeOptions {
 		previews[i] = NewStyles(opt.key)
 	}
 	return &ThemeModel{
-		cursor:   1, // default cursor on Dark
-		previews: previews,
-		styles:   s,
+		cursor:    1, // default cursor on Dark
+		previews:  previews,
+		styles:    s,
+		canGoBack: canGoBack,
 	}
 }
 
 // Init implements [tea.Model].
 func (m *ThemeModel) Init() tea.Cmd { return nil }
 
-// Update implements [tea.Model]. Arrow keys move the cursor; Enter confirms.
+// Update implements [tea.Model]. Arrow keys move the cursor; Enter confirms; Esc goes back.
 func (m *ThemeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if key, ok := msg.(tea.KeyMsg); ok {
 		switch key.Type {
@@ -59,6 +61,12 @@ func (m *ThemeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case tea.KeyDown:
 			if m.cursor < len(themeOptions)-1 {
 				m.cursor++
+			}
+		case tea.KeyEsc:
+			if m.canGoBack {
+				return m, func() tea.Msg {
+					return ScreenDoneMsg{From: ScreenTheme, Result: nil}
+				}
 			}
 		case tea.KeyEnter:
 			chosen := string(themeOptions[m.cursor].key)
@@ -114,7 +122,11 @@ func (m *ThemeModel) View() string {
 	}
 
 	preview := renderPreview(m.previews[m.cursor])
-	hint := m.styles.Hint.Render(locale.T("setup.theme.hint"))
+	hintText := locale.T("setup.theme.hint")
+	if m.canGoBack {
+		hintText += "  " + locale.T("hint.esc_back")
+	}
+	hint := m.styles.Hint.Render(hintText)
 
 	parts := []string{label}
 	parts = append(parts, rows...)

@@ -12,11 +12,12 @@ import (
 
 // Session is a single agent-chat session with its own history and metadata.
 type Session struct {
-	ID        string     `json:"id"`
-	Title     string     `json:"title"`
-	CreatedAt time.Time  `json:"created_at"`
-	UpdatedAt time.Time  `json:"updated_at"`
-	History   []ChatTurn `json:"history"`
+	ID          string     `json:"id"`
+	PortfolioID string     `json:"portfolio_id,omitempty"` // "" = global session
+	Title       string     `json:"title"`
+	CreatedAt   time.Time  `json:"created_at"`
+	UpdatedAt   time.Time  `json:"updated_at"`
+	History     []ChatTurn `json:"history"`
 }
 
 // SessionsDir returns the directory where session files are stored.
@@ -82,9 +83,19 @@ func LoadSession(id string) (*Session, error) {
 	return &s, nil
 }
 
-// ListSessions returns all sessions from disk sorted by UpdatedAt descending
-// (most recent first).
+// ListSessions returns all global sessions (PortfolioID == "") from disk sorted
+// by UpdatedAt descending (most recent first).
 func ListSessions() ([]*Session, error) {
+	return listSessionsWhere(func(s *Session) bool { return s.PortfolioID == "" })
+}
+
+// ListPortfolioSessions returns all sessions belonging to the given portfolio,
+// sorted by UpdatedAt descending (most recent first).
+func ListPortfolioSessions(portfolioID string) ([]*Session, error) {
+	return listSessionsWhere(func(s *Session) bool { return s.PortfolioID == portfolioID })
+}
+
+func listSessionsWhere(keep func(*Session) bool) ([]*Session, error) {
 	dir, err := SessionsDir()
 	if err != nil {
 		return nil, err
@@ -106,7 +117,9 @@ func ListSessions() ([]*Session, error) {
 		if err != nil || s == nil {
 			continue
 		}
-		sessions = append(sessions, s)
+		if keep(s) {
+			sessions = append(sessions, s)
+		}
 	}
 	sort.Slice(sessions, func(i, j int) bool {
 		return sessions[i].UpdatedAt.After(sessions[j].UpdatedAt)

@@ -13,26 +13,36 @@ import (
 // AIProviderSelectModel lets the user choose which AI providers to configure.
 // Any number of providers may be selected (including none, to skip AI setup).
 type AIProviderSelectModel struct {
-	entries  []registry.LLMEntry
-	selected map[int]bool
-	cursor   int
-	styles   *Styles
+	entries   []registry.LLMEntry
+	selected  map[int]bool
+	cursor    int
+	styles    *Styles
+	canGoBack bool
 }
 
 // newAIProviderSelectModel constructs an [AIProviderSelectModel] with all
-// registered LLM providers pre-loaded.
-func newAIProviderSelectModel(s *Styles) *AIProviderSelectModel {
+// registered LLM providers pre-loaded. preSelected is a set of provider keys
+// that should be checked by default (e.g. already-configured providers).
+func newAIProviderSelectModel(s *Styles, preSelected map[string]bool, canGoBack bool) *AIProviderSelectModel {
+	entries := registry.AllLLM()
+	sel := make(map[int]bool, len(preSelected))
+	for i, e := range entries {
+		if preSelected[e.Key] {
+			sel[i] = true
+		}
+	}
 	return &AIProviderSelectModel{
-		entries:  registry.AllLLM(),
-		selected: make(map[int]bool),
-		styles:   s,
+		entries:   entries,
+		selected:  sel,
+		styles:    s,
+		canGoBack: canGoBack,
 	}
 }
 
 // Init implements [tea.Model].
 func (m *AIProviderSelectModel) Init() tea.Cmd { return nil }
 
-// Update implements [tea.Model]. Space toggles selection; Enter confirms.
+// Update implements [tea.Model]. Space toggles selection; Enter confirms; Esc goes back.
 func (m *AIProviderSelectModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	key, ok := msg.(tea.KeyMsg)
 	if !ok {
@@ -49,6 +59,12 @@ func (m *AIProviderSelectModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case tea.KeySpace:
 		m.selected[m.cursor] = !m.selected[m.cursor]
+	case tea.KeyEsc:
+		if m.canGoBack {
+			return m, func() tea.Msg {
+				return ScreenDoneMsg{From: ScreenAIProviderSelect, Result: nil}
+			}
+		}
 	case tea.KeyEnter:
 		var keys []string
 		for i, e := range m.entries {
@@ -88,7 +104,11 @@ func (m *AIProviderSelectModel) View() string {
 		rows = append(rows, fmt.Sprintf("%s %s %s", cursor, checkbox, label))
 	}
 
-	hint := m.styles.Hint.Render(locale.T("setup.ai.select.hint"))
+	hintText := locale.T("setup.ai.select.hint")
+	if m.canGoBack {
+		hintText += "  " + locale.T("hint.esc_back")
+	}
+	hint := m.styles.Hint.Render(hintText)
 	parts := append([]string{title}, rows...)
 	parts = append(parts, "", hint)
 	return lipgloss.JoinVertical(lipgloss.Left, parts...)

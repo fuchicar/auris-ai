@@ -359,8 +359,17 @@
   "menu.hint_submenu": {
     "other": "↑↓ navigate · Enter select · Esc back"
   },
+  "menu.manage_ai_providers": {
+    "other": "Manage AI Providers"
+  },
   "menu.agent_unavailable": {
-    "other": "Configure an AI provider first (re-run with --setup)"
+    "other": "Configure an AI provider first — use /aiproviders"
+  },
+  "menu.exit_confirm": {
+    "other": "Press Esc again to exit"
+  },
+  "hint.esc_back": {
+    "other": "· Esc back"
   },
 
   "setup.ai.select.label": {
@@ -475,6 +484,18 @@
   "agent.cmd.model": {
     "other": "Change default model"
   },
+  "agent.cmd.aiproviders": {
+    "other": "Add or remove AI providers"
+  },
+  "agent.cmd.export": {
+    "other": "Export conversation to a file"
+  },
+  "agent.export_success": {
+    "other": "Conversation exported to {{.Path}}"
+  },
+  "agent.export_error": {
+    "other": "Export failed: {{.Error}}"
+  },
   "agent.tool_financial": {
     "other": "Querying financial data..."
   },
@@ -483,6 +504,9 @@
   },
   "agent.tool_news": {
     "other": "Fetching news..."
+  },
+  "agent.cancel_hint": {
+    "other": "Esc to cancel"
   },
 
   "session.title": {
@@ -503,5 +527,299 @@
   },
   "error.connect_provider": {
     "other": "Could not connect to the provider: {{.Error}}"
+  },
+
+  "menu.portfolios": {
+    "other": "Portfolios"
+  },
+
+  "portfolio.menu.title": {
+    "other": "Portfolios"
+  },
+  "portfolio.menu.create": {
+    "other": "Create portfolio"
+  },
+  "portfolio.menu.empty": {
+    "other": "(No portfolios yet)"
+  },
+  "portfolio.menu.hint": {
+    "other": "↑↓ navigate · Enter select · Esc back"
+  },
+
+  "portfolio.create.title": {
+    "other": "New Portfolio"
+  },
+  "portfolio.edit.title": {
+    "other": "Edit Portfolio"
+  },
+  "portfolio.create.name.label": {
+    "other": "Portfolio name"
+  },
+  "portfolio.create.name.hint": {
+    "other": "Enter name · Enter next"
+  },
+  "portfolio.create.name.error_empty": {
+    "other": "Name cannot be empty."
+  },
+  "portfolio.create.name.error_duplicate": {
+    "other": "A portfolio with this name already exists."
+  },
+  "portfolio.create.desc.label": {
+    "other": "Description (optional)"
+  },
+  "portfolio.create.desc.hint": {
+    "other": "Enter description · Enter next · Esc back"
+  },
+  "portfolio.create.model.label": {
+    "other": "Assign AI model"
+  },
+  "portfolio.create.model.hint": {
+    "other": "↑↓ navigate · Enter select · Esc back"
+  },
+  "portfolio.create.model.connecting": {
+    "other": "Loading models…"
+  },
+  "portfolio.create.model.error": {
+    "other": "Could not load models: {{.Error}}"
+  },
+  "portfolio.create.progress": {
+    "other": "Step {{.Current}} of {{.Total}}"
+  },
+
+  "portfolio.view.title": {
+    "other": "Portfolio"
+  },
+  "portfolio.view.hint": {
+    "other": "↑↓ navigate · Enter select · Esc back"
+  },
+  "portfolio.view.summary.holdings": {
+    "other": "Holdings"
+  },
+  "portfolio.view.summary.watchlist": {
+    "other": "Watchlist"
+  },
+  "portfolio.view.summary.invested": {
+    "other": "Invested"
+  },
+  "portfolio.view.summary.current_value": {
+    "other": "Current value"
+  },
+  "portfolio.view.summary.unrealized_pnl": {
+    "other": "Unrealized P&L"
+  },
+  "portfolio.view.summary.realized_pnl": {
+    "other": "Realized P&L"
+  },
+  "portfolio.view.summary.model": {
+    "other": "AI model"
+  },
+  "portfolio.view.price_loading": {
+    "other": "Loading prices…"
+  },
+  "portfolio.view.price_unavailable": {
+    "other": "—"
+  },
+  "portfolio.view.action.agent": {
+    "other": "Agent mode for this portfolio"
+  },
+  "portfolio.view.action.instruments": {
+    "other": "View positions & watchlist"
+  },
+  "portfolio.view.action.add": {
+    "other": "Add instrument"
+  },
+  "portfolio.view.action.edit": {
+    "other": "Edit portfolio"
+  },
+  "portfolio.view.action.delete": {
+    "other": "Delete portfolio"
+  },
+  "portfolio.view.delete_confirm": {
+    "other": "Delete portfolio and all its data? (y/N)"
+  },
+
+  "portfolio.instruments.title": {
+    "other": "Instruments"
+  },
+  "portfolio.instruments.empty": {
+    "other": "(No instruments yet — press 'a' to add one)"
+  },
+  "portfolio.instruments.hint": {
+    "other": "↑↓ navigate · Enter view · a add · Esc back"
+  },
+  "portfolio.instruments.badge.holding": {
+    "other": "POS"
+  },
+  "portfolio.instruments.badge.watchlist": {
+    "other": "WCH"
+  },
+  "portfolio.instruments.lots": {
+    "other": "{{.Count}} lot(s)"
+  },
+
+  "portfolio.search.title": {
+    "other": "Add Instrument"
+  },
+  "portfolio.search.hint": {
+    "other": "Type to search · Enter select · Esc cancel"
+  },
+  "portfolio.search.searching": {
+    "other": "Searching…"
+  },
+  "portfolio.search.empty": {
+    "other": "(No results)"
+  },
+  "portfolio.search.error": {
+    "other": "Search error: {{.Error}}"
+  },
+  "portfolio.search.manual_hint": {
+    "other": "No market provider configured. Enter symbol and name manually."
+  },
+  "portfolio.search.manual.symbol.label": {
+    "other": "Ticker symbol"
+  },
+  "portfolio.search.manual.name.label": {
+    "other": "Instrument name"
+  },
+  "portfolio.search.step.type.label": {
+    "other": "Add as:"
+  },
+  "portfolio.search.step.type.holding": {
+    "other": "Position (I own shares)"
+  },
+  "portfolio.search.step.type.watchlist": {
+    "other": "Watchlist (tracking only)"
+  },
+  "portfolio.search.step.lot.title": {
+    "other": "Initial purchase (optional)"
+  },
+  "portfolio.search.step.lot.qty.label": {
+    "other": "Quantity (e.g. 10 or 0.11888)"
+  },
+  "portfolio.search.step.lot.qty.hint": {
+    "other": "Enter confirm · Esc skip"
+  },
+  "portfolio.search.step.lot.price.label": {
+    "other": "Purchase price per unit"
+  },
+  "portfolio.search.step.lot.price.hint": {
+    "other": "Enter confirm · Esc skip"
+  },
+  "portfolio.search.step.lot.date.label": {
+    "other": "Purchase date (YYYY-MM-DD)"
+  },
+  "portfolio.search.step.lot.date.hint": {
+    "other": "Enter confirm · Esc skip"
+  },
+  "portfolio.search.step.lot.date.error": {
+    "other": "Invalid date. Use YYYY-MM-DD format."
+  },
+  "portfolio.search.step.lot.skip_hint": {
+    "other": "Esc skip · add lots later from the instrument view"
+  },
+  "portfolio.search.step.qty.error": {
+    "other": "Enter a positive number."
+  },
+
+  "portfolio.instrument.title": {
+    "other": "Instrument"
+  },
+  "portfolio.instrument.hint": {
+    "other": "↑↓ navigate · Enter select · Esc back"
+  },
+  "portfolio.instrument.badge.holding": {
+    "other": "POSITION"
+  },
+  "portfolio.instrument.badge.watchlist": {
+    "other": "WATCHLIST"
+  },
+  "portfolio.instrument.lot_header": {
+    "other": "Date            Qty          Cost/unit    Value        P&L"
+  },
+  "portfolio.instrument.no_lots": {
+    "other": "(No lots recorded)"
+  },
+  "portfolio.instrument.summary.qty": {
+    "other": "Total qty"
+  },
+  "portfolio.instrument.summary.avg_cost": {
+    "other": "Avg cost"
+  },
+  "portfolio.instrument.summary.invested": {
+    "other": "Total invested"
+  },
+  "portfolio.instrument.summary.current": {
+    "other": "Current value"
+  },
+  "portfolio.instrument.summary.pnl": {
+    "other": "Unrealized P&L"
+  },
+  "portfolio.instrument.action.add_lot": {
+    "other": "Add lot"
+  },
+  "portfolio.instrument.action.sell": {
+    "other": "Sell"
+  },
+  "portfolio.instrument.action.change_type": {
+    "other": "Change type"
+  },
+  "portfolio.instrument.action.delete": {
+    "other": "Remove from portfolio"
+  },
+  "portfolio.instrument.sell.qty.label": {
+    "other": "Quantity to sell"
+  },
+  "portfolio.instrument.sell.qty.error": {
+    "other": "Enter a positive number not exceeding available quantity ({{.Max}})."
+  },
+  "portfolio.instrument.sell.price.label": {
+    "other": "Sale price per unit"
+  },
+  "portfolio.instrument.sell.price.error": {
+    "other": "Enter a positive number."
+  },
+  "portfolio.instrument.sell.success": {
+    "other": "Sold. P&L: {{.PnL}}"
+  },
+  "portfolio.instrument.add_lot.qty.label": {
+    "other": "Quantity"
+  },
+  "portfolio.instrument.add_lot.price.label": {
+    "other": "Purchase price per unit"
+  },
+  "portfolio.instrument.add_lot.date.label": {
+    "other": "Purchase date (YYYY-MM-DD)"
+  },
+  "portfolio.instrument.add_lot.date.error": {
+    "other": "Invalid date. Use YYYY-MM-DD format."
+  },
+  "portfolio.instrument.add_lot.success": {
+    "other": "Lot added."
+  },
+  "portfolio.instrument.change_type.to_watchlist": {
+    "other": "Changed to watchlist. Existing lots removed."
+  },
+  "portfolio.instrument.change_type.to_holding": {
+    "other": "Changed to position."
+  },
+  "portfolio.instrument.delete_confirm": {
+    "other": "Remove this instrument? (y/N)"
+  },
+
+  "portfolio.agent.title": {
+    "other": "Agent — {{.Name}}"
+  },
+  "portfolio.agent.placeholder": {
+    "other": "Ask about your portfolio…"
+  },
+
+  "portfolio.error.save": {
+    "other": "Failed to save portfolio: {{.Error}}"
+  },
+  "portfolio.error.load": {
+    "other": "Failed to load portfolio: {{.Error}}"
+  },
+  "portfolio.error.insufficient_lots": {
+    "other": "Not enough shares to complete the sale."
   }
 }

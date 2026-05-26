@@ -23,11 +23,13 @@ var configMenuItems = []menuItem{
 	{"menu.change_language", "language", nil},
 	{"menu.change_theme", "theme", nil},
 	{"menu.change_model", "model", nil},
+	{"menu.manage_ai_providers", "aiproviders", nil},
 	{"menu.back", "back", nil},
 }
 
 var mainMenuItems = []menuItem{
 	{"menu.agent_mode", "agent", nil},
+	{"menu.portfolios", "portfolios", nil},
 	{"menu.configuration", "", configMenuItems},
 	{"menu.exit", "exit", nil},
 }
@@ -45,6 +47,7 @@ type MenuModel struct {
 	commandMode    bool
 	cmdInput       textinput.Model
 	err            string
+	exitConfirm    bool // true after first Escape on the main menu
 	styles         *Styles
 	agentAvailable bool
 }
@@ -81,25 +84,38 @@ func (m *MenuModel) updateNavMode(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	switch key.Type {
 	case tea.KeyUp:
+		m.exitConfirm = false
 		if m.cursor > 0 {
 			m.cursor--
 		}
 	case tea.KeyDown:
+		m.exitConfirm = false
 		if m.cursor < len(m.items)-1 {
 			m.cursor++
 		}
 	case tea.KeyEnter:
+		m.exitConfirm = false
 		return m.selectItem(m.items[m.cursor])
 	case tea.KeyEsc:
-		// Go back to the parent menu when inside a submenu.
 		if m.parentItems != nil {
+			// Inside a submenu: go back to the parent menu.
 			m.items = m.parentItems
 			m.parentItems = nil
 			m.titleKey = "menu.title"
 			m.cursor = 0
 			m.err = ""
+			m.exitConfirm = false
+		} else if m.exitConfirm {
+			// Second consecutive Escape on main menu: exit.
+			return m, func() tea.Msg {
+				return ScreenDoneMsg{From: ScreenMenu, Result: nil}
+			}
+		} else {
+			// First Escape on main menu: show exit confirmation hint.
+			m.exitConfirm = true
 		}
 	default:
+		m.exitConfirm = false
 		// "/" activates command mode.
 		if key.Type == tea.KeyRunes && key.String() == "/" {
 			m.commandMode = true
@@ -208,11 +224,15 @@ func (m *MenuModel) View() string {
 		if m.err != "" {
 			parts = append(parts, m.styles.Error.Render(fmt.Sprintf("✗ %s", m.err)))
 		}
-		hintKey := "menu.hint"
-		if m.parentItems != nil {
-			hintKey = "menu.hint_submenu"
+		var hintText string
+		if m.exitConfirm {
+			hintText = locale.T("menu.exit_confirm")
+		} else if m.parentItems != nil {
+			hintText = locale.T("menu.hint_submenu")
+		} else {
+			hintText = locale.T("menu.hint")
 		}
-		parts = append(parts, m.styles.Hint.Render(locale.T(hintKey)))
+		parts = append(parts, m.styles.Hint.Render(hintText))
 	}
 
 	return lipgloss.JoinVertical(lipgloss.Left, parts...)

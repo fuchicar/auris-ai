@@ -1,10 +1,12 @@
 package agent
 
 import (
+	"fmt"
 	"strings"
 
 	"auris/pkg/config"
 	"auris/pkg/llm"
+	"auris/pkg/portfolio"
 )
 
 var systemPrompts = map[llm.TaskType]string{
@@ -95,6 +97,78 @@ func BuildSystemMessage(task llm.TaskType, profile *config.FinancialProfile) *ll
 			content += "\n\n## Perfil financiero del usuario\n" + formatted
 		}
 	}
+	return &llm.Message{Role: llm.RoleSystem, Content: content}
+}
+
+// BuildPortfolioSystemMessage returns a system message scoped to the given
+// portfolio. The AI is given the full instrument list and instructed to focus
+// its analysis on the portfolio context while retaining access to all tools.
+func BuildPortfolioSystemMessage(p *portfolio.Portfolio, profile *config.FinancialProfile) *llm.Message {
+	base, ok := systemPrompts[llm.TaskChat]
+	if !ok {
+		return nil
+	}
+	content := base
+
+	// Portfolio context section.
+	var sb strings.Builder
+	sb.WriteString("## Cartera actual\n")
+	sb.WriteString(fmt.Sprintf("**Nombre:** %s\n", p.Name))
+	if p.Description != "" {
+		sb.WriteString(fmt.Sprintf("**Descripción:** %s\n", p.Description))
+	}
+	sb.WriteString("\n")
+
+	var holdings, watchlist []portfolio.Instrument
+	for _, ins := range p.Instruments {
+		switch ins.Type {
+		case portfolio.InstrumentHolding:
+			holdings = append(holdings, ins)
+		case portfolio.InstrumentWatchlist:
+			watchlist = append(watchlist, ins)
+		}
+	}
+
+	if len(holdings) > 0 {
+		sb.WriteString("### Posiciones\n")
+		for _, ins := range holdings {
+			qty := ins.TotalQuantity()
+			var costBasis float64
+			for _, l := range ins.Lots {
+				costBasis += l.Quantity * l.Price
+			}
+			if qty > 0 {
+				sb.WriteString(fmt.Sprintf("- **%s** (%s): %.6g acciones · coste medio %.4g · invertido %.4g\n",
+					ins.Symbol, ins.Name, qty, costBasis/qty, costBasis))
+			} else {
+				sb.WriteString(fmt.Sprintf("- **%s** (%s): sin lotes registrados\n", ins.Symbol, ins.Name))
+			}
+		}
+		sb.WriteString("\n")
+	}
+
+	if len(watchlist) > 0 {
+		sb.WriteString("### Seguimiento\n")
+		for _, ins := range watchlist {
+			sb.WriteString(fmt.Sprintf("- **%s** (%s)\n", ins.Symbol, ins.Name))
+		}
+		sb.WriteString("\n")
+	}
+
+	if p.RealizedPnL != 0 {
+		sb.WriteString(fmt.Sprintf("**P&G realizado acumulado:** %.4g\n\n", p.RealizedPnL))
+	}
+
+	sb.WriteString("Enfoca tu análisis en los instrumentos de esta cartera. Puedes usar las herramientas de mercado para cualquier símbolo cuando el usuario lo solicite.\n")
+
+	content += "\n\n" + sb.String()
+
+	if profile != nil {
+		if formatted := formatProfile(profile); formatted != "" {
+			content += "\n## Perfil financiero del usuario\n" + formatted
+		}
+	}
+
 	return &llm.Message{Role: llm.RoleSystem, Content: content}
 }
 
