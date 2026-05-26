@@ -3,3 +3,7 @@ pkg/drivers/gemini/test_data/google_api_key
 pkg/drivers/anthropic/test_data/anthropic_api_key
 auris
 !cmd/auris/
+
+# Nix build artifacts
+result
+result-*
