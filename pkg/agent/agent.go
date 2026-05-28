@@ -18,6 +18,7 @@ const (
 	ProgressFinancial   ProgressKind = "financial"
 	ProgressCalculation ProgressKind = "calculation"
 	ProgressNews        ProgressKind = "news"
+	ProgressPortfolio   ProgressKind = "portfolio"
 )
 
 // ProgressEvent is sent on the progress channel before each tool execution.
@@ -29,13 +30,14 @@ type ProgressEvent struct {
 // Agent combines an LLM provider with a market data provider, exposing market
 // operations as tools the model can call autonomously.
 type Agent struct {
-	llm         llm.AIProvider
-	market      market.ProviderAPI
-	news        *news.Provider
-	model       string
-	tools       []llm.Tool
-	progressCh  chan<- ProgressEvent
-	debugLogger *log.Logger
+	llm                llm.AIProvider
+	market             market.ProviderAPI
+	news               *news.Provider
+	model              string
+	tools              []llm.Tool
+	progressCh         chan<- ProgressEvent
+	debugLogger        *log.Logger
+	currentPortfolioID string
 }
 
 // New creates an Agent. model selects which model to use; empty string uses the

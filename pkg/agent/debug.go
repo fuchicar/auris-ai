@@ -17,6 +17,13 @@ func WithDebugLogger(l *log.Logger) Option {
 	return func(a *Agent) { a.debugLogger = l }
 }
 
+// WithPortfolioID sets the default portfolio ID used by portfolio tools when
+// no explicit portfolio_id argument is provided. Typically set to the ID of
+// the portfolio currently open in the TUI.
+func WithPortfolioID(id string) Option {
+	return func(a *Agent) { a.currentPortfolioID = id }
+}
+
 // debugf writes a formatted line to the debug logger if one is attached.
 func (a *Agent) debugf(format string, args ...any) {
 	if a == nil || a.debugLogger == nil {

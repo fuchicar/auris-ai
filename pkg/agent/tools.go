@@ -10,6 +10,7 @@ import (
 	"auris/pkg/llm"
 	"auris/pkg/market"
 	"auris/pkg/news"
+	"auris/pkg/portfolio"
 )
 
 func buildTools() []llm.Tool {
@@ -231,6 +232,63 @@ func buildTools() []llm.Tool {
 		),
 
 		tool(news.ToolName, news.ToolDescription, news.ToolParams()),
+
+		// Portfolio management tools — read and modify the user's portfolios on disk.
+		tool("portfolio_list",
+			"List all portfolios. Returns id, name, description, number of instruments, realized P&L, and last-updated timestamp for each.",
+			obj(map[string]any{}, []string{}),
+		),
+		tool("portfolio_create",
+			"Create a new portfolio and save it to disk. Returns the new portfolio's id and name.",
+			obj(map[string]any{
+				"name":        str("Portfolio name"),
+				"description": str("Optional portfolio description"),
+			}, []string{"name"}),
+		),
+		tool("portfolio_get",
+			"Get full details of a portfolio including all instruments and lots. If portfolio_id is omitted, uses the current portfolio.",
+			obj(map[string]any{
+				"portfolio_id": str("Portfolio ID (optional; omit to use the current portfolio)"),
+			}, []string{}),
+		),
+		tool("portfolio_add_instrument",
+			"Add an instrument (holding or watchlist item) to a portfolio. For holdings, optionally provide quantity, price, and date to record the first lot in one step.",
+			obj(map[string]any{
+				"portfolio_id":    str("Portfolio ID (optional; omit to use the current portfolio)"),
+				"symbol":          str("Ticker symbol, e.g. AAPL"),
+				"name":            str("Instrument full name, e.g. Apple Inc."),
+				"instrument_type": enum("Whether the user owns the instrument or is only tracking it", []any{"holding", "watchlist"}),
+				"quantity":        numProp("Units purchased (optional; only for holdings, creates the first lot)"),
+				"price":           numProp("Purchase price per unit (optional; only for holdings, creates the first lot)"),
+				"date":            str("Purchase date ISO 8601 or YYYY-MM-DD (optional; defaults to today)"),
+			}, []string{"symbol", "name", "instrument_type"}),
+		),
+		tool("portfolio_add_lot",
+			"Add a purchase lot to an existing holding in a portfolio. Fails if the instrument is not a holding.",
+			obj(map[string]any{
+				"portfolio_id": str("Portfolio ID (optional; omit to use the current portfolio)"),
+				"symbol":       str("Ticker symbol of the existing holding"),
+				"quantity":     numProp("Number of units purchased"),
+				"price":        numProp("Purchase price per unit"),
+				"date":         str("Purchase date ISO 8601 or YYYY-MM-DD (optional; defaults to today)"),
+			}, []string{"symbol", "quantity", "price"}),
+		),
+		tool("portfolio_sell",
+			"Register a FIFO sale from a holding. Updates remaining lots and accumulates realized P&L on the portfolio.",
+			obj(map[string]any{
+				"portfolio_id": str("Portfolio ID (optional; omit to use the current portfolio)"),
+				"symbol":       str("Ticker symbol of the holding to sell"),
+				"quantity":     numProp("Number of units to sell"),
+				"sell_price":   numProp("Sale price per unit"),
+			}, []string{"symbol", "quantity", "sell_price"}),
+		),
+		tool("portfolio_remove_instrument",
+			"Permanently remove an instrument and all its lots from a portfolio.",
+			obj(map[string]any{
+				"portfolio_id": str("Portfolio ID (optional; omit to use the current portfolio)"),
+				"symbol":       str("Ticker symbol of the instrument to remove"),
+			}, []string{"symbol"}),
+		),
 	}
 }
 
@@ -248,13 +306,15 @@ func (a *Agent) dispatch(ctx context.Context, call llm.ToolCall, lastKind *Progr
 
 // dispatchInner is the actual tool dispatch logic; dispatch wraps it with logging.
 func (a *Agent) dispatchInner(ctx context.Context, call llm.ToolCall, lastKind *ProgressKind) string {
-	// Emit a progress event for market and calculation tools (deduplicated).
+	// Emit a progress event for market, calculation, and portfolio tools (deduplicated).
 	var kind ProgressKind
 	switch {
 	case strings.HasPrefix(call.Function.Name, "market_"):
 		kind = ProgressFinancial
 	case strings.HasPrefix(call.Function.Name, "calculate_"), call.Function.Name == "convert_currency":
 		kind = ProgressCalculation
+	case strings.HasPrefix(call.Function.Name, "portfolio_"):
+		kind = ProgressPortfolio
 	}
 	if kind != "" && kind != *lastKind {
 		*lastKind = kind
@@ -429,6 +489,253 @@ func (a *Agent) dispatchInner(ctx context.Context, call llm.ToolCall, lastKind *
 		}
 		b, _ := json.Marshal(items)
 		return string(b)
+	}
+
+	// Portfolio tools — operate on persisted portfolio files, no market provider needed.
+	if strings.HasPrefix(call.Function.Name, "portfolio_") {
+		// resolvePortfolioID uses the explicit argument or falls back to the current portfolio.
+		resolvePortfolioID := func() (string, error) {
+			if id := str("portfolio_id"); id != "" {
+				return id, nil
+			}
+			if a.currentPortfolioID != "" {
+				return a.currentPortfolioID, nil
+			}
+			return "", fmt.Errorf("no portfolio_id provided and no current portfolio is set")
+		}
+		// parseLotDate parses ISO 8601 or YYYY-MM-DD; defaults to now.
+		parseLotDate := func(key string) time.Time {
+			s := str(key)
+			if s == "" {
+				return time.Now()
+			}
+			if t, err := time.Parse(time.RFC3339, s); err == nil {
+				return t
+			}
+			if t, err := time.Parse("2006-01-02", s); err == nil {
+				return t
+			}
+			return time.Now()
+		}
+
+		switch call.Function.Name {
+		case "portfolio_list":
+			portfolios, err := portfolio.ListPortfolios()
+			if err != nil {
+				return encode(nil, err)
+			}
+			type summary struct {
+				ID          string  `json:"id"`
+				Name        string  `json:"name"`
+				Description string  `json:"description,omitempty"`
+				Instruments int     `json:"instruments_count"`
+				RealizedPnL float64 `json:"realized_pnl"`
+				UpdatedAt   string  `json:"updated_at"`
+			}
+			out := make([]summary, len(portfolios))
+			for i, p := range portfolios {
+				out[i] = summary{
+					ID:          p.ID,
+					Name:        p.Name,
+					Description: p.Description,
+					Instruments: len(p.Instruments),
+					RealizedPnL: p.RealizedPnL,
+					UpdatedAt:   p.UpdatedAt.Format(time.RFC3339),
+				}
+			}
+			return encode(out, nil)
+
+		case "portfolio_create":
+			name := str("name")
+			if name == "" {
+				return `error: name is required`
+			}
+			p := portfolio.NewPortfolio(name)
+			p.Description = str("description")
+			if err := portfolio.SavePortfolio(p); err != nil {
+				return encode(nil, err)
+			}
+			return encode(map[string]any{"id": p.ID, "name": p.Name, "description": p.Description}, nil)
+
+		case "portfolio_get":
+			id, err := resolvePortfolioID()
+			if err != nil {
+				return encode(nil, err)
+			}
+			p, err := portfolio.LoadPortfolio(id)
+			if err != nil {
+				return encode(nil, err)
+			}
+			if p == nil {
+				return `error: portfolio not found`
+			}
+			return encode(p, nil)
+
+		case "portfolio_add_instrument":
+			id, err := resolvePortfolioID()
+			if err != nil {
+				return encode(nil, err)
+			}
+			p, err := portfolio.LoadPortfolio(id)
+			if err != nil {
+				return encode(nil, err)
+			}
+			if p == nil {
+				return `error: portfolio not found`
+			}
+			symbol := str("symbol")
+			if symbol == "" {
+				return `error: symbol is required`
+			}
+			for _, ins := range p.Instruments {
+				if ins.Symbol == symbol {
+					return `error: instrument already exists in portfolio`
+				}
+			}
+			instType := portfolio.InstrumentType(str("instrument_type"))
+			ins := portfolio.Instrument{
+				ID:     portfolio.NewInstrumentID(),
+				Symbol: symbol,
+				Name:   str("name"),
+				Type:   instType,
+			}
+			if instType == portfolio.InstrumentHolding {
+				qty := numVal("quantity")
+				price := numVal("price")
+				if qty > 0 && price > 0 {
+					ins.Lots = []portfolio.Lot{portfolio.NewLot(qty, price, parseLotDate("date"))}
+				}
+			}
+			p.Instruments = append(p.Instruments, ins)
+			if err := portfolio.SavePortfolio(p); err != nil {
+				return encode(nil, err)
+			}
+			return encode(map[string]any{
+				"instrument_id":   ins.ID,
+				"symbol":          ins.Symbol,
+				"name":            ins.Name,
+				"type":            ins.Type,
+				"total_quantity":  ins.TotalQuantity(),
+				"portfolio_id":    p.ID,
+			}, nil)
+
+		case "portfolio_add_lot":
+			id, err := resolvePortfolioID()
+			if err != nil {
+				return encode(nil, err)
+			}
+			p, err := portfolio.LoadPortfolio(id)
+			if err != nil {
+				return encode(nil, err)
+			}
+			if p == nil {
+				return `error: portfolio not found`
+			}
+			symbol := str("symbol")
+			qty := numVal("quantity")
+			price := numVal("price")
+			if qty <= 0 {
+				return `error: quantity must be positive`
+			}
+			if price <= 0 {
+				return `error: price must be positive`
+			}
+			for i, ins := range p.Instruments {
+				if ins.Symbol != symbol {
+					continue
+				}
+				if ins.Type != portfolio.InstrumentHolding {
+					return `error: instrument is not a holding; change its type to holding first`
+				}
+				p.Instruments[i].Lots = append(p.Instruments[i].Lots, portfolio.NewLot(qty, price, parseLotDate("date")))
+				if err := portfolio.SavePortfolio(p); err != nil {
+					return encode(nil, err)
+				}
+				return encode(map[string]any{
+					"symbol":         ins.Symbol,
+					"total_quantity": p.Instruments[i].TotalQuantity(),
+					"lots_count":     len(p.Instruments[i].Lots),
+				}, nil)
+			}
+			return `error: instrument not found in portfolio`
+
+		case "portfolio_sell":
+			id, err := resolvePortfolioID()
+			if err != nil {
+				return encode(nil, err)
+			}
+			p, err := portfolio.LoadPortfolio(id)
+			if err != nil {
+				return encode(nil, err)
+			}
+			if p == nil {
+				return `error: portfolio not found`
+			}
+			symbol := str("symbol")
+			qty := numVal("quantity")
+			sellPrice := numVal("sell_price")
+			if qty <= 0 {
+				return `error: quantity must be positive`
+			}
+			if sellPrice <= 0 {
+				return `error: sell_price must be positive`
+			}
+			for i, ins := range p.Instruments {
+				if ins.Symbol != symbol {
+					continue
+				}
+				if ins.Type != portfolio.InstrumentHolding {
+					return `error: instrument is not a holding`
+				}
+				result, err := portfolio.ApplyFIFOSell(ins.Lots, qty, sellPrice)
+				if err != nil {
+					return encode(nil, err)
+				}
+				p.Instruments[i].Lots = result.RemainingLots
+				p.RealizedPnL += result.RealizedPnL
+				if err := portfolio.SavePortfolio(p); err != nil {
+					return encode(nil, err)
+				}
+				return encode(map[string]any{
+					"symbol":                      ins.Symbol,
+					"realized_pnl":                result.RealizedPnL,
+					"remaining_quantity":          p.Instruments[i].TotalQuantity(),
+					"portfolio_total_realized_pnl": p.RealizedPnL,
+				}, nil)
+			}
+			return `error: instrument not found in portfolio`
+
+		case "portfolio_remove_instrument":
+			id, err := resolvePortfolioID()
+			if err != nil {
+				return encode(nil, err)
+			}
+			p, err := portfolio.LoadPortfolio(id)
+			if err != nil {
+				return encode(nil, err)
+			}
+			if p == nil {
+				return `error: portfolio not found`
+			}
+			symbol := str("symbol")
+			filtered := p.Instruments[:0]
+			found := false
+			for _, ins := range p.Instruments {
+				if ins.Symbol == symbol {
+					found = true
+					continue
+				}
+				filtered = append(filtered, ins)
+			}
+			if !found {
+				return `error: instrument not found in portfolio`
+			}
+			p.Instruments = filtered
+			if err := portfolio.SavePortfolio(p); err != nil {
+				return encode(nil, err)
+			}
+			return encode(map[string]any{"removed": symbol, "portfolio_id": p.ID}, nil)
+		}
 	}
 
 	if a.market == nil {

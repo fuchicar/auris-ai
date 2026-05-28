@@ -899,7 +899,7 @@ func (a *AppModel) enterAgentModeWithSession(session *config.Session) (tea.Model
 	}
 
 	a.screen = ScreenAgent
-	a.current = newAgentModel(provider, mp, session, a.cfg.DefaultAIModel, a.styles, a.width, a.height, a.cfg.FinancialProfile, a.cfg.NewsFeeds, a.debugLogger, nil)
+	a.current = newAgentModel(provider, mp, session, a.cfg.DefaultAIModel, a.styles, a.width, a.height, a.cfg.FinancialProfile, a.cfg.NewsFeeds, a.debugLogger, nil, "")
 	return a, a.current.Init()
 }
 
@@ -1108,7 +1108,7 @@ func (a *AppModel) enterPortfolioAgentModeWithSession(p *portfolio.Portfolio, se
 
 	a.screen = ScreenAgent
 	a.flowContext = FlowPortfolio
-	a.current = newAgentModel(provider, mp, session, modelID, a.styles, a.width, a.height, a.cfg.FinancialProfile, a.cfg.NewsFeeds, a.debugLogger, sysMsg)
+	a.current = newAgentModel(provider, mp, session, modelID, a.styles, a.width, a.height, a.cfg.FinancialProfile, a.cfg.NewsFeeds, a.debugLogger, sysMsg, p.ID)
 	return a, a.current.Init()
 }
 

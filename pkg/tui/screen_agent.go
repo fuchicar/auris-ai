@@ -141,7 +141,8 @@ type AgentModel struct {
 // width and height are the current terminal dimensions; passing them allows the
 // viewport to be initialised immediately without waiting for a WindowSizeMsg.
 // sysMsg overrides the default system prompt when non-nil (e.g. portfolio agent).
-func newAgentModel(provider llm.AIProvider, mp market.ProviderAPI, session *config.Session, modelID string, s *Styles, width, height int, profile *config.FinancialProfile, newsFeeds []news.FeedConfig, debugLogger *log.Logger, sysMsg *llm.Message) *AgentModel {
+// portfolioID, when non-empty, scopes portfolio management tools to that portfolio.
+func newAgentModel(provider llm.AIProvider, mp market.ProviderAPI, session *config.Session, modelID string, s *Styles, width, height int, profile *config.FinancialProfile, newsFeeds []news.FeedConfig, debugLogger *log.Logger, sysMsg *llm.Message, portfolioID string) *AgentModel {
 	ti := textinput.New()
 	ti.Placeholder = locale.T("agent.placeholder")
 	ti.Prompt = "" // the ">" prefix is rendered manually in View()
@@ -174,7 +175,7 @@ func newAgentModel(provider llm.AIProvider, mp market.ProviderAPI, session *conf
 		messages: messages,
 		provider: provider,
 		mp:       mp,
-		ag:      agent.New(provider, mp, modelID, agent.WithDebugLogger(debugLogger)),
+		ag:      agent.New(provider, mp, modelID, agent.WithDebugLogger(debugLogger), agent.WithPortfolioID(portfolioID)),
 		modelID: modelID,
 		styles:   s,
 		width:    width,
