@@ -6,6 +6,7 @@ import (
 
 	"auris/pkg/drivers/anthropic"
 	"auris/pkg/drivers/gemini"
+	"auris/pkg/drivers/minimax"
 	"auris/pkg/drivers/ollama"
 	"auris/pkg/llm"
 )
@@ -67,6 +68,17 @@ func AllLLM() []LLMEntry {
 					opts = append(opts, anthropic.WithBaseURL(baseURL))
 				}
 				return anthropic.New(apiKey, opts...)
+			},
+		},
+		{
+			Key:         "minimax",
+			DisplayName: "MiniMax",
+			New: func(baseURL, apiKey string) llm.AIProvider {
+				var opts []minimax.Option
+				if baseURL != "" {
+					opts = append(opts, minimax.WithBaseURL(baseURL))
+				}
+				return minimax.New(apiKey, opts...)
 			},
 		},
 	}
