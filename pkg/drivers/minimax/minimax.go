@@ -41,6 +41,11 @@ func (d *Driver) Disconnect(ctx context.Context) error { return d.inner.Disconne
 func (d *Driver) IsConnected() bool                    { return d.inner.IsConnected() }
 func (d *Driver) Ping(ctx context.Context) error       { return d.inner.Ping(ctx) }
 
+// ListModels calls the Anthropic-compatible /v1/models endpoint at the MiniMax
+// base URL. Because MiniMax's API mirrors the Anthropic wire format, the same
+// code path returns MiniMax's own model catalogue (e.g. MiniMax-M3, MiniMax-M2.7),
+// not Anthropic's. The models returned depend entirely on which provider's base
+// URL is configured.
 func (d *Driver) ListModels(ctx context.Context) ([]llm.Model, error) {
 	return d.inner.ListModels(ctx)
 }
