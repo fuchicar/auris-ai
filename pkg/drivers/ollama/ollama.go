@@ -179,6 +179,18 @@ func (d *Driver) Stream(ctx context.Context, req llm.CompletionRequest) (<-chan 
 		}
 		defer resp.Body.Close()
 
+		// Close the body when ctx is cancelled so scanner.Scan() unblocks immediately
+		// instead of waiting for the next token from a still-running Ollama model.
+		bodyDone := make(chan struct{})
+		defer close(bodyDone)
+		go func() {
+			select {
+			case <-ctx.Done():
+				resp.Body.Close()
+			case <-bodyDone:
+			}
+		}()
+
 		scanner := bufio.NewScanner(resp.Body)
 		scanner.Buffer(make([]byte, 0, 4096), 512*1024)
 
@@ -215,8 +227,16 @@ func (d *Driver) Stream(ctx context.Context, req llm.CompletionRequest) (<-chan 
 			}
 		}
 
+		// Closing resp.Body on cancellation makes scanner.Err() return an I/O error.
+		// Prefer ctx.Err() over the raw I/O error in that case.
 		if err := scanner.Err(); err != nil {
-			ch <- llm.StreamChunk{Done: true, Err: fmt.Errorf("ollama: Stream: scan: %w", err)}
+			if ctx.Err() != nil {
+				ch <- llm.StreamChunk{Done: true, Err: ctx.Err()}
+			} else {
+				ch <- llm.StreamChunk{Done: true, Err: fmt.Errorf("ollama: Stream: scan: %w", err)}
+			}
+		} else if ctx.Err() != nil {
+			ch <- llm.StreamChunk{Done: true, Err: ctx.Err()}
 		}
 	}()
 

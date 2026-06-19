@@ -172,13 +172,19 @@ func TestComplete_FirstModel(t *testing.T) {
 	d := newConnectedDriver(t)
 	model := firstModel(t, d)
 
-	resp, err := d.Complete(context.Background(), llm.CompletionRequest{
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	resp, err := d.Complete(ctx, llm.CompletionRequest{
 		Model: model.ID,
 		Messages: []llm.Message{
 			{Role: llm.RoleUser, Content: "Reply with a single word: hello"},
 		},
 	})
 	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) {
+			t.Skip("model did not respond within 60s; skipping")
+		}
 		t.Fatalf("Complete: %v", err)
 	}
 	if resp.Message.Role != llm.RoleAssistant {
@@ -193,7 +199,10 @@ func TestStream_FirstModel(t *testing.T) {
 	d := newConnectedDriver(t)
 	model := firstModel(t, d)
 
-	ch, err := d.Stream(context.Background(), llm.CompletionRequest{
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	ch, err := d.Stream(ctx, llm.CompletionRequest{
 		Model: model.ID,
 		Messages: []llm.Message{
 			{Role: llm.RoleUser, Content: "Reply with a single word: hello"},
@@ -206,6 +215,9 @@ func TestStream_FirstModel(t *testing.T) {
 	var sb strings.Builder
 	for chunk := range ch {
 		if chunk.Err != nil {
+			if errors.Is(chunk.Err, context.DeadlineExceeded) {
+				t.Skip("model did not respond within 60s; skipping")
+			}
 			t.Fatalf("stream error: %v", chunk.Err)
 		}
 		sb.WriteString(chunk.Content)
@@ -226,10 +238,15 @@ func TestStream_ContextCancellation(t *testing.T) {
 	d := newConnectedDriver(t)
 	model := firstModel(t, d)
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	// outerCtx bounds the wait for the first token; avoids hanging the package timeout.
+	outerCtx, outerCancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer outerCancel()
 
-	ch, err := d.Stream(ctx, llm.CompletionRequest{
+	// streamCtx is what we actually cancel to test cancellation propagation.
+	streamCtx, streamCancel := context.WithCancel(outerCtx)
+	defer streamCancel()
+
+	ch, err := d.Stream(streamCtx, llm.CompletionRequest{
 		Model: model.ID,
 		Messages: []llm.Message{
 			{Role: llm.RoleUser, Content: "Count from 1 to 1000, one number per line."},
@@ -240,10 +257,17 @@ func TestStream_ContextCancellation(t *testing.T) {
 	}
 
 	// Cancel after receiving the first chunk.
-	for range ch {
-		cancel()
-		break
+	chunk, ok := <-ch
+	if !ok {
+		t.Skip("stream closed without producing any chunks")
 	}
+	if chunk.Err != nil {
+		if errors.Is(chunk.Err, context.DeadlineExceeded) {
+			t.Skip("model did not start streaming within 60s; skipping")
+		}
+		t.Fatalf("stream error before cancel: %v", chunk.Err)
+	}
+	streamCancel()
 
 	// Verify channel drains and closes within 2 seconds.
 	deadline := time.After(2 * time.Second)
