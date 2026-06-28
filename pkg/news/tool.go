@@ -10,11 +10,11 @@ import (
 const ToolName = "fetch_news"
 
 // ToolDescription is the tool description presented to the LLM.
-const ToolDescription = "Obtiene artículos de noticias financieras y económicas recientes desde feeds RSS configurados. " +
-	"Usa este tool para: (1) responder cualquier solicitud de resumen de noticias o estado general del mercado, " +
-	"(2) obtener noticias actuales sobre un tema, empresa, sector o activo específico, " +
-	"(3) basar análisis de activos en eventos recientes. " +
-	"Para noticias generales sin tema específico, llama con keywords=[]."
+const ToolDescription = "Fetch recent financial and economic news articles from configured RSS feeds. " +
+	"Use this tool to: (1) answer any request for a news summary or general market overview, " +
+	"(2) get current news about a specific topic, company, sector, or asset, " +
+	"(3) ground asset analysis in recent events. " +
+	"For general news with no specific topic, call with keywords=[]."
 
 // ToolParams returns the JSON Schema parameters object for the fetch_news tool.
 // Returns a fresh map on each call to prevent mutation by callers.
@@ -25,15 +25,15 @@ func ToolParams() map[string]any {
 			"keywords": map[string]any{
 				"type":        "array",
 				"items":       map[string]any{"type": "string"},
-				"description": "Keywords para filtrar artículos por título y descripción. Incluye tickers, nombres de empresas o términos sectoriales. Usa una lista vacía ([]) para obtener todas las noticias recientes sin filtrar.",
+				"description": "Keywords to filter articles by title and description. Include tickers, company names, or sector terms. Use an empty list ([]) to retrieve all recent news without filtering.",
 			},
 			"max_age_hours": map[string]any{
 				"type":        "integer",
-				"description": "Antigüedad máxima de los artículos en horas. Por defecto 48 si no se indica.",
+				"description": "Maximum article age in hours. Defaults to 48 if not specified.",
 			},
 			"max_results": map[string]any{
 				"type":        "integer",
-				"description": "Número máximo de artículos a devolver. Por defecto 10 si no se indica.",
+				"description": "Maximum number of articles to return. Defaults to 10 if not specified.",
 			},
 		},
 		"required": []string{},
