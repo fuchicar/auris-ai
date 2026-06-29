@@ -608,3 +608,112 @@ func TestPercentileInterp_SingleElement(t *testing.T) {
 		t.Errorf("single-element slice: want 42, got %v", got)
 	}
 }
+
+// ---- regression tests: bugs --------------------------------------------------
+// Each test encodes the exact condition that the bug allowed to slip through.
+// They are named TestRegression_BUGN_* so they can be run in isolation:
+//   go test ./pkg/agent/... -run TestRegression
+
+// BUG-1: calcPnL silently took math.Abs(quantity) when negative, giving the
+// caller no indication that the sign was discarded.
+func TestRegression_BUG1_NegativeQuantityWarning(t *testing.T) {
+	r, err := calcPnL(100, 110, -10, "long")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Result must equal the positive-quantity computation.
+	if r.PnLAbsolute != 100 {
+		t.Errorf("PnLAbsolute: want 100, got %v", r.PnLAbsolute)
+	}
+	// Summary must warn the caller that the negative sign was discarded.
+	if !strings.Contains(r.Summary, "WARNING") {
+		t.Errorf("BUG-1 regression: summary must warn about negative quantity; got %q", r.Summary)
+	}
+}
+
+// BUG-2: calcStats returned Min/Max as raw float64 (unrounded) while every
+// other numeric field in statsResult used round4.
+func TestRegression_BUG2_MinMaxRoundedToFourDecimals(t *testing.T) {
+	// Values with more than 4 significant decimal places so rounding is observable.
+	values := []float64{1.123456789, 5.0, 9.987654321}
+	r, err := calcStats(values, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantMin := round4(1.123456789) // 1.1235
+	wantMax := round4(9.987654321) // 9.9877
+	if r.Min != wantMin {
+		t.Errorf("BUG-2 regression: Min not rounded: want %v, got %v", wantMin, r.Min)
+	}
+	if r.Max != wantMax {
+		t.Errorf("BUG-2 regression: Max not rounded: want %v, got %v", wantMax, r.Max)
+	}
+	// Confirm the raw values differ from the expected rounded ones, so this test
+	// would have failed against the old (unrounded) code.
+	if wantMin == 1.123456789 || wantMax == 9.987654321 {
+		t.Error("test setup error: chosen values do not exercise rounding")
+	}
+}
+
+// BUG-3a: calcDCF accepted all-negative free_cash_flows and produced a
+// negative terminal value and negative intrinsic value without any error.
+func TestRegression_BUG3_AllNegativeFCFsReturnsError(t *testing.T) {
+	_, err := calcDCF([]float64{-100, -200, -300}, 0.10, 0.03, 1000)
+	if err == nil {
+		t.Error("BUG-3 regression: expected error when all free_cash_flows are non-positive")
+	}
+}
+
+// BUG-3b: when the last FCF is negative (terminal value becomes negative) but
+// earlier FCFs are positive, the function should succeed but warn in the summary.
+func TestRegression_BUG3_NegativeLastFCFAddsWarning(t *testing.T) {
+	// FCFs: positive early years, negative terminal year.
+	r, err := calcDCF([]float64{100, 100, -50}, 0.10, 0.03, 1000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.TerminalValue >= 0 {
+		t.Errorf("BUG-3 regression: terminal value should be negative when last FCF < 0, got %v", r.TerminalValue)
+	}
+	if !strings.Contains(r.Summary, "WARNING") {
+		t.Errorf("BUG-3 regression: summary must warn about negative terminal value; got %q", r.Summary)
+	}
+}
+
+// BUG-4: the sharpe summary reported "ann. return" without clarifying it is the
+// gross return (before subtracting the risk-free rate), which misled callers into
+// treating it as excess return.
+func TestRegression_BUG4_SharpesSummaryLabelsReturnAsGross(t *testing.T) {
+	returns := []float64{0.01, -0.005, 0.02, -0.01, 0.015}
+	r, err := calcSharpe(returns, 0.04)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(r.Summary, "gross") {
+		t.Errorf("BUG-4 regression: summary must label annualized return as gross (pre risk-free); got %q", r.Summary)
+	}
+}
+
+// BUG-5: probit used the A&S 26.2.17 polynomial (max error 4.5e-4), which
+// degraded VaR accuracy at extreme confidence levels (99%+). The replacement
+// uses math.Erfinv, which achieves machine precision.
+func TestRegression_BUG5_ProbitExtremeQuantilePrecision(t *testing.T) {
+	// Reference values from standard normal tables (correct to 16 significant figures).
+	cases := []struct {
+		p    float64
+		want float64
+	}{
+		{0.99, 2.3263478740408408},
+		{0.999, 3.0902323061678132},
+		{0.9999, 3.7190164854556844},
+	}
+	// Tolerance far tighter than the old polynomial error of 4.5e-4.
+	const tol = 1e-9
+	for _, tc := range cases {
+		got := probit(tc.p)
+		if !approxEqual(got, tc.want, tol) {
+			t.Errorf("BUG-5 regression: probit(%.4f): want %.15f, got %.15f (tol %.0e)",
+				tc.p, tc.want, got, tol)
+		}
+	}
+}

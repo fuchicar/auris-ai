@@ -112,7 +112,7 @@ func calcSharpe(returns []float64, riskFreeAnnual float64) (sharpeResult, error)
 		SharpeRatio:                 round2(sharpe),
 		AnnualizedReturnPercent:     round2(annReturn),
 		AnnualizedVolatilityPercent: round2(annVol),
-		Summary:                     fmt.Sprintf("Sharpe ratio: %.2f (ann. return: %.2f%%, ann. vol: %.2f%%)", sharpe, annReturn, annVol),
+		Summary:                     fmt.Sprintf("Sharpe ratio: %.2f (ann. gross return: %.2f%% [before subtracting risk-free rate], ann. vol: %.2f%%)", sharpe, annReturn, annVol),
 	}, nil
 }
 
@@ -194,11 +194,15 @@ func calcPnL(entryPrice, currentPrice, quantity float64, positionType string) (p
 	if pnl < 0 {
 		dir = "loss"
 	}
+	summary := fmt.Sprintf("%s position: %.2f%% %s (P&L: %.2f, position value: %.2f)", positionType, math.Abs(pnlPct), dir, pnl, posValue)
+	if quantity < 0 {
+		summary += " [WARNING: quantity was negative and has been treated as positive]"
+	}
 	return pnlResult{
 		PnLAbsolute:   round2(pnl),
 		PnLPercent:    round2(pnlPct),
 		PositionValue: round2(posValue),
-		Summary:       fmt.Sprintf("%s position: %.2f%% %s (P&L: %.2f, position value: %.2f)", positionType, math.Abs(pnlPct), dir, pnl, posValue),
+		Summary:       summary,
 	}, nil
 }
 
@@ -332,30 +336,16 @@ func calcVaR(returns []float64, confidenceLevel, portfolioValue float64, method 
 	}, nil
 }
 
-// probit approximates the standard normal inverse CDF (A&S 26.2.17, error < 4.5e-4).
-// Returns the z such that Φ(z) = p: negative for p < 0.5, positive for p > 0.5.
+// probit returns the standard normal inverse CDF (quantile function).
+// Uses math.Erfinv for full machine-precision accuracy: Φ⁻¹(p) = √2 · erfinv(2p−1).
 func probit(p float64) float64 {
-	const (
-		c0, c1, c2 = 2.515517, 0.802853, 0.010328
-		d1, d2, d3 = 1.432788, 0.189269, 0.001308
-	)
 	if p <= 0 {
 		return math.Inf(-1)
 	}
 	if p >= 1 {
 		return math.Inf(1)
 	}
-	// Work with the smaller tail probability q; the formula always returns a
-	// positive approximation, and sign restores the correct direction.
-	sign := -1.0 // p < 0.5 → left tail → negative quantile
-	q := p
-	if q > 0.5 {
-		q = 1 - p
-		sign = 1 // p > 0.5 → right tail → positive quantile
-	}
-	t := math.Sqrt(-2 * math.Log(q))
-	z := t - (c0+c1*t+c2*t*t)/(1+d1*t+d2*t*t+d3*t*t*t)
-	return sign * z
+	return math.Sqrt2 * math.Erfinv(2*p-1)
 }
 
 // --- DCF -----------------------------------------------------------------------
@@ -375,6 +365,16 @@ func calcDCF(freeCashFlows []float64, discountRate, terminalGrowthRate, sharesOu
 	if discountRate <= terminalGrowthRate {
 		return dcfResult{}, errors.New("discount_rate must be greater than terminal_growth_rate to avoid infinite terminal value")
 	}
+	allNegative := true
+	for _, fcf := range freeCashFlows {
+		if fcf > 0 {
+			allNegative = false
+			break
+		}
+	}
+	if allNegative {
+		return dcfResult{}, errors.New("all free_cash_flows are negative or zero; DCF intrinsic value would be meaningless — provide at least one positive FCF")
+	}
 	pvFCF := 0.0
 	for i, fcf := range freeCashFlows {
 		pvFCF += fcf / math.Pow(1+discountRate, float64(i+1))
@@ -388,13 +388,17 @@ func calcDCF(freeCashFlows []float64, discountRate, terminalGrowthRate, sharesOu
 	if sharesOutstanding > 0 {
 		perShare = total / sharesOutstanding
 	}
+	summary := fmt.Sprintf("DCF intrinsic value: %.2f (%.2f/share); PV of FCFs: %.2f, PV of terminal value: %.2f",
+		total, perShare, pvFCF, pvTV)
+	if lastFCF < 0 {
+		summary += " [WARNING: last FCF is negative, making the terminal value negative — results may not be economically meaningful]"
+	}
 	return dcfResult{
 		IntrinsicValueTotal:    round2(total),
 		IntrinsicValuePerShare: round2(perShare),
 		TerminalValue:          round2(tv),
 		PVOfCashflows:          round2(pvFCF),
-		Summary: fmt.Sprintf("DCF intrinsic value: %.2f (%.2f/share); PV of FCFs: %.2f, PV of terminal value: %.2f",
-			total, perShare, pvFCF, pvTV),
+		Summary:                summary,
 	}, nil
 }
 
@@ -519,8 +523,8 @@ func calcStats(values []float64, label string) (statsResult, error) {
 		Mean:         round4(m),
 		Median:       round4(median),
 		StdDev:       round4(sd),
-		Min:          s[0],
-		Max:          s[n-1],
+		Min:          round4(s[0]),
+		Max:          round4(s[n-1]),
 		Percentile25: round4(p25),
 		Percentile75: round4(p75),
 		Count:        n,
