@@ -172,8 +172,8 @@ func buildTools() []llm.Tool {
 		tool("calculate_beta",
 			"Calculate asset beta and correlation relative to a benchmark using daily return series of equal length.",
 			obj(map[string]any{
-				"asset_returns":      arrNum("Daily returns of the asset in decimal form"),
-				"benchmark_returns":  arrNum("Daily returns of the benchmark in decimal form (same length as asset_returns)"),
+				"asset_returns":     arrNum("Daily returns of the asset in decimal form"),
+				"benchmark_returns": arrNum("Daily returns of the benchmark in decimal form (same length as asset_returns)"),
 			}, []string{"asset_returns", "benchmark_returns"}),
 		),
 		tool("calculate_var",
@@ -188,21 +188,21 @@ func buildTools() []llm.Tool {
 		tool("calculate_dcf",
 			"Calculate intrinsic value using discounted cash flow (DCF) with Gordon Growth Model terminal value.",
 			obj(map[string]any{
-				"free_cash_flows":     arrNum("Projected annual free cash flows (year 1 to year N)"),
-				"discount_rate":       numProp("Weighted average cost of capital in decimal (e.g. 0.10 = 10%)"),
+				"free_cash_flows":      arrNum("Projected annual free cash flows (year 1 to year N)"),
+				"discount_rate":        numProp("Weighted average cost of capital in decimal (e.g. 0.10 = 10%)"),
 				"terminal_growth_rate": numProp("Perpetual growth rate in decimal; must be less than discount_rate"),
-				"shares_outstanding":  numProp("Number of shares outstanding (use 0 to skip per-share calculation)"),
+				"shares_outstanding":   numProp("Number of shares outstanding (use 0 to skip per-share calculation)"),
 			}, []string{"free_cash_flows", "discount_rate", "terminal_growth_rate", "shares_outstanding"}),
 		),
 		tool("calculate_multiples",
 			"Calculate market valuation multiples (P/E, P/BV, EV/EBITDA, EV/Revenue, P/S). Any multiple whose denominator is zero is omitted from the result.",
 			obj(map[string]any{
-				"price":               numProp("Current share price"),
-				"eps":                 numProp("Earnings per share (0 to omit P/E)"),
+				"price":                numProp("Current share price"),
+				"eps":                  numProp("Earnings per share (0 to omit P/E)"),
 				"book_value_per_share": numProp("Book value per share (0 to omit P/BV)"),
-				"ebitda":              numProp("EBITDA (0 to omit EV/EBITDA)"),
-				"enterprise_value":    numProp("Enterprise value"),
-				"revenue":             numProp("Revenue; use per-share revenue for P/S, total revenue for EV/Revenue"),
+				"ebitda":               numProp("EBITDA (0 to omit EV/EBITDA)"),
+				"enterprise_value":     numProp("Enterprise value"),
+				"revenue":              numProp("Revenue; use per-share revenue for P/S, total revenue for EV/Revenue"),
 			}, []string{"price", "eps", "book_value_per_share", "ebitda", "enterprise_value", "revenue"}),
 		),
 		tool("convert_currency",
@@ -229,6 +229,69 @@ func buildTools() []llm.Tool {
 				"values": arrNum("Numeric series to analyse"),
 				"label":  str("Name of the series used in the summary (e.g. \"AAPL daily returns\")"),
 			}, []string{"values", "label"}),
+		),
+
+		// --- Technical indicators ------------------------------------------
+		// All five receive a prices[] array directly. The LLM is expected to
+		// first call market_get_candles, then pass the close prices in. This
+		// keeps the math pure (no provider dependency) and easy to test.
+		tool("calculate_sma",
+			"Calculate the simple moving average (SMA) of a price series. First period-1 entries of the returned series are NaN to mark the warm-up.",
+			obj(map[string]any{
+				"prices": arrNum("Chronological closing prices (length >= period)"),
+				"period": intProp("Window length, e.g. 20"),
+			}, []string{"prices", "period"}),
+		),
+		tool("calculate_ema",
+			"Calculate the exponential moving average (EMA) of a price series. If alpha is omitted, uses Wilder smoothing: alpha = 2 / (period + 1).",
+			obj(map[string]any{
+				"prices": arrNum("Chronological closing prices"),
+				"period": intProp("Lookback window, e.g. 20"),
+				"alpha":  numProp("Smoothing factor in (0, 1). Omit for Wilder default."),
+			}, []string{"prices", "period"}),
+		),
+		tool("calculate_rsi",
+			"Calculate the Relative Strength Index (Wilder) of a price series. Returns value, interpretation (\"oversold\" <30, \"overbought\" >70, otherwise \"neutral\"), and the full series.",
+			obj(map[string]any{
+				"prices": arrNum("Chronological closing prices (length >= period+2)"),
+				"period": intProp("Lookback window (default 14)"),
+			}, []string{"prices"}),
+		),
+		tool("calculate_macd",
+			"Calculate the MACD indicator (fast EMA minus slow EMA, plus signal EMA of the MACD line). Detects bullish/bearish histogram crosses on the latest bar.",
+			obj(map[string]any{
+				"prices":        arrNum("Chronological closing prices (length >= slow_period + signal_period)"),
+				"fast_period":   intProp("Fast EMA window (default 12)"),
+				"slow_period":   intProp("Slow EMA window (default 26)"),
+				"signal_period": intProp("Signal EMA window (default 9)"),
+			}, []string{"prices"}),
+		),
+		tool("calculate_bollinger_bands",
+			"Calculate Bollinger Bands (moving average ± k·σ) for a price series. Returns upper/middle/lower/bandwidth/%b series.",
+			obj(map[string]any{
+				"prices":  arrNum("Chronological closing prices (length >= period)"),
+				"period":  intProp("SMA window (default 20)"),
+				"num_std": numProp("Standard deviation multiplier (default 2)"),
+			}, []string{"prices"}),
+		),
+		tool("calculate_correlation_matrix",
+			"Calculate the NxN Pearson correlation matrix between named return series. Each series must have the same length. Useful for diversification analysis.",
+			obj(map[string]any{
+				"series": map[string]any{
+					"type":        "object",
+					"description": "Map of series name to numeric array, e.g. {\"AAPL\": [0.01, -0.02, ...], \"MSFT\": [0.005, 0.011, ...]}",
+					"additionalProperties": map[string]any{
+						"type":  "array",
+						"items": map[string]any{"type": "number"},
+					},
+				},
+			}, []string{"series"}),
+		),
+		tool("portfolio_calculate_metrics",
+			"Aggregate metrics for a portfolio: current value, realised vs unrealised P&L, concentration (HHI + per-symbol weights), weighted dividend yield, weighted beta. If portfolio_id is omitted, uses the current portfolio. Fetches current quotes via the configured market provider; symbols with no quote are skipped and reported in missing_quotes.",
+			obj(map[string]any{
+				"portfolio_id": str("Portfolio ID (optional; omit to use the current portfolio)"),
+			}, []string{}),
 		),
 
 		tool(news.ToolName, news.ToolDescription, news.ToolParams()),
@@ -455,6 +518,69 @@ func (a *Agent) dispatchInner(ctx context.Context, call llm.ToolCall, lastKind *
 			return `error: values must be an array of numbers`
 		}
 		return encode(calcStats(vals, str("label")))
+
+	case "calculate_sma":
+		prices, ok := arrNumVal("prices")
+		if !ok {
+			return `error: prices must be an array of numbers`
+		}
+		return encode(calcSMA(prices, intVal("period", 20)))
+
+	case "calculate_ema":
+		prices, ok := arrNumVal("prices")
+		if !ok {
+			return `error: prices must be an array of numbers`
+		}
+		// alpha omitted -> 0, which calcEMA interprets as "use Wilder default".
+		return encode(calcEMA(prices, intVal("period", 20), numVal("alpha")))
+
+	case "calculate_rsi":
+		prices, ok := arrNumVal("prices")
+		if !ok {
+			return `error: prices must be an array of numbers`
+		}
+		return encode(calcRSI(prices, intVal("period", 14)))
+
+	case "calculate_macd":
+		prices, ok := arrNumVal("prices")
+		if !ok {
+			return `error: prices must be an array of numbers`
+		}
+		return encode(calcMACD(prices,
+			intVal("fast_period", 12),
+			intVal("slow_period", 26),
+			intVal("signal_period", 9)))
+
+	case "calculate_bollinger_bands":
+		prices, ok := arrNumVal("prices")
+		if !ok {
+			return `error: prices must be an array of numbers`
+		}
+		// num_std omitted -> 0, which calcBollingerBands rejects with a clear error.
+		return encode(calcBollingerBands(prices, intVal("period", 20), numVal("num_std")))
+
+	case "calculate_correlation_matrix":
+		raw, ok := args["series"].(map[string]any)
+		if !ok {
+			return `error: series must be an object mapping name → number[]`
+		}
+		series := make(map[string][]float64, len(raw))
+		for name, v := range raw {
+			arr, ok := v.([]any)
+			if !ok {
+				return fmt.Sprintf("error: series[%q] must be an array of numbers", name)
+			}
+			vals := make([]float64, len(arr))
+			for i, x := range arr {
+				f, ok := x.(float64)
+				if !ok {
+					return fmt.Sprintf("error: series[%q][%d] must be a number", name, i)
+				}
+				vals[i] = f
+			}
+			series[name] = vals
+		}
+		return encode(calcCorrelationMatrix(series))
 	}
 
 	// News tool — no market provider needed.
@@ -491,7 +617,9 @@ func (a *Agent) dispatchInner(ctx context.Context, call llm.ToolCall, lastKind *
 		return string(b)
 	}
 
-	// Portfolio tools — operate on persisted portfolio files, no market provider needed.
+	// Portfolio tools — operate on persisted portfolio files. portfolio_calculate_metrics
+	// additionally needs the market provider for live quotes; it falls back gracefully
+	// (and reports missing_quotes) when the provider is unavailable.
 	if strings.HasPrefix(call.Function.Name, "portfolio_") {
 		// resolvePortfolioID uses the explicit argument or falls back to the current portfolio.
 		resolvePortfolioID := func() (string, error) {
@@ -611,12 +739,12 @@ func (a *Agent) dispatchInner(ctx context.Context, call llm.ToolCall, lastKind *
 				return encode(nil, err)
 			}
 			return encode(map[string]any{
-				"instrument_id":   ins.ID,
-				"symbol":          ins.Symbol,
-				"name":            ins.Name,
-				"type":            ins.Type,
-				"total_quantity":  ins.TotalQuantity(),
-				"portfolio_id":    p.ID,
+				"instrument_id":  ins.ID,
+				"symbol":         ins.Symbol,
+				"name":           ins.Name,
+				"type":           ins.Type,
+				"total_quantity": ins.TotalQuantity(),
+				"portfolio_id":   p.ID,
 			}, nil)
 
 		case "portfolio_add_lot":
@@ -697,9 +825,9 @@ func (a *Agent) dispatchInner(ctx context.Context, call llm.ToolCall, lastKind *
 					return encode(nil, err)
 				}
 				return encode(map[string]any{
-					"symbol":                      ins.Symbol,
-					"realized_pnl":                result.RealizedPnL,
-					"remaining_quantity":          p.Instruments[i].TotalQuantity(),
+					"symbol":                       ins.Symbol,
+					"realized_pnl":                 result.RealizedPnL,
+					"remaining_quantity":           p.Instruments[i].TotalQuantity(),
 					"portfolio_total_realized_pnl": p.RealizedPnL,
 				}, nil)
 			}
@@ -735,6 +863,48 @@ func (a *Agent) dispatchInner(ctx context.Context, call llm.ToolCall, lastKind *
 				return encode(nil, err)
 			}
 			return encode(map[string]any{"removed": symbol, "portfolio_id": p.ID}, nil)
+
+		case "portfolio_calculate_metrics":
+			id, err := resolvePortfolioID()
+			if err != nil {
+				return encode(nil, err)
+			}
+			p, err := portfolio.LoadPortfolio(id)
+			if err != nil {
+				return encode(nil, err)
+			}
+			if p == nil {
+				return `error: portfolio not found`
+			}
+			// Auto-fetch a quote per holding. Symbols whose quote fails or
+			// returns Last=0 end up in MissingQuotes and are excluded from
+			// valuation, concentration, and dividend/beta aggregates.
+			quotes := make(map[string]portfolio.Quote, len(p.Instruments))
+			if a.market != nil {
+				for _, ins := range p.Instruments {
+					if ins.Type != portfolio.InstrumentHolding {
+						continue
+					}
+					if _, seen := quotes[ins.Symbol]; seen {
+						continue
+					}
+					q, qErr := a.market.GetQuote(ctx, ins.Symbol)
+					if qErr != nil || q.Last <= 0 {
+						continue
+					}
+					quotes[ins.Symbol] = portfolio.Quote{Last: q.Last}
+				}
+			}
+			m, err := portfolio.ComputeMetrics(p, quotes)
+			if err != nil {
+				return encode(nil, err)
+			}
+			m.ComputedAt = time.Now().UTC().Format(time.RFC3339)
+			if a.market == nil {
+				// Surface the cause of the missing valuation so the LLM can warn the user.
+				m.Summary = m.Summary + " [WARNING: no market provider configured — only realised P&L and cost basis are accurate]"
+			}
+			return encode(m, nil)
 		}
 	}
 

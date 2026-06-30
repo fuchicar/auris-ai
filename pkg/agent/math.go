@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -207,6 +208,87 @@ func calcPnL(entryPrice, currentPrice, quantity float64, positionType string) (p
 }
 
 // --- internal helpers ----------------------------------------------------------
+
+// Float is a float64 that marshals NaN and ±Inf as JSON null and parses JSON
+// null back to math.NaN. Use it only on fields that can legitimately be
+// undefined (e.g. the warm-up positions of an indicator series). Using it on
+// ordinary numeric fields would silently coerce bad data to NaN.
+type Float float64
+
+// MarshalJSON encodes the value as a JSON number when finite, or null when
+// NaN/±Inf. This keeps indicator output JSON-clean even though the warm-up
+// positions of a moving average are mathematically undefined.
+func (f Float) MarshalJSON() ([]byte, error) {
+	v := float64(f)
+	if math.IsNaN(v) || math.IsInf(v, 0) {
+		return []byte("null"), nil
+	}
+	return json.Marshal(v)
+}
+
+// UnmarshalJSON parses a JSON number into Float, or maps JSON null to NaN.
+// Any other JSON type (string, bool, object) is rejected so callers fail
+// loudly on schema violations rather than getting NaN by surprise.
+func (f *Float) UnmarshalJSON(b []byte) error {
+	if string(b) == "null" {
+		*f = Float(math.NaN())
+		return nil
+	}
+	var v float64
+	if err := json.Unmarshal(b, &v); err != nil {
+		return err
+	}
+	*f = Float(v)
+	return nil
+}
+
+// FloatSlice marshals/unmarshals a []float64 where individual elements may be
+// NaN/±Inf. JSON null elements round-trip to math.NaN.
+type FloatSlice []float64
+
+// MarshalJSON emits a JSON array, mapping each non-finite element to null.
+func (s FloatSlice) MarshalJSON() ([]byte, error) {
+	out := make([]byte, 0, len(s)*8)
+	out = append(out, '[')
+	for i, v := range s {
+		if i > 0 {
+			out = append(out, ',')
+		}
+		if math.IsNaN(v) || math.IsInf(v, 0) {
+			out = append(out, "null"...)
+		} else {
+			b, err := json.Marshal(v)
+			if err != nil {
+				return nil, err
+			}
+			out = append(out, b...)
+		}
+	}
+	out = append(out, ']')
+	return out, nil
+}
+
+// UnmarshalJSON accepts a JSON array of numbers/nulls. Nulls become math.NaN.
+func (s *FloatSlice) UnmarshalJSON(b []byte) error {
+	var raw []json.RawMessage
+	if err := json.Unmarshal(b, &raw); err != nil {
+		return err
+	}
+	out := make([]float64, len(raw))
+	for i, r := range raw {
+		if string(r) == "null" {
+			out[i] = math.NaN()
+			continue
+		}
+		var v float64
+		if err := json.Unmarshal(r, &v); err != nil {
+			return err
+		}
+		out[i] = v
+	}
+	*s = out
+	return nil
+}
 
 func meanFloat(xs []float64) float64 {
 	sum := 0.0
@@ -545,4 +627,496 @@ func percentileInterp(sorted []float64, p float64) float64 {
 		return sorted[n-1]
 	}
 	return sorted[lo] + (h-float64(lo))*(sorted[hi]-sorted[lo])
+}
+
+// --- Technical indicators -----------------------------------------------------
+
+// smaResult holds the simple moving average series and headline figures.
+//
+// Values are aligned to the input: the first len(prices)-period+1 entries of
+// Values are non-nil; the rest are NaN so callers can detect warm-up.
+type smaResult struct {
+	Period    int        `json:"period"`
+	Values    FloatSlice `json:"values"`
+	Last      float64    `json:"last"`
+	Previous  float64    `json:"previous"`
+	Trend     string     `json:"trend"` // "up", "down", or "flat"
+	Summary   string     `json:"summary"`
+	InputSize int        `json:"input_size"`
+}
+
+// calcSMA computes the simple moving average of closing prices over a sliding
+// window of length period. The first period-1 entries of the returned series
+// are NaN to reflect the warm-up period.
+func calcSMA(prices []float64, period int) (smaResult, error) {
+	if period <= 0 {
+		return smaResult{}, fmt.Errorf("period must be greater than zero, got %d", period)
+	}
+	if len(prices) < period {
+		return smaResult{}, fmt.Errorf("at least %d prices required for SMA, got %d", period, len(prices))
+	}
+	values := make([]float64, len(prices))
+	for i := range values {
+		values[i] = math.NaN()
+	}
+	var sum float64
+	for i := 0; i < period; i++ {
+		sum += prices[i]
+	}
+	values[period-1] = sum / float64(period)
+	for i := period; i < len(prices); i++ {
+		sum += prices[i] - prices[i-period]
+		values[i] = sum / float64(period)
+	}
+	last := values[len(values)-1]
+	previous := math.NaN()
+	trend := "flat"
+	if len(values) >= 2 {
+		previous = values[len(values)-2]
+		switch {
+		case last > previous:
+			trend = "up"
+		case last < previous:
+			trend = "down"
+		}
+	}
+	return smaResult{
+		Period:    period,
+		Values:    values, // []float64 → FloatSlice (same underlying type)
+		Last:      round4(last),
+		Previous:  round4(previous),
+		Trend:     trend,
+		InputSize: len(prices),
+		Summary:   fmt.Sprintf("SMA(%d) last=%.4f (prev=%.4f, trend=%s) over %d prices", period, last, previous, trend, len(prices)),
+	}, nil
+}
+
+// emaResult holds the exponential moving average series and headline figures.
+//
+// Values are aligned to the input: the first len(prices) entries are valid
+// because EMA seeds with the first observation, unlike SMA.
+type emaResult struct {
+	Period    int       `json:"period"`
+	Alpha     float64   `json:"alpha"`
+	Values    []float64 `json:"values"`
+	Last      float64   `json:"last"`
+	Previous  float64   `json:"previous"`
+	Trend     string    `json:"trend"`
+	Summary   string    `json:"summary"`
+	InputSize int       `json:"input_size"`
+}
+
+// calcEMA computes the exponential moving average of prices using the recursive
+// formula EMA_t = alpha * P_t + (1-alpha) * EMA_{t-1}, seeded with the first
+// observation. If alpha is zero or negative, it defaults to 2 / (period + 1),
+// the standard "Wilder smoothing" convention.
+func calcEMA(prices []float64, period int, alpha float64) (emaResult, error) {
+	if period <= 0 {
+		return emaResult{}, fmt.Errorf("period must be greater than zero, got %d", period)
+	}
+	if len(prices) == 0 {
+		return emaResult{}, errors.New("prices must not be empty")
+	}
+	if alpha <= 0 {
+		alpha = 2.0 / (float64(period) + 1)
+	}
+	if alpha >= 1 {
+		return emaResult{}, fmt.Errorf("alpha must be less than 1, got %.4f", alpha)
+	}
+	values := make([]float64, len(prices))
+	values[0] = prices[0]
+	for i := 1; i < len(prices); i++ {
+		values[i] = alpha*prices[i] + (1-alpha)*values[i-1]
+	}
+	last := values[len(values)-1]
+	previous := math.NaN()
+	trend := "flat"
+	if len(values) >= 2 {
+		previous = values[len(values)-2]
+		switch {
+		case last > previous:
+			trend = "up"
+		case last < previous:
+			trend = "down"
+		}
+	}
+	return emaResult{
+		Period:    period,
+		Alpha:     round4(alpha),
+		Values:    roundSlice(values, 6),
+		Last:      round4(last),
+		Previous:  round4(previous),
+		Trend:     trend,
+		InputSize: len(prices),
+		Summary:   fmt.Sprintf("EMA(%d, alpha=%.4f) last=%.4f (prev=%.4f, trend=%s) over %d prices", period, alpha, last, previous, trend, len(prices)),
+	}, nil
+}
+
+// rsiResult holds the Relative Strength Index (Wilder) and its interpretation.
+type rsiResult struct {
+	Period         int        `json:"period"`
+	Value          float64    `json:"value"`
+	PreviousValue  float64    `json:"previous_value"`
+	Interpretation string     `json:"interpretation"` // "oversold", "neutral", "overbought"
+	Values         FloatSlice `json:"values"`
+	Summary        string     `json:"summary"`
+	InputSize      int        `json:"input_size"`
+}
+
+// calcRSI computes the Relative Strength Index using Wilder's smoothing
+// (equivalent to an EMA with alpha = 1/period). Interpretation:
+//   - value < 30 → "oversold"
+//   - value > 70 → "overbought"
+//   - otherwise → "neutral"
+func calcRSI(prices []float64, period int) (rsiResult, error) {
+	if period <= 0 {
+		return rsiResult{}, fmt.Errorf("period must be greater than zero, got %d", period)
+	}
+	// Need at least period+1 prices to compute period changes, then a second
+	// value to populate PreviousValue.
+	if len(prices) < period+2 {
+		return rsiResult{}, fmt.Errorf("at least %d prices required for RSI(%d), got %d", period+2, period, len(prices))
+	}
+	changes := make([]float64, len(prices)-1)
+	for i := 1; i < len(prices); i++ {
+		changes[i-1] = prices[i] - prices[i-1]
+	}
+	// Wilder's smoothing uses SMA for the first average, then runs an EMA.
+	var gain, loss float64
+	for i := 0; i < period; i++ {
+		if changes[i] > 0 {
+			gain += changes[i]
+		} else {
+			loss -= changes[i]
+		}
+	}
+	avgGain := gain / float64(period)
+	avgLoss := loss / float64(period)
+	values := make([]float64, len(changes))
+	// The first index with a valid RSI is `period` (after `period` changes).
+	// Earlier slots are NaN to mirror common charting libraries.
+	for i := range values {
+		values[i] = math.NaN()
+	}
+	rsi := rsiFromAvg(avgGain, avgLoss)
+	values[period] = rsi
+	for i := period + 1; i < len(changes); i++ {
+		ch := changes[i]
+		g, l := 0.0, 0.0
+		if ch > 0 {
+			g = ch
+		} else {
+			l = -ch
+		}
+		avgGain = (avgGain*float64(period-1) + g) / float64(period)
+		avgLoss = (avgLoss*float64(period-1) + l) / float64(period)
+		values[i] = rsiFromAvg(avgGain, avgLoss)
+	}
+	last := values[len(values)-1]
+	previous := math.NaN()
+	if len(values) >= 2 {
+		previous = values[len(values)-2]
+	}
+	interp := "neutral"
+	switch {
+	case last < 30:
+		interp = "oversold"
+	case last > 70:
+		interp = "overbought"
+	}
+	return rsiResult{
+		Period:         period,
+		Value:          round4(last),
+		PreviousValue:  round4(previous),
+		Interpretation: interp,
+		Values:         values, // []float64 → FloatSlice (same underlying type)
+		InputSize:      len(prices),
+		Summary:        fmt.Sprintf("RSI(%d)=%.2f (%s) on %d prices", period, last, interp, len(prices)),
+	}, nil
+}
+
+// rsiFromAvg converts average gains/losses into an RSI value in [0, 100].
+// When avgLoss is zero and avgGain is also zero, the price has not moved: RSI is undefined
+// and we return 50 as the neutral midpoint.
+func rsiFromAvg(avgGain, avgLoss float64) float64 {
+	if avgLoss == 0 {
+		if avgGain == 0 {
+			return 50
+		}
+		return 100
+	}
+	rs := avgGain / avgLoss
+	return 100 - 100/(1+rs)
+}
+
+// macdResult holds the MACD line, signal line, and histogram series.
+type macdResult struct {
+	FastPeriod   int       `json:"fast_period"`
+	SlowPeriod   int       `json:"slow_period"`
+	SignalPeriod int       `json:"signal_period"`
+	MACDLine     []float64 `json:"macd_line"`
+	SignalLine   []float64 `json:"signal_line"`
+	Histogram    []float64 `json:"histogram"`
+	LastMACD     float64   `json:"last_macd"`
+	LastSignal   float64   `json:"last_signal"`
+	LastHist     float64   `json:"last_hist"`
+	Trend        string    `json:"trend"` // "bullish_cross", "bearish_cross", or "no_cross"
+	Summary      string    `json:"summary"`
+	InputSize    int       `json:"input_size"`
+}
+
+// calcMACD computes the Moving Average Convergence Divergence indicator.
+//
+// The MACD line is the difference between a fast EMA and a slow EMA of prices.
+// The signal line is an EMA of the MACD line itself. The histogram is the
+// difference between MACD and signal. A "bullish_cross" is reported when the
+// histogram flipped from negative to non-negative on the latest bar; a
+// "bearish_cross" is the opposite. If fast ≥ slow the function returns an
+// error because the indicator is undefined.
+func calcMACD(prices []float64, fastPeriod, slowPeriod, signalPeriod int) (macdResult, error) {
+	if fastPeriod <= 0 || slowPeriod <= 0 || signalPeriod <= 0 {
+		return macdResult{}, fmt.Errorf("fast_period, slow_period, signal_period must all be positive (got %d, %d, %d)", fastPeriod, slowPeriod, signalPeriod)
+	}
+	if fastPeriod >= slowPeriod {
+		return macdResult{}, fmt.Errorf("fast_period (%d) must be less than slow_period (%d)", fastPeriod, slowPeriod)
+	}
+	// Need slowPeriod observations to seed both EMAs and signalPeriod more for the signal.
+	if len(prices) < slowPeriod+signalPeriod {
+		return macdResult{}, fmt.Errorf("at least %d prices required for MACD(%d,%d,%d), got %d",
+			slowPeriod+signalPeriod, fastPeriod, slowPeriod, signalPeriod, len(prices))
+	}
+	fastEMA := emaSeries(prices, fastPeriod)
+	slowEMA := emaSeries(prices, slowPeriod)
+	macdLine := make([]float64, len(prices))
+	for i := range prices {
+		macdLine[i] = fastEMA[i] - slowEMA[i]
+	}
+	signalLine := emaSeries(macdLine, signalPeriod)
+	histogram := make([]float64, len(prices))
+	for i := range prices {
+		histogram[i] = macdLine[i] - signalLine[i]
+	}
+	trend := "no_cross"
+	if len(histogram) >= 2 {
+		prev := histogram[len(histogram)-2]
+		last := histogram[len(histogram)-1]
+		switch {
+		case prev < 0 && last >= 0:
+			trend = "bullish_cross"
+		case prev > 0 && last <= 0:
+			trend = "bearish_cross"
+		}
+	}
+	return macdResult{
+		FastPeriod:   fastPeriod,
+		SlowPeriod:   slowPeriod,
+		SignalPeriod: signalPeriod,
+		MACDLine:     roundSlice(macdLine, 6),
+		SignalLine:   roundSlice(signalLine, 6),
+		Histogram:    roundSlice(histogram, 6),
+		LastMACD:     round4(macdLine[len(macdLine)-1]),
+		LastSignal:   round4(signalLine[len(signalLine)-1]),
+		LastHist:     round4(histogram[len(histogram)-1]),
+		Trend:        trend,
+		InputSize:    len(prices),
+		Summary: fmt.Sprintf("MACD(%d,%d,%d): macd=%.4f, signal=%.4f, hist=%.4f, trend=%s",
+			fastPeriod, slowPeriod, signalPeriod,
+			macdLine[len(macdLine)-1], signalLine[len(signalLine)-1], histogram[len(histogram)-1], trend),
+	}, nil
+}
+
+// bollingerResult holds Bollinger Band output for a price series.
+type bollingerResult struct {
+	Period    int        `json:"period"`
+	NumStd    float64    `json:"num_std"`
+	Upper     FloatSlice `json:"upper"`
+	Middle    FloatSlice `json:"middle"`
+	Lower     FloatSlice `json:"lower"`
+	Bandwidth FloatSlice `json:"bandwidth"` // (upper - lower) / middle
+	PercentB  FloatSlice `json:"percent_b"` // (price - lower) / (upper - lower)
+	LastPrice float64    `json:"last_price"`
+	LastUpper float64    `json:"last_upper"`
+	LastLower float64    `json:"last_lower"`
+	LastPctB  float64    `json:"last_percent_b"`
+	Summary   string     `json:"summary"`
+	InputSize int        `json:"input_size"`
+}
+
+// calcBollingerBands computes Bollinger Bands (moving average ± k·σ) for a
+// price series. Returns upper/middle/lower/bandwidth/%b series, each entry
+// aligned to prices (NaN during the warm-up period).
+func calcBollingerBands(prices []float64, period int, numStd float64) (bollingerResult, error) {
+	if period <= 0 {
+		return bollingerResult{}, fmt.Errorf("period must be greater than zero, got %d", period)
+	}
+	if numStd <= 0 {
+		return bollingerResult{}, fmt.Errorf("num_std must be positive, got %.4f", numStd)
+	}
+	if len(prices) < period {
+		return bollingerResult{}, fmt.Errorf("at least %d prices required for Bollinger(%d), got %d", period, period, len(prices))
+	}
+	upper := make([]float64, len(prices))
+	middle := make([]float64, len(prices))
+	lower := make([]float64, len(prices))
+	bandwidth := make([]float64, len(prices))
+	pctB := make([]float64, len(prices))
+	for i := range prices {
+		upper[i] = math.NaN()
+		middle[i] = math.NaN()
+		lower[i] = math.NaN()
+		bandwidth[i] = math.NaN()
+		pctB[i] = math.NaN()
+	}
+	for i := period - 1; i < len(prices); i++ {
+		window := prices[i-period+1 : i+1]
+		m := meanFloat(window)
+		sd := sampleStddev(window)
+		upper[i] = m + numStd*sd
+		middle[i] = m
+		lower[i] = m - numStd*sd
+		if m != 0 {
+			bandwidth[i] = (upper[i] - lower[i]) / m
+		}
+		span := upper[i] - lower[i]
+		if span != 0 {
+			pctB[i] = (prices[i] - lower[i]) / span
+		}
+	}
+	last := len(prices) - 1
+	summary := fmt.Sprintf("Bollinger(%d, %.2fσ) last: price=%.4f upper=%.4f middle=%.4f lower=%.4f %%b=%.4f",
+		period, numStd, prices[last], upper[last], middle[last], lower[last], pctB[last])
+	return bollingerResult{
+		Period:    period,
+		NumStd:    round4(numStd),
+		Upper:     upper, // []float64 → FloatSlice (same underlying type)
+		Middle:    middle,
+		Lower:     lower,
+		Bandwidth: bandwidth,
+		PercentB:  pctB,
+		LastPrice: round4(prices[last]),
+		LastUpper: round4(upper[last]),
+		LastLower: round4(lower[last]),
+		LastPctB:  round4(pctB[last]),
+		InputSize: len(prices),
+		Summary:   summary,
+	}, nil
+}
+
+// correlationMatrixResult holds an NxN Pearson correlation matrix between
+// named return series, plus the diagonal (always 1) and labels for downstream
+// rendering.
+type correlationMatrixResult struct {
+	Labels  []string    `json:"labels"`
+	Matrix  [][]float64 `json:"matrix"`
+	Scale   string      `json:"scale"` // "[-1, 1]"
+	Summary string      `json:"summary"`
+}
+
+// calcCorrelationMatrix computes the Pearson correlation between every pair
+// of the provided series. Each series must be the same length (typical usage:
+// daily returns of N assets).
+func calcCorrelationMatrix(series map[string][]float64) (correlationMatrixResult, error) {
+	if len(series) < 2 {
+		return correlationMatrixResult{}, fmt.Errorf("at least 2 series required, got %d", len(series))
+	}
+	// Stable iteration order for deterministic output (sorted by key).
+	keys := make([]string, 0, len(series))
+	for k := range series {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	// Validate equal lengths and ≥2 observations.
+	n := -1
+	for _, k := range keys {
+		l := len(series[k])
+		if n == -1 {
+			n = l
+			continue
+		}
+		if l != n {
+			return correlationMatrixResult{}, fmt.Errorf("series %q has length %d, expected %d", k, l, n)
+		}
+	}
+	if n < 2 {
+		return correlationMatrixResult{}, fmt.Errorf("each series must have at least 2 observations, got %d", n)
+	}
+	matrix := make([][]float64, len(keys))
+	for i := range matrix {
+		matrix[i] = make([]float64, len(keys))
+	}
+	for i, ki := range keys {
+		for j, kj := range keys {
+			if i == j {
+				matrix[i][j] = 1
+				continue
+			}
+			if j < i {
+				// Already computed; mirror.
+				matrix[i][j] = matrix[j][i]
+				continue
+			}
+			c, err := pearson(series[ki], series[kj])
+			if err != nil {
+				return correlationMatrixResult{}, fmt.Errorf("%s vs %s: %w", ki, kj, err)
+			}
+			matrix[i][j] = round4(c)
+		}
+	}
+	return correlationMatrixResult{
+		Labels:  keys,
+		Matrix:  matrix,
+		Scale:   "[-1, 1]",
+		Summary: fmt.Sprintf("Pearson correlation matrix across %d series, %d observations each", len(keys), n),
+	}, nil
+}
+
+// pearson returns the Pearson product-moment correlation coefficient between
+// two equal-length series. Returns an error when either series has zero variance.
+func pearson(a, b []float64) (float64, error) {
+	if len(a) != len(b) {
+		return 0, fmt.Errorf("series length mismatch: %d vs %d", len(a), len(b))
+	}
+	n := len(a)
+	if n < 2 {
+		return 0, errors.New("need at least 2 observations")
+	}
+	meanA := meanFloat(a)
+	meanB := meanFloat(b)
+	var cov, varA, varB float64
+	for i := 0; i < n; i++ {
+		da := a[i] - meanA
+		db := b[i] - meanB
+		cov += da * db
+		varA += da * da
+		varB += db * db
+	}
+	if varA == 0 || varB == 0 {
+		return 0, errors.New("zero variance in one of the series")
+	}
+	return cov / math.Sqrt(varA*varB), nil
+}
+
+// emaSeries returns the EMA series for the entire price array using Wilder
+// smoothing (alpha = 2 / (period + 1)). The first value is seeded with the
+// first observation. Exported only through calcEMA/calcMACD; kept unexported
+// because it does no input validation.
+func emaSeries(prices []float64, period int) []float64 {
+	alpha := 2.0 / (float64(period) + 1)
+	out := make([]float64, len(prices))
+	out[0] = prices[0]
+	for i := 1; i < len(prices); i++ {
+		out[i] = alpha*prices[i] + (1-alpha)*out[i-1]
+	}
+	return out
+}
+
+// roundSlice returns a new slice with every element rounded to `decimals`
+// decimal places. Used to keep the indicator series compact in JSON output.
+func roundSlice(in []float64, decimals int) []float64 {
+	out := make([]float64, len(in))
+	mult := math.Pow(10, float64(decimals))
+	for i, v := range in {
+		out[i] = math.Round(v*mult) / mult
+	}
+	return out
 }

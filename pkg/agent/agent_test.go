@@ -48,16 +48,22 @@ type mockMarket struct {
 	fundamental market.Fundamental
 	quoteErr    error
 	fundErr     error
+	// quotesBySymbol, when set, takes precedence over `quote` for GetQuote.
+	// Lets individual tests return per-symbol prices without changing the
+	// shape of the mock.
+	quotesBySymbol map[string]market.Quote
+	// quoteErrBySymbol, when set, overrides quoteErr for that symbol.
+	quoteErrBySymbol map[string]error
 }
 
-func (m *mockMarket) Name() string        { return "mock" }
-func (m *mockMarket) DocsURL() string     { return "" }
-func (m *mockMarket) Description() string { return "" }
-func (m *mockMarket) Connect(ctx context.Context) error    { return nil }
-func (m *mockMarket) Disconnect(ctx context.Context) error { return nil }
+func (m *mockMarket) Name() string                           { return "mock" }
+func (m *mockMarket) DocsURL() string                        { return "" }
+func (m *mockMarket) Description() string                    { return "" }
+func (m *mockMarket) Connect(ctx context.Context) error      { return nil }
+func (m *mockMarket) Disconnect(ctx context.Context) error   { return nil }
 func (m *mockMarket) RefreshToken(ctx context.Context) error { return nil }
-func (m *mockMarket) Ping(ctx context.Context) error       { return nil }
-func (m *mockMarket) IsConnected() bool                    { return true }
+func (m *mockMarket) Ping(ctx context.Context) error         { return nil }
+func (m *mockMarket) IsConnected() bool                      { return true }
 
 func (m *mockMarket) SearchInstrument(ctx context.Context, query string) ([]market.Instrument, error) {
 	return nil, market.ErrNotSupported
@@ -78,6 +84,12 @@ func (m *mockMarket) GetCorporateActions(ctx context.Context, symbol string, fro
 	return nil, market.ErrNotSupported
 }
 func (m *mockMarket) GetQuote(ctx context.Context, symbol string) (market.Quote, error) {
+	if q, ok := m.quotesBySymbol[symbol]; ok {
+		if err, has := m.quoteErrBySymbol[symbol]; has {
+			return q, err
+		}
+		return q, nil
+	}
 	return m.quote, m.quoteErr
 }
 func (m *mockMarket) GetOrderBook(ctx context.Context, symbol string, depth int) (market.OrderBook, error) {
@@ -111,8 +123,8 @@ func toolCallArgs(t *testing.T, args map[string]any) string {
 
 func TestBuildTools_Count(t *testing.T) {
 	tools := buildTools()
-	if len(tools) != 33 {
-		t.Errorf("expected 33 tools, got %d", len(tools))
+	if len(tools) != 40 {
+		t.Errorf("expected 40 tools, got %d", len(tools))
 	}
 }
 

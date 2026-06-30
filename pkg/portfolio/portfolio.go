@@ -127,6 +127,15 @@ func ApplyFIFOSell(lots []Lot, qty, sellPrice float64) (SellResult, error) {
 // portfoliosDirOverride is used in tests to redirect file I/O to a temp directory.
 var portfoliosDirOverride string
 
+// SetPortfoliosDirForTest replaces the portfolios directory override for the
+// duration of the test and returns the previous value so the test can restore
+// it via t.Cleanup. Not safe to call outside tests.
+func SetPortfoliosDirForTest(dir string) string {
+	prev := portfoliosDirOverride
+	portfoliosDirOverride = dir
+	return prev
+}
+
 // PortfoliosDir returns the directory where portfolio files are stored.
 func PortfoliosDir() (string, error) {
 	if portfoliosDirOverride != "" {
