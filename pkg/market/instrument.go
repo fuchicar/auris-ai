@@ -81,9 +81,10 @@ type CorporateAction struct {
 }
 
 type Fundamental struct {
-	Symbol    string
-	PERatio   float64
-	EPS       float64
-	MarketCap float64
-	// extender según proveedor
+	Symbol           string
+	PERatio          float64
+	EPS              float64
+	MarketCap        float64
+	DividendYieldTTM float64 // TTM dividend yield as a fraction (e.g. 0.025 = 2.5 %)
+	Beta             float64 // beta vs broad market benchmark; 0 if unknown
 }

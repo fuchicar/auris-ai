@@ -556,8 +556,11 @@ func (a *Agent) dispatchInner(ctx context.Context, call llm.ToolCall, lastKind *
 		if !ok {
 			return `error: prices must be an array of numbers`
 		}
-		// num_std omitted -> 0, which calcBollingerBands rejects with a clear error.
-		return encode(calcBollingerBands(prices, intVal("period", 20), numVal("num_std")))
+		numStd := numVal("num_std")
+		if numStd <= 0 {
+			numStd = 2.0 // standard default, consistent with EMA's alpha default
+		}
+		return encode(calcBollingerBands(prices, intVal("period", 20), numStd))
 
 	case "calculate_correlation_matrix":
 		raw, ok := args["series"].(map[string]any)
@@ -892,7 +895,15 @@ func (a *Agent) dispatchInner(ctx context.Context, call llm.ToolCall, lastKind *
 					if qErr != nil || q.Last <= 0 {
 						continue
 					}
-					quotes[ins.Symbol] = portfolio.Quote{Last: q.Last}
+					pq := portfolio.Quote{Last: q.Last}
+					// Enrich with dividend yield TTM and beta from fundamentals.
+					// Failure is non-fatal: missing fields stay zero and are
+					// excluded from the weighted averages by ComputeMetrics.
+					if f, fErr := a.market.GetFundamentals(ctx, ins.Symbol); fErr == nil {
+						pq.DividendYieldTTM = f.DividendYieldTTM
+						pq.Beta = f.Beta
+					}
+					quotes[ins.Symbol] = pq
 				}
 			}
 			m, err := portfolio.ComputeMetrics(p, quotes)

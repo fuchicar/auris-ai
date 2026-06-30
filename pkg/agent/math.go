@@ -639,8 +639,8 @@ type smaResult struct {
 	Period    int        `json:"period"`
 	Values    FloatSlice `json:"values"`
 	Last      float64    `json:"last"`
-	Previous  float64    `json:"previous"`
-	Trend     string     `json:"trend"` // "up", "down", or "flat"
+	Previous  Float      `json:"previous"` // null during warm-up (< period prices)
+	Trend     string     `json:"trend"`    // "up", "down", or "flat"
 	Summary   string     `json:"summary"`
 	InputSize int        `json:"input_size"`
 }
@@ -684,7 +684,7 @@ func calcSMA(prices []float64, period int) (smaResult, error) {
 		Period:    period,
 		Values:    values, // []float64 → FloatSlice (same underlying type)
 		Last:      round4(last),
-		Previous:  round4(previous),
+		Previous:  Float(round4(previous)),
 		Trend:     trend,
 		InputSize: len(prices),
 		Summary:   fmt.Sprintf("SMA(%d) last=%.4f (prev=%.4f, trend=%s) over %d prices", period, last, previous, trend, len(prices)),
@@ -700,7 +700,7 @@ type emaResult struct {
 	Alpha     float64   `json:"alpha"`
 	Values    []float64 `json:"values"`
 	Last      float64   `json:"last"`
-	Previous  float64   `json:"previous"`
+	Previous  Float     `json:"previous"` // null when only 1 price provided
 	Trend     string    `json:"trend"`
 	Summary   string    `json:"summary"`
 	InputSize int       `json:"input_size"`
@@ -745,7 +745,7 @@ func calcEMA(prices []float64, period int, alpha float64) (emaResult, error) {
 		Alpha:     round4(alpha),
 		Values:    roundSlice(values, 6),
 		Last:      round4(last),
-		Previous:  round4(previous),
+		Previous:  Float(round4(previous)),
 		Trend:     trend,
 		InputSize: len(prices),
 		Summary:   fmt.Sprintf("EMA(%d, alpha=%.4f) last=%.4f (prev=%.4f, trend=%s) over %d prices", period, alpha, last, previous, trend, len(prices)),
@@ -756,7 +756,7 @@ func calcEMA(prices []float64, period int, alpha float64) (emaResult, error) {
 type rsiResult struct {
 	Period         int        `json:"period"`
 	Value          float64    `json:"value"`
-	PreviousValue  float64    `json:"previous_value"`
+	PreviousValue  Float      `json:"previous_value"` // null at minimum input size (period+2 prices)
 	Interpretation string     `json:"interpretation"` // "oversold", "neutral", "overbought"
 	Values         FloatSlice `json:"values"`
 	Summary        string     `json:"summary"`
@@ -827,7 +827,7 @@ func calcRSI(prices []float64, period int) (rsiResult, error) {
 	return rsiResult{
 		Period:         period,
 		Value:          round4(last),
-		PreviousValue:  round4(previous),
+		PreviousValue:  Float(round4(previous)),
 		Interpretation: interp,
 		Values:         values, // []float64 → FloatSlice (same underlying type)
 		InputSize:      len(prices),

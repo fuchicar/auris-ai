@@ -54,6 +54,8 @@ type mockMarket struct {
 	quotesBySymbol map[string]market.Quote
 	// quoteErrBySymbol, when set, overrides quoteErr for that symbol.
 	quoteErrBySymbol map[string]error
+	// fundamentalsBySymbol, when set, takes precedence over `fundamental`.
+	fundamentalsBySymbol map[string]market.Fundamental
 }
 
 func (m *mockMarket) Name() string                           { return "mock" }
@@ -105,6 +107,9 @@ func (m *mockMarket) SubscribeOrderBook(ctx context.Context, symbol string, dept
 	return nil, market.ErrNotSupported
 }
 func (m *mockMarket) GetFundamentals(ctx context.Context, symbol string) (market.Fundamental, error) {
+	if f, ok := m.fundamentalsBySymbol[symbol]; ok {
+		return f, nil
+	}
 	return m.fundamental, m.fundErr
 }
 

@@ -1337,6 +1337,8 @@ func TestDispatch_CalculateBollinger_OK(t *testing.T) {
 }
 
 func TestDispatch_CalculateBollinger_MissingNumStd(t *testing.T) {
+	// Omitting num_std must apply the default of 2.0 (consistent with EMA's
+	// alpha default) instead of returning an error.
 	a := New(&mockLLM{}, &mockMarket{}, "")
 	var lk ProgressKind
 	args := toolCallArgs(t, map[string]any{
@@ -1346,8 +1348,15 @@ func TestDispatch_CalculateBollinger_MissingNumStd(t *testing.T) {
 	result := a.dispatch(context.Background(), llm.ToolCall{
 		Function: llm.ToolCallFunction{Name: "calculate_bollinger_bands", Arguments: args},
 	}, &lk)
-	if result[:6] != "error:" {
-		t.Errorf("missing num_std should produce an error, got %s", result)
+	if result[:6] == "error:" {
+		t.Fatalf("missing num_std should default to 2.0, got error: %s", result)
+	}
+	var r bollingerResult
+	if err := json.Unmarshal([]byte(result), &r); err != nil {
+		t.Fatalf("invalid JSON: %s — %v", result, err)
+	}
+	if r.NumStd != 2.0 {
+		t.Errorf("default num_std: want 2.0, got %v", r.NumStd)
 	}
 }
 
@@ -1435,6 +1444,10 @@ func TestDispatch_PortfolioCalculateMetrics_OK(t *testing.T) {
 			"AAPL": {Last: 150},
 			"MSFT": {Last: 200},
 		},
+		fundamentalsBySymbol: map[string]market.Fundamental{
+			"AAPL": {DividendYieldTTM: 0.005, Beta: 1.2},
+			"MSFT": {DividendYieldTTM: 0.008, Beta: 0.9},
+		},
 	}
 	a := New(&mockLLM{}, mp, "")
 	a.currentPortfolioID = p.ID
@@ -1459,6 +1472,300 @@ func TestDispatch_PortfolioCalculateMetrics_OK(t *testing.T) {
 	}
 	if m.ComputedAt == "" {
 		t.Error("ComputedAt must be populated by the dispatcher")
+	}
+	// Weighted beta: AAPL 1500/3500 * 1.2 + MSFT 2000/3500 * 0.9 ≈ 1.028.
+	if m.WeightedBeta == 0 {
+		t.Error("WeightedBeta must be non-zero when fundamentals are available")
+	}
+	// Dividend yield must be non-zero when fundamentals are available.
+	if m.DividendYield == 0 {
+		t.Error("DividendYield must be non-zero when fundamentals are available")
+	}
+}
+
+// BUG-6: smaResult.Previous, emaResult.Previous, rsiResult.PreviousValue were
+// typed float64, not Float. When the input is the minimum valid size, "previous"
+// is NaN (warm-up slot); json.Marshal rejects NaN with UnsupportedValueError and
+// the encode helper returned "" silently. Fixed by switching those fields to Float.
+func TestDispatch_CalculateSMA_MinimumInput_ValidJSON(t *testing.T) {
+	a := New(&mockLLM{}, &mockMarket{}, "")
+	var lk ProgressKind
+	// period=3, exactly 3 prices → previous will be NaN (warm-up).
+	args := toolCallArgs(t, map[string]any{"prices": []float64{10, 11, 12}, "period": 3})
+	result := a.dispatch(context.Background(), llm.ToolCall{
+		Function: llm.ToolCallFunction{Name: "calculate_sma", Arguments: args},
+	}, &lk)
+	if result == "" {
+		t.Fatal("BUG-6 regression: dispatch returned empty string (json.Marshal NaN silently failed)")
+	}
+	if result[:6] == "error:" {
+		t.Fatalf("unexpected error: %s", result)
+	}
+	var r smaResult
+	if err := json.Unmarshal([]byte(result), &r); err != nil {
+		t.Fatalf("invalid JSON: %s — %v", result, err)
+	}
+	// previous must be null (NaN → null via Float.MarshalJSON).
+	if !math.IsNaN(float64(r.Previous)) {
+		t.Errorf("Previous: want NaN (marshalled as null), got %v", float64(r.Previous))
+	}
+}
+
+func TestDispatch_CalculateRSI_MinimumInput_ValidJSON(t *testing.T) {
+	a := New(&mockLLM{}, &mockMarket{}, "")
+	var lk ProgressKind
+	// period=3 → minimum 5 prices (period+2).
+	prices := []float64{10, 11, 12, 11, 12}
+	args := toolCallArgs(t, map[string]any{"prices": prices, "period": 3})
+	result := a.dispatch(context.Background(), llm.ToolCall{
+		Function: llm.ToolCallFunction{Name: "calculate_rsi", Arguments: args},
+	}, &lk)
+	if result == "" {
+		t.Fatal("BUG-6 regression: dispatch returned empty string (json.Marshal NaN silently failed)")
+	}
+	if result[:6] == "error:" {
+		t.Fatalf("unexpected error: %s", result)
+	}
+	var r rsiResult
+	if err := json.Unmarshal([]byte(result), &r); err != nil {
+		t.Fatalf("invalid JSON: %s — %v", result, err)
+	}
+	// PreviousValue must be null (NaN → null via Float.MarshalJSON).
+	if !math.IsNaN(float64(r.PreviousValue)) {
+		t.Errorf("PreviousValue: want NaN (marshalled as null), got %v", float64(r.PreviousValue))
+	}
+}
+
+// BUG-6 (EMA leg): emaResult.Previous was float64, not Float. When only 1
+// price is supplied (the minimum that calcEMA accepts), previous stays at its
+// initial math.NaN() because the len(values) >= 2 branch is not entered.
+// json.Marshal then silently returned "" via the ignored error in encode().
+func TestRegression_BUG6_EMAMinimumInputValidJSON(t *testing.T) {
+	a := New(&mockLLM{}, &mockMarket{}, "")
+	var lk ProgressKind
+	// 1 price is the minimum calcEMA accepts (period=5 is fine here; EMA seeds
+	// from the first observation so len(prices)==1 is valid).
+	args := toolCallArgs(t, map[string]any{"prices": []float64{100.0}, "period": 5})
+	result := a.dispatch(context.Background(), llm.ToolCall{
+		Function: llm.ToolCallFunction{Name: "calculate_ema", Arguments: args},
+	}, &lk)
+	if result == "" {
+		t.Fatal("BUG-6 regression (EMA): dispatch returned empty string — json.Marshal silently rejected NaN in Previous")
+	}
+	if result[:6] == "error:" {
+		t.Fatalf("unexpected error: %s", result)
+	}
+	var r emaResult
+	if err := json.Unmarshal([]byte(result), &r); err != nil {
+		t.Fatalf("invalid JSON: %s — %v", result, err)
+	}
+	// With a single price the EMA equals that price and Previous is null.
+	if !approxEqual(r.Last, 100.0, 1e-9) {
+		t.Errorf("Last: want 100.0, got %v", r.Last)
+	}
+	if !math.IsNaN(float64(r.Previous)) {
+		t.Errorf("Previous: want NaN (serialised as JSON null), got %v", float64(r.Previous))
+	}
+}
+
+// ---- regression tests: inconsistencies ----------------------------------------
+//
+// These tests guard against the two design inconsistencies fixed after the
+// initial Tier-1 indicator commit. Run them in isolation with:
+//
+//	go test ./pkg/agent/... -run TestRegression_INCON
+
+// INCON-1: calculate_bollinger_bands had an inconsistency with calculate_ema:
+// omitting `num_std` returned an error ("num_std must be positive, got 0.0000")
+// even though the tool description advertised "(default 2)" and `num_std` was
+// not in the required list. Fixed: dispatch now applies 2.0 when the value is
+// absent (≤ 0), matching how calculate_ema handles a missing alpha.
+func TestRegression_INCON1_BollingerOmittedNumStdDefaultsToTwo(t *testing.T) {
+	a := New(&mockLLM{}, &mockMarket{}, "")
+	var lk ProgressKind
+	// Deliberately omit num_std.
+	args := toolCallArgs(t, map[string]any{
+		"prices": []float64{10, 11, 12, 13, 14, 15, 16},
+		"period": 3,
+	})
+	result := a.dispatch(context.Background(), llm.ToolCall{
+		Function: llm.ToolCallFunction{Name: "calculate_bollinger_bands", Arguments: args},
+	}, &lk)
+	if result == "" || result[:6] == "error:" {
+		t.Fatalf("INCON-1 regression: omitting num_std should default to 2.0, got: %s", result)
+	}
+	var r bollingerResult
+	if err := json.Unmarshal([]byte(result), &r); err != nil {
+		t.Fatalf("invalid JSON: %s — %v", result, err)
+	}
+	if r.NumStd != 2.0 {
+		t.Errorf("INCON-1 regression: want NumStd=2.0, got %v", r.NumStd)
+	}
+	// Sanity-check band structure: upper > middle > lower on every valid bar.
+	for i, u := range r.Upper {
+		m, l := r.Middle[i], r.Lower[i]
+		if math.IsNaN(float64(u)) {
+			continue // warm-up NaN — expected
+		}
+		if float64(u) < float64(m) || float64(m) < float64(l) {
+			t.Errorf("band ordering violated at index %d: upper=%.4f middle=%.4f lower=%.4f",
+				i, float64(u), float64(m), float64(l))
+		}
+	}
+}
+
+// INCON-1b: also verify that a zero num_std supplied explicitly is defaulted to
+// 2.0 (the dispatch guard is `<= 0`, not just `== 0`).
+func TestRegression_INCON1_BollingerZeroNumStdDefaultsToTwo(t *testing.T) {
+	a := New(&mockLLM{}, &mockMarket{}, "")
+	var lk ProgressKind
+	args := toolCallArgs(t, map[string]any{
+		"prices":  []float64{10, 11, 12, 13, 14, 15},
+		"period":  3,
+		"num_std": 0.0,
+	})
+	result := a.dispatch(context.Background(), llm.ToolCall{
+		Function: llm.ToolCallFunction{Name: "calculate_bollinger_bands", Arguments: args},
+	}, &lk)
+	if result == "" || result[:6] == "error:" {
+		t.Fatalf("INCON-1b regression: num_std=0 should default to 2.0, got: %s", result)
+	}
+	var r bollingerResult
+	if err := json.Unmarshal([]byte(result), &r); err != nil {
+		t.Fatalf("invalid JSON: %s — %v", result, err)
+	}
+	if r.NumStd != 2.0 {
+		t.Errorf("INCON-1b regression: want NumStd=2.0, got %v", r.NumStd)
+	}
+}
+
+// INCON-2: portfolio_calculate_metrics always returned dividend_yield=0 and
+// weighted_beta=0 because the dispatch only populated portfolio.Quote.Last and
+// left DividendYieldTTM and Beta at their zero values. Fixed: the dispatch now
+// calls GetFundamentals per holding and propagates those two fields.
+func TestRegression_INCON2_PortfolioMetricsDividendAndBetaPropagate(t *testing.T) {
+	tmp := t.TempDir()
+	prev := portfolio.SetPortfoliosDirForTest(tmp)
+	t.Cleanup(func() { portfolio.SetPortfoliosDirForTest(prev) })
+
+	now := time.Now().UTC().Truncate(time.Second)
+	p := portfolio.NewPortfolio("regression-incon2")
+	for _, sym := range []string{"AAPL", "MSFT"} {
+		p.Instruments = append(p.Instruments, portfolio.Instrument{
+			ID:     "ins-" + sym,
+			Symbol: sym,
+			Name:   sym,
+			Type:   portfolio.InstrumentHolding,
+			Lots:   []portfolio.Lot{{ID: "lot-" + sym, Quantity: 10, Price: 100, Date: now}},
+		})
+	}
+	if err := portfolio.SavePortfolio(p); err != nil {
+		t.Fatal(err)
+	}
+
+	// AAPL: price=150, div_yield=0.5%, beta=1.2
+	// MSFT: price=200, div_yield=0.8%, beta=0.9
+	// Weights: AAPL=1500/3500≈0.4286, MSFT=2000/3500≈0.5714
+	// Weighted beta  = 0.4286*1.2 + 0.5714*0.9 = 0.5143 + 0.5143 = 1.0286
+	// Weighted yield = (0.005*1500 + 0.008*2000) / 3500 = (7.5+16) / 3500 ≈ 0.6714%
+	mp := &mockMarket{
+		quotesBySymbol: map[string]market.Quote{
+			"AAPL": {Last: 150},
+			"MSFT": {Last: 200},
+		},
+		fundamentalsBySymbol: map[string]market.Fundamental{
+			"AAPL": {DividendYieldTTM: 0.005, Beta: 1.2},
+			"MSFT": {DividendYieldTTM: 0.008, Beta: 0.9},
+		},
+	}
+	a := New(&mockLLM{}, mp, "")
+	a.currentPortfolioID = p.ID
+
+	var lk ProgressKind
+	result := a.dispatch(context.Background(), llm.ToolCall{
+		Function: llm.ToolCallFunction{Name: "portfolio_calculate_metrics", Arguments: "{}"},
+	}, &lk)
+	if result == "" || result[:6] == "error:" {
+		t.Fatalf("unexpected error or empty result: %s", result)
+	}
+	var m portfolio.PortfolioMetrics
+	if err := json.Unmarshal([]byte(result), &m); err != nil {
+		t.Fatalf("invalid JSON: %s — %v", result, err)
+	}
+
+	// Weighted beta ≈ 1.029 (rounded to 4 decimal places by ComputeMetrics).
+	wantBeta := (1500.0/3500.0)*1.2 + (2000.0/3500.0)*0.9
+	if !approxEqual(m.WeightedBeta, math.Round(wantBeta*10000)/10000, 1e-3) {
+		t.Errorf("INCON-2 regression: WeightedBeta want ≈%.4f, got %.4f", wantBeta, m.WeightedBeta)
+	}
+	if m.WeightedBeta == 0 {
+		t.Error("INCON-2 regression: WeightedBeta is 0 — fundamentals not propagated to portfolio.Quote")
+	}
+
+	// Weighted dividend yield (stored as percent by ComputeMetrics).
+	wantYieldFrac := (0.005*1500 + 0.008*2000) / 3500
+	wantYieldPct := math.Round(wantYieldFrac*100*10000) / 10000 // round4 then *100
+	if !approxEqual(m.DividendYield, wantYieldPct, 1e-3) {
+		t.Errorf("INCON-2 regression: DividendYield want ≈%.4f%%, got %.4f%%", wantYieldPct, m.DividendYield)
+	}
+	if m.DividendYield == 0 {
+		t.Error("INCON-2 regression: DividendYield is 0 — fundamentals not propagated to portfolio.Quote")
+	}
+}
+
+// INCON-2b: when GetFundamentals fails for a holding, the rest of the portfolio
+// metrics (cost basis, current value, HHI) must still be correct and the
+// dividend_yield / weighted_beta for that holding must gracefully be 0.
+func TestRegression_INCON2_PortfolioMetricsFundamentalsFailureIsNonFatal(t *testing.T) {
+	tmp := t.TempDir()
+	prev := portfolio.SetPortfoliosDirForTest(tmp)
+	t.Cleanup(func() { portfolio.SetPortfoliosDirForTest(prev) })
+
+	now := time.Now().UTC().Truncate(time.Second)
+	p := portfolio.NewPortfolio("regression-incon2b")
+	p.Instruments = append(p.Instruments, portfolio.Instrument{
+		ID:     "ins-AAPL",
+		Symbol: "AAPL",
+		Name:   "AAPL",
+		Type:   portfolio.InstrumentHolding,
+		Lots:   []portfolio.Lot{{ID: "lot-AAPL", Quantity: 5, Price: 200, Date: now}},
+	})
+	if err := portfolio.SavePortfolio(p); err != nil {
+		t.Fatal(err)
+	}
+
+	// GetFundamentals returns an error; GetQuote succeeds.
+	mp := &mockMarket{
+		quotesBySymbol: map[string]market.Quote{"AAPL": {Last: 250}},
+		fundErr:        market.ErrNotSupported,
+	}
+	a := New(&mockLLM{}, mp, "")
+	a.currentPortfolioID = p.ID
+
+	var lk ProgressKind
+	result := a.dispatch(context.Background(), llm.ToolCall{
+		Function: llm.ToolCallFunction{Name: "portfolio_calculate_metrics", Arguments: "{}"},
+	}, &lk)
+	if result == "" || result[:6] == "error:" {
+		t.Fatalf("INCON-2b regression: fundamentals failure must not abort metrics: %s", result)
+	}
+	var m portfolio.PortfolioMetrics
+	if err := json.Unmarshal([]byte(result), &m); err != nil {
+		t.Fatalf("invalid JSON: %s — %v", result, err)
+	}
+	// Current value and cost basis must still be computed correctly.
+	if m.CurrentValue != 1250 { // 5 * 250
+		t.Errorf("INCON-2b regression: CurrentValue want 1250, got %v", m.CurrentValue)
+	}
+	if m.CostBasis != 1000 { // 5 * 200
+		t.Errorf("INCON-2b regression: CostBasis want 1000, got %v", m.CostBasis)
+	}
+	// dividend_yield and weighted_beta must be 0 when fundamentals are absent.
+	if m.DividendYield != 0 {
+		t.Errorf("INCON-2b regression: DividendYield want 0 when fundamentals fail, got %v", m.DividendYield)
+	}
+	if m.WeightedBeta != 0 {
+		t.Errorf("INCON-2b regression: WeightedBeta want 0 when fundamentals fail, got %v", m.WeightedBeta)
 	}
 }
 

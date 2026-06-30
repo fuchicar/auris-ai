@@ -130,13 +130,14 @@ func (d *Driver) checkConnected() error {
 // ─────────────────────────────────────────────────────────────────────────────
 
 type fmpProfile struct {
-	Symbol      string `json:"symbol"`
-	CompanyName string `json:"companyName"`
-	Exchange    string `json:"exchange"`
-	Currency    string `json:"currency"`
-	Isin        string `json:"isin"`
-	IsEtf       bool   `json:"isEtf"`
-	IsFund      bool   `json:"isFund"`
+	Symbol      string  `json:"symbol"`
+	CompanyName string  `json:"companyName"`
+	Exchange    string  `json:"exchange"`
+	Currency    string  `json:"currency"`
+	Isin        string  `json:"isin"`
+	IsEtf       bool    `json:"isEtf"`
+	IsFund      bool    `json:"isFund"`
+	Beta        float64 `json:"beta"`
 }
 
 type fmpSearchResult struct {
@@ -194,10 +195,11 @@ type fmpSplit struct {
 }
 
 type fmpKeyMetricsTTM struct {
-	Symbol    string  `json:"symbol"`
-	MarketCap float64 `json:"marketCap"` // FMP no añade sufijo TTM a este campo
-	PeRatio   float64 `json:"peRatioTTM"`
-	EPS       float64 `json:"netIncomePerShareTTM"`
+	Symbol           string  `json:"symbol"`
+	MarketCap        float64 `json:"marketCap"` // FMP no añade sufijo TTM a este campo
+	PeRatio          float64 `json:"peRatioTTM"`
+	EPS              float64 `json:"netIncomePerShareTTM"`
+	DividendYieldTTM float64 `json:"dividendYieldTTM"`
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -601,6 +603,7 @@ func (d *Driver) SubscribeOrderBook(_ context.Context, _ string, _ int) (<-chan 
 }
 
 // GetFundamentals devuelve métricas fundamentales TTM del símbolo.
+// DividendYieldTTM viene de /key-metrics-ttm; Beta de /profile (fallo no-fatal).
 func (d *Driver) GetFundamentals(ctx context.Context, symbol string) (market.Fundamental, error) {
 	if err := d.checkConnected(); err != nil {
 		return market.Fundamental{}, err
@@ -614,10 +617,18 @@ func (d *Driver) GetFundamentals(ctx context.Context, symbol string) (market.Fun
 		return market.Fundamental{}, fmt.Errorf("fmp: GetFundamentals %q: %w", symbol, market.ErrNotFound)
 	}
 	m := metrics[0]
-	return market.Fundamental{
-		Symbol:    m.Symbol,
-		PERatio:   m.PeRatio,
-		EPS:       m.EPS,
-		MarketCap: m.MarketCap,
-	}, nil
+	f := market.Fundamental{
+		Symbol:           m.Symbol,
+		PERatio:          m.PeRatio,
+		EPS:              m.EPS,
+		MarketCap:        m.MarketCap,
+		DividendYieldTTM: m.DividendYieldTTM,
+	}
+	// Beta is not in key-metrics-ttm; fetch it from /profile. Failure is
+	// non-fatal: we return the TTM metrics we already have and leave Beta=0.
+	var profiles []fmpProfile
+	if err := d.doGet(ctx, "/profile", params, &profiles); err == nil && len(profiles) > 0 {
+		f.Beta = profiles[0].Beta
+	}
+	return f, nil
 }
