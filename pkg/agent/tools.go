@@ -234,6 +234,14 @@ func buildTools() []llm.Tool {
 				"dividends": arrNum("Chronological dividends per share (minimum 2 values, first must be > 0)"),
 			}, []string{"dividends"}),
 		),
+		tool("calculate_stress_test",
+			"Estimate the resulting value of an asset price or a portfolio's current_value under a list of percentage shocks (e.g. [-10, -20, -30, -40]). For a portfolio, call portfolio_calculate_metrics first and pass its current_value here.",
+			obj(map[string]any{
+				"current_value":  numProp("Base value to stress: an asset price or a portfolio's current_value (must be > 0)"),
+				"shocks_percent": arrNum("List of percentage shocks to apply, e.g. [-10, -20, -30, -40]. Negative = decline, positive = rally."),
+				"label":          str("Optional label for context in the summary, e.g. \"AAPL\" or \"portfolio\""),
+			}, []string{"current_value", "shocks_percent"}),
+		),
 		tool("convert_currency",
 			"Convert an amount between two currencies using an explicit exchange rate. Fetch the rate from market data first.",
 			obj(map[string]any{
@@ -563,6 +571,12 @@ func (a *Agent) dispatchInner(ctx context.Context, call llm.ToolCall, lastKind *
 			return `error: dividends must be an array of numbers`
 		}
 		return encode(calcDividendGrowth(dividends))
+	case "calculate_stress_test":
+		shocks, ok := arrNumVal("shocks_percent")
+		if !ok {
+			return `error: shocks_percent must be an array of numbers`
+		}
+		return encode(calcStressTest(numVal("current_value"), shocks, str("label")))
 	case "convert_currency":
 		return encode(calcCurrencyConversion(numVal("amount"), str("from_currency"), str("to_currency"), numVal("exchange_rate")))
 	case "calculate_compound_interest":

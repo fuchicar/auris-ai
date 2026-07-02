@@ -613,6 +613,72 @@ func TestCalcDividendGrowth_ZeroFirst(t *testing.T) {
 	}
 }
 
+// ---- calcStressTest -----------------------------------------------------------
+
+func TestCalcStressTest_Normal(t *testing.T) {
+	r, err := calcStressTest(10000, []float64{-10, -20, -30, -40}, "portfolio")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.CurrentValue != 10000 {
+		t.Errorf("CurrentValue: want 10000, got %v", r.CurrentValue)
+	}
+	if len(r.Scenarios) != 4 {
+		t.Fatalf("Scenarios: want 4, got %d", len(r.Scenarios))
+	}
+	// -10% → 9000
+	if !approxEqual(r.Scenarios[0].ResultingValue, 9000, 0.01) {
+		t.Errorf("Scenarios[0].ResultingValue: want 9000, got %v", r.Scenarios[0].ResultingValue)
+	}
+	if !approxEqual(r.Scenarios[0].ChangeAbsolute, -1000, 0.01) {
+		t.Errorf("Scenarios[0].ChangeAbsolute: want -1000, got %v", r.Scenarios[0].ChangeAbsolute)
+	}
+	// -40% → 6000 must be the worst case.
+	if !approxEqual(r.WorstCase.ResultingValue, 6000, 0.01) {
+		t.Errorf("WorstCase.ResultingValue: want 6000, got %v", r.WorstCase.ResultingValue)
+	}
+	if r.WorstCase.ShockPercent != -40 {
+		t.Errorf("WorstCase.ShockPercent: want -40, got %v", r.WorstCase.ShockPercent)
+	}
+	if !strings.Contains(r.Summary, "portfolio") {
+		t.Errorf("summary should mention the label, got %q", r.Summary)
+	}
+}
+
+func TestCalcStressTest_DefaultLabel(t *testing.T) {
+	r, err := calcStressTest(100, []float64{-5}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(r.Summary, "value") {
+		t.Errorf("summary should fall back to a generic label, got %q", r.Summary)
+	}
+}
+
+func TestCalcStressTest_PositiveShock(t *testing.T) {
+	r, err := calcStressTest(100, []float64{10}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !approxEqual(r.Scenarios[0].ResultingValue, 110, 0.01) {
+		t.Errorf("ResultingValue: want 110, got %v", r.Scenarios[0].ResultingValue)
+	}
+}
+
+func TestCalcStressTest_ZeroCurrentValue(t *testing.T) {
+	_, err := calcStressTest(0, []float64{-10}, "")
+	if err == nil {
+		t.Error("expected error for current_value <= 0")
+	}
+}
+
+func TestCalcStressTest_EmptyShocks(t *testing.T) {
+	_, err := calcStressTest(100, nil, "")
+	if err == nil {
+		t.Error("expected error for empty shocks_percent")
+	}
+}
+
 // ---- calcCurrencyConversion --------------------------------------------------
 
 func TestCalcCurrencyConversion_Normal(t *testing.T) {
@@ -1673,6 +1739,56 @@ func TestDispatch_CalculateDividendGrowth_BadType(t *testing.T) {
 	}, &lk)
 	if result[:6] != "error:" {
 		t.Errorf("non-array dividends should produce an error, got %s", result)
+	}
+}
+
+func TestDispatch_CalculateStressTest_OK(t *testing.T) {
+	a := New(&mockLLM{}, &mockMarket{}, "")
+	var lk ProgressKind
+	args := toolCallArgs(t, map[string]any{
+		"current_value":  10000.0,
+		"shocks_percent": []float64{-10, -20, -30, -40},
+		"label":          "portfolio",
+	})
+	result := a.dispatch(context.Background(), llm.ToolCall{
+		Function: llm.ToolCallFunction{Name: "calculate_stress_test", Arguments: args},
+	}, &lk)
+	if result[:6] == "error:" {
+		t.Fatalf("unexpected error: %s", result)
+	}
+	var r stressTestResult
+	if err := json.Unmarshal([]byte(result), &r); err != nil {
+		t.Fatalf("invalid JSON: %s — %v", result, err)
+	}
+	if len(r.Scenarios) != 4 {
+		t.Errorf("Scenarios: want 4, got %d", len(r.Scenarios))
+	}
+	if !approxEqual(r.WorstCase.ResultingValue, 6000, 0.01) {
+		t.Errorf("WorstCase.ResultingValue: want 6000, got %v", r.WorstCase.ResultingValue)
+	}
+}
+
+func TestDispatch_CalculateStressTest_BadShocksType(t *testing.T) {
+	a := New(&mockLLM{}, &mockMarket{}, "")
+	var lk ProgressKind
+	args := toolCallArgs(t, map[string]any{"current_value": 10000.0, "shocks_percent": "not an array"})
+	result := a.dispatch(context.Background(), llm.ToolCall{
+		Function: llm.ToolCallFunction{Name: "calculate_stress_test", Arguments: args},
+	}, &lk)
+	if result[:6] != "error:" {
+		t.Errorf("non-array shocks_percent should produce an error, got %s", result)
+	}
+}
+
+func TestDispatch_CalculateStressTest_ZeroCurrentValue(t *testing.T) {
+	a := New(&mockLLM{}, &mockMarket{}, "")
+	var lk ProgressKind
+	args := toolCallArgs(t, map[string]any{"current_value": 0.0, "shocks_percent": []float64{-10}})
+	result := a.dispatch(context.Background(), llm.ToolCall{
+		Function: llm.ToolCallFunction{Name: "calculate_stress_test", Arguments: args},
+	}, &lk)
+	if result[:6] != "error:" {
+		t.Errorf("current_value <= 0 should produce an error, got %s", result)
 	}
 }
 

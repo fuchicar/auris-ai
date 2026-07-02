@@ -640,6 +640,55 @@ func calcDividendGrowth(dividends []float64) (dividendGrowthResult, error) {
 	}, nil
 }
 
+// --- Stress test -------------------------------------------------------------------
+
+type stressScenario struct {
+	ShockPercent   float64 `json:"shock_percent"`
+	ResultingValue float64 `json:"resulting_value"`
+	ChangeAbsolute float64 `json:"change_absolute"`
+}
+
+type stressTestResult struct {
+	CurrentValue float64          `json:"current_value"`
+	Scenarios    []stressScenario `json:"scenarios"`
+	WorstCase    stressScenario   `json:"worst_case"`
+	Summary      string           `json:"summary"`
+}
+
+func calcStressTest(currentValue float64, shocksPercent []float64, label string) (stressTestResult, error) {
+	if currentValue <= 0 {
+		return stressTestResult{}, errors.New("current_value must be greater than zero")
+	}
+	if len(shocksPercent) == 0 {
+		return stressTestResult{}, errors.New("shocks_percent must contain at least 1 value")
+	}
+	scenarios := make([]stressScenario, len(shocksPercent))
+	worst := 0
+	for i, shock := range shocksPercent {
+		resulting := round2(currentValue * (1 + shock/100))
+		scenarios[i] = stressScenario{
+			ShockPercent:   shock,
+			ResultingValue: resulting,
+			ChangeAbsolute: round2(resulting - currentValue),
+		}
+		if scenarios[i].ResultingValue < scenarios[worst].ResultingValue {
+			worst = i
+		}
+	}
+	subject := "value"
+	if label != "" {
+		subject = label
+	}
+	wc := scenarios[worst]
+	return stressTestResult{
+		CurrentValue: round2(currentValue),
+		Scenarios:    scenarios,
+		WorstCase:    wc,
+		Summary: fmt.Sprintf("stress test on %s: %d scenarios, worst case %.2f%% → %.2f (Δ%.2f)",
+			subject, len(scenarios), wc.ShockPercent, wc.ResultingValue, wc.ChangeAbsolute),
+	}, nil
+}
+
 // --- Currency conversion -------------------------------------------------------
 
 type currencyResult struct {
