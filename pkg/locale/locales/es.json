@@ -625,6 +625,9 @@
   "portfolio.view.action.instruments": {
     "other": "Ver posiciones y seguimiento"
   },
+  "portfolio.view.action.allocation": {
+    "other": "Fijar asignación objetivo"
+  },
   "portfolio.view.action.add": {
     "other": "Añadir instrumento"
   },
@@ -636,6 +639,34 @@
   },
   "portfolio.view.delete_confirm": {
     "other": "¿Eliminar cartera y todos sus datos? (s/N)"
+  },
+
+  "portfolio.allocation.title": {
+    "other": "Asignación Objetivo"
+  },
+  "portfolio.allocation.empty": {
+    "other": "(Sin posiciones aún — añade instrumentos primero)"
+  },
+  "portfolio.allocation.hint": {
+    "other": "↑↓ navegar · Enter editar · Esc volver"
+  },
+  "portfolio.allocation.not_held_badge": {
+    "other": "sin posición"
+  },
+  "portfolio.allocation.total.label": {
+    "other": "Total"
+  },
+  "portfolio.allocation.total.warning": {
+    "other": "Los pesos objetivo suman {{.Total}}%, no 100%"
+  },
+  "portfolio.allocation.weight.label": {
+    "other": "Peso objetivo (%)"
+  },
+  "portfolio.allocation.weight.error": {
+    "other": "Introduce un número entre 0 y 100"
+  },
+  "portfolio.allocation.saved": {
+    "other": "Asignación objetivo guardada"
   },
 
   "portfolio.instruments.title": {

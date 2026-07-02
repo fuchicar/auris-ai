@@ -625,6 +625,9 @@
   "portfolio.view.action.instruments": {
     "other": "View positions & watchlist"
   },
+  "portfolio.view.action.allocation": {
+    "other": "Set target allocation"
+  },
   "portfolio.view.action.add": {
     "other": "Add instrument"
   },
@@ -636,6 +639,34 @@
   },
   "portfolio.view.delete_confirm": {
     "other": "Delete portfolio and all its data? (y/N)"
+  },
+
+  "portfolio.allocation.title": {
+    "other": "Target Allocation"
+  },
+  "portfolio.allocation.empty": {
+    "other": "(No holdings yet — add instruments first)"
+  },
+  "portfolio.allocation.hint": {
+    "other": "↑↓ navigate · Enter edit · Esc back"
+  },
+  "portfolio.allocation.not_held_badge": {
+    "other": "not held"
+  },
+  "portfolio.allocation.total.label": {
+    "other": "Total"
+  },
+  "portfolio.allocation.total.warning": {
+    "other": "Target weights sum to {{.Total}}%, not 100%"
+  },
+  "portfolio.allocation.weight.label": {
+    "other": "Target weight (%)"
+  },
+  "portfolio.allocation.weight.error": {
+    "other": "Enter a number between 0 and 100"
+  },
+  "portfolio.allocation.saved": {
+    "other": "Target allocation saved"
   },
 
   "portfolio.instruments.title": {

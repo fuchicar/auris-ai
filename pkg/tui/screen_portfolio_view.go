@@ -17,7 +17,7 @@ import (
 
 // PortfolioViewResult is emitted when the user chooses an action on the portfolio screen.
 type PortfolioViewResult struct {
-	Action    string              // "agent"|"instruments"|"add"|"edit"|"deleted"
+	Action    string               // "agent"|"instruments"|"allocation"|"add"|"edit"|"deleted"
 	Portfolio *portfolio.Portfolio // always set
 }
 
@@ -30,6 +30,7 @@ type portfolioPricesMsg struct {
 var portfolioViewActions = []string{
 	"portfolio.view.action.agent",
 	"portfolio.view.action.instruments",
+	"portfolio.view.action.allocation",
 	"portfolio.view.action.add",
 	"portfolio.view.action.edit",
 	"portfolio.view.action.delete",
@@ -37,16 +38,16 @@ var portfolioViewActions = []string{
 
 // portfolioViewModel shows a summary panel and an action menu for a single portfolio.
 type portfolioViewModel struct {
-	portfolio  *portfolio.Portfolio
-	cursor     int
-	confirming bool // true when delete confirmation is shown
-	prices     map[string]float64
+	portfolio     *portfolio.Portfolio
+	cursor        int
+	confirming    bool // true when delete confirmation is shown
+	prices        map[string]float64
 	loadingPrices bool
-	priceErr   string
-	infoMsg    string
-	spin       spinner.Model
-	mp         market.ProviderAPI
-	styles     *Styles
+	priceErr      string
+	infoMsg       string
+	spin          spinner.Model
+	mp            market.ProviderAPI
+	styles        *Styles
 }
 
 func newPortfolioViewModel(p *portfolio.Portfolio, mp market.ProviderAPI, s *Styles) *portfolioViewModel {
@@ -92,6 +93,9 @@ func (m *portfolioViewModel) fetchPricesCmd() tea.Cmd {
 		prices := make(map[string]float64, len(symbols))
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
+		if !mp.IsConnected() {
+			_ = mp.Connect(ctx)
+		}
 		for _, sym := range symbols {
 			q, err := mp.GetQuote(ctx, sym)
 			if err == nil && q.Last > 0 {
@@ -176,15 +180,19 @@ func (m *portfolioViewModel) selectAction() (tea.Model, tea.Cmd) {
 		return m, func() tea.Msg {
 			return ScreenDoneMsg{From: ScreenPortfolioView, Result: PortfolioViewResult{Action: "instruments", Portfolio: p}}
 		}
-	case 2: // add
+	case 2: // allocation
+		return m, func() tea.Msg {
+			return ScreenDoneMsg{From: ScreenPortfolioView, Result: PortfolioViewResult{Action: "allocation", Portfolio: p}}
+		}
+	case 3: // add
 		return m, func() tea.Msg {
 			return ScreenDoneMsg{From: ScreenPortfolioView, Result: PortfolioViewResult{Action: "add", Portfolio: p}}
 		}
-	case 3: // edit
+	case 4: // edit
 		return m, func() tea.Msg {
 			return ScreenDoneMsg{From: ScreenPortfolioView, Result: PortfolioViewResult{Action: "edit", Portfolio: p}}
 		}
-	case 4: // delete
+	case 5: // delete
 		m.confirming = true
 	}
 	return m, nil

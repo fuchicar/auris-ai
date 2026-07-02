@@ -402,6 +402,19 @@ func buildTools() []llm.Tool {
 				"symbol":       str("Ticker symbol of the instrument to remove"),
 			}, []string{"symbol"}),
 		),
+		tool("portfolio_set_target_allocation",
+			"Set the portfolio's target allocation (symbol → target weight as a fraction, e.g. 0.4 = 40%), used by future rebalancing tools. This REPLACES any existing target allocation entirely — it is not a partial merge.",
+			obj(map[string]any{
+				"portfolio_id": str("Portfolio ID (optional; omit to use the current portfolio)"),
+				"target_allocation": map[string]any{
+					"type":        "object",
+					"description": "Map of symbol to target weight as a fraction in [0, 1], e.g. {\"AAPL\": 0.4, \"MSFT\": 0.3, \"GOOG\": 0.3}. Weights should sum to ~1.0.",
+					"additionalProperties": map[string]any{
+						"type": "number",
+					},
+				},
+			}, []string{"target_allocation"}),
+		),
 	}
 }
 
@@ -935,6 +948,47 @@ func (a *Agent) dispatchInner(ctx context.Context, call llm.ToolCall, lastKind *
 				return encode(nil, err)
 			}
 			return encode(map[string]any{"removed": symbol, "portfolio_id": p.ID}, nil)
+
+		case "portfolio_set_target_allocation":
+			id, err := resolvePortfolioID()
+			if err != nil {
+				return encode(nil, err)
+			}
+			p, err := portfolio.LoadPortfolio(id)
+			if err != nil {
+				return encode(nil, err)
+			}
+			if p == nil {
+				return `error: portfolio not found`
+			}
+			raw, ok := args["target_allocation"].(map[string]any)
+			if !ok || len(raw) == 0 {
+				return `error: target_allocation must be a non-empty object mapping symbol → weight`
+			}
+			alloc := make(map[string]float64, len(raw))
+			sum := 0.0
+			for symbol, v := range raw {
+				w, ok := v.(float64)
+				if !ok || w < 0 {
+					return fmt.Sprintf("error: target_allocation[%q] must be a non-negative number", symbol)
+				}
+				alloc[symbol] = w
+				sum += w
+			}
+			p.TargetAllocation = alloc
+			if err := portfolio.SavePortfolio(p); err != nil {
+				return encode(nil, err)
+			}
+			summary := fmt.Sprintf("target allocation set for %d symbols (sum=%.4f)", len(alloc), sum)
+			if sum < 0.99 || sum > 1.01 {
+				summary += fmt.Sprintf(" [WARNING: weights sum to %.4f, expected ~1.0]", sum)
+			}
+			return encode(map[string]any{
+				"portfolio_id":      p.ID,
+				"target_allocation": alloc,
+				"sum":               round4(sum),
+				"summary":           summary,
+			}, nil)
 
 		case "portfolio_calculate_metrics":
 			id, err := resolvePortfolioID()

@@ -6,8 +6,8 @@ import (
 	"os"
 	"sync"
 
-	"github.com/charmbracelet/lipgloss"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"auris/pkg/agent"
 	"auris/pkg/config"
@@ -22,27 +22,28 @@ import (
 type Screen int
 
 const (
-	ScreenWelcome          Screen = iota
-	ScreenLocale                  // language selection (shown when auto-detection is uncertain)
-	ScreenUnlock                  // passphrase prompt for an existing config
-	ScreenTheme                   // theme selection
-	ScreenPassphrase              // passphrase creation (setup only)
-	ScreenProfile                 // financial profile questionnaire (setup only)
-	ScreenProvider                // market data provider selection (setup only)
-	ScreenAPIKey                  // API key input and validation (setup only)
-	ScreenAIProviderSelect        // multi-select which AI providers to configure (setup only)
-	ScreenAIProviderConfig        // configure one AI provider at a time (setup only)
-	ScreenAIDefaultModel          // select default AI provider and model (setup only)
-	ScreenMenu                    // main menu
-	ScreenAgent                   // agent chat UI
-	ScreenSessionSelect           // session picker
-	ScreenDisclaimer              // AI/financial disclaimer — first-run setup only
-	ScreenPortfolioMenu           // portfolio list
-	ScreenPortfolioCreate         // portfolio create/edit form
-	ScreenPortfolioView           // portfolio dashboard
-	ScreenPortfolioInstruments    // instrument list for a portfolio
-	ScreenInstrumentSearch        // search + add instrument flow
-	ScreenPortfolioInstrumentView // single instrument detail
+	ScreenWelcome                 Screen = iota
+	ScreenLocale                         // language selection (shown when auto-detection is uncertain)
+	ScreenUnlock                         // passphrase prompt for an existing config
+	ScreenTheme                          // theme selection
+	ScreenPassphrase                     // passphrase creation (setup only)
+	ScreenProfile                        // financial profile questionnaire (setup only)
+	ScreenProvider                       // market data provider selection (setup only)
+	ScreenAPIKey                         // API key input and validation (setup only)
+	ScreenAIProviderSelect               // multi-select which AI providers to configure (setup only)
+	ScreenAIProviderConfig               // configure one AI provider at a time (setup only)
+	ScreenAIDefaultModel                 // select default AI provider and model (setup only)
+	ScreenMenu                           // main menu
+	ScreenAgent                          // agent chat UI
+	ScreenSessionSelect                  // session picker
+	ScreenDisclaimer                     // AI/financial disclaimer — first-run setup only
+	ScreenPortfolioMenu                  // portfolio list
+	ScreenPortfolioCreate                // portfolio create/edit form
+	ScreenPortfolioView                  // portfolio dashboard
+	ScreenPortfolioInstruments           // instrument list for a portfolio
+	ScreenInstrumentSearch               // search + add instrument flow
+	ScreenPortfolioInstrumentView        // single instrument detail
+	ScreenPortfolioAllocation            // target allocation editor
 )
 
 // FlowContext distinguishes whether a settings screen was opened during first-
@@ -169,14 +170,14 @@ type AppModel struct {
 	current          tea.Model
 	screen           Screen
 	cfg              *config.AurisConfig
-	passphrase       string         // kept in memory only — never written to disk in plaintext
+	passphrase       string // kept in memory only — never written to disk in plaintext
 	setupMode        bool
 	showLocaleSelect bool
 	detectedLocale   string
 	flowContext      FlowContext
 	styles           *Styles
 	selectedEntry    registry.MarketEntry // provider chosen in ScreenProvider
-	width, height    int            // current terminal dimensions (from WindowSizeMsg)
+	width, height    int                  // current terminal dimensions (from WindowSizeMsg)
 
 	// AI setup state — used during the setup wizard and /aiproviders management.
 	pendingLLMProviders []string               // provider keys still to be configured
@@ -602,6 +603,10 @@ func (a *AppModel) transition(msg ScreenDoneMsg) (tea.Model, tea.Cmd) {
 				a.activePortfolio = r.Portfolio
 				a.screen = ScreenPortfolioInstruments
 				a.current = newPortfolioInstrumentsModel(r.Portfolio, a.styles)
+			case "allocation":
+				a.activePortfolio = r.Portfolio
+				a.screen = ScreenPortfolioAllocation
+				a.current = newPortfolioAllocationModel(r.Portfolio, a.styles)
 			case "add":
 				a.activePortfolio = r.Portfolio
 				a.instrumentSearchOrigin = ScreenPortfolioView
@@ -674,6 +679,17 @@ func (a *AppModel) transition(msg ScreenDoneMsg) (tea.Model, tea.Cmd) {
 			}
 			a.screen = ScreenPortfolioInstruments
 			a.current = newPortfolioInstrumentsModel(a.activePortfolio, a.styles)
+		}
+
+	case ScreenPortfolioAllocation:
+		switch r := msg.Result.(type) {
+		case PortfolioAllocationResult:
+			if r.Portfolio != nil {
+				a.activePortfolio = r.Portfolio
+			}
+			mp := a.buildMarketProvider()
+			a.screen = ScreenPortfolioView
+			a.current = newPortfolioViewModel(a.activePortfolio, mp, a.styles)
 		}
 	}
 

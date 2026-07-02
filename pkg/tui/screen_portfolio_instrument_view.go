@@ -119,6 +119,9 @@ func (m *portfolioInstrumentViewModel) fetchPriceCmd() tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
+		if !mp.IsConnected() {
+			_ = mp.Connect(ctx)
+		}
 		q, err := mp.GetQuote(ctx, sym)
 		if err != nil || q.Last == 0 {
 			return portfolioPricesMsg{prices: map[string]float64{}}

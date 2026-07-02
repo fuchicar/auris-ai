@@ -1807,6 +1807,149 @@ func TestDispatch_CalculateSMA_BadPrices(t *testing.T) {
 
 // --- portfolio_calculate_metrics dispatch -----------------------------------
 
+func TestDispatch_PortfolioSetTargetAllocation_OK(t *testing.T) {
+	tmp := t.TempDir()
+	prev := portfolio.SetPortfoliosDirForTest(tmp)
+	t.Cleanup(func() { portfolio.SetPortfoliosDirForTest(prev) })
+
+	p := portfolio.NewPortfolio("test")
+	if err := portfolio.SavePortfolio(p); err != nil {
+		t.Fatal(err)
+	}
+
+	a := New(&mockLLM{}, &mockMarket{}, "")
+	a.currentPortfolioID = p.ID
+
+	var lk ProgressKind
+	args := toolCallArgs(t, map[string]any{
+		"target_allocation": map[string]any{"AAPL": 0.4, "MSFT": 0.3, "GOOG": 0.3},
+	})
+	result := a.dispatch(context.Background(), llm.ToolCall{
+		Function: llm.ToolCallFunction{Name: "portfolio_set_target_allocation", Arguments: args},
+	}, &lk)
+	if result[:6] == "error:" {
+		t.Fatalf("unexpected error: %s", result)
+	}
+
+	reloaded, err := portfolio.LoadPortfolio(p.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(reloaded.TargetAllocation) != 3 {
+		t.Fatalf("TargetAllocation: want 3 symbols, got %d", len(reloaded.TargetAllocation))
+	}
+	if !approxEqual(reloaded.TargetAllocation["AAPL"], 0.4, 0.0001) {
+		t.Errorf("TargetAllocation[AAPL]: want 0.4, got %v", reloaded.TargetAllocation["AAPL"])
+	}
+}
+
+func TestDispatch_PortfolioSetTargetAllocation_Replaces(t *testing.T) {
+	tmp := t.TempDir()
+	prev := portfolio.SetPortfoliosDirForTest(tmp)
+	t.Cleanup(func() { portfolio.SetPortfoliosDirForTest(prev) })
+
+	p := portfolio.NewPortfolio("test")
+	p.TargetAllocation = map[string]float64{"OLD": 1.0}
+	if err := portfolio.SavePortfolio(p); err != nil {
+		t.Fatal(err)
+	}
+
+	a := New(&mockLLM{}, &mockMarket{}, "")
+	a.currentPortfolioID = p.ID
+
+	var lk ProgressKind
+	args := toolCallArgs(t, map[string]any{"target_allocation": map[string]any{"AAPL": 1.0}})
+	result := a.dispatch(context.Background(), llm.ToolCall{
+		Function: llm.ToolCallFunction{Name: "portfolio_set_target_allocation", Arguments: args},
+	}, &lk)
+	if result[:6] == "error:" {
+		t.Fatalf("unexpected error: %s", result)
+	}
+
+	reloaded, err := portfolio.LoadPortfolio(p.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, stillThere := reloaded.TargetAllocation["OLD"]; stillThere {
+		t.Error("TargetAllocation should be fully replaced, but OLD symbol survived")
+	}
+	if len(reloaded.TargetAllocation) != 1 {
+		t.Errorf("TargetAllocation: want 1 symbol after replace, got %d", len(reloaded.TargetAllocation))
+	}
+}
+
+func TestDispatch_PortfolioSetTargetAllocation_EmptyObject(t *testing.T) {
+	tmp := t.TempDir()
+	prev := portfolio.SetPortfoliosDirForTest(tmp)
+	t.Cleanup(func() { portfolio.SetPortfoliosDirForTest(prev) })
+
+	p := portfolio.NewPortfolio("test")
+	if err := portfolio.SavePortfolio(p); err != nil {
+		t.Fatal(err)
+	}
+
+	a := New(&mockLLM{}, &mockMarket{}, "")
+	a.currentPortfolioID = p.ID
+
+	var lk ProgressKind
+	args := toolCallArgs(t, map[string]any{"target_allocation": map[string]any{}})
+	result := a.dispatch(context.Background(), llm.ToolCall{
+		Function: llm.ToolCallFunction{Name: "portfolio_set_target_allocation", Arguments: args},
+	}, &lk)
+	if result[:6] != "error:" {
+		t.Errorf("empty target_allocation should produce an error, got %s", result)
+	}
+}
+
+func TestDispatch_PortfolioSetTargetAllocation_NegativeWeight(t *testing.T) {
+	tmp := t.TempDir()
+	prev := portfolio.SetPortfoliosDirForTest(tmp)
+	t.Cleanup(func() { portfolio.SetPortfoliosDirForTest(prev) })
+
+	p := portfolio.NewPortfolio("test")
+	if err := portfolio.SavePortfolio(p); err != nil {
+		t.Fatal(err)
+	}
+
+	a := New(&mockLLM{}, &mockMarket{}, "")
+	a.currentPortfolioID = p.ID
+
+	var lk ProgressKind
+	args := toolCallArgs(t, map[string]any{"target_allocation": map[string]any{"AAPL": -0.1}})
+	result := a.dispatch(context.Background(), llm.ToolCall{
+		Function: llm.ToolCallFunction{Name: "portfolio_set_target_allocation", Arguments: args},
+	}, &lk)
+	if result[:6] != "error:" {
+		t.Errorf("negative weight should produce an error, got %s", result)
+	}
+}
+
+func TestDispatch_PortfolioSetTargetAllocation_SumWarning(t *testing.T) {
+	tmp := t.TempDir()
+	prev := portfolio.SetPortfoliosDirForTest(tmp)
+	t.Cleanup(func() { portfolio.SetPortfoliosDirForTest(prev) })
+
+	p := portfolio.NewPortfolio("test")
+	if err := portfolio.SavePortfolio(p); err != nil {
+		t.Fatal(err)
+	}
+
+	a := New(&mockLLM{}, &mockMarket{}, "")
+	a.currentPortfolioID = p.ID
+
+	var lk ProgressKind
+	args := toolCallArgs(t, map[string]any{"target_allocation": map[string]any{"AAPL": 0.5}})
+	result := a.dispatch(context.Background(), llm.ToolCall{
+		Function: llm.ToolCallFunction{Name: "portfolio_set_target_allocation", Arguments: args},
+	}, &lk)
+	if result[:6] == "error:" {
+		t.Fatalf("unexpected error: %s", result)
+	}
+	if !strings.Contains(result, "WARNING") {
+		t.Errorf("result should warn that weights don't sum to ~1.0, got %s", result)
+	}
+}
+
 func TestDispatch_PortfolioCalculateMetrics_OK(t *testing.T) {
 	// Override the portfolios dir so we can write a deterministic portfolio
 	// without touching the user's real config directory.

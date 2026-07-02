@@ -160,6 +160,9 @@ func (m *instrumentSearchModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, func() tea.Msg {
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
+			if !mp.IsConnected() {
+				_ = mp.Connect(ctx)
+			}
 			results, err := mp.SearchInstrument(ctx, query)
 			return searchResultMsg{version: version, results: results, err: err}
 		}
@@ -248,6 +251,9 @@ func (m *instrumentSearchModel) triggerSearch(query string) (tea.Model, tea.Cmd)
 	return m, tea.Batch(m.spin.Tick, func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
+		if !mp.IsConnected() {
+			_ = mp.Connect(ctx)
+		}
 		results, err := mp.SearchInstrument(ctx, query)
 		return searchResultMsg{version: version, results: results, err: err}
 	})
