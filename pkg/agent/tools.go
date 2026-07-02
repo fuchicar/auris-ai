@@ -205,6 +205,35 @@ func buildTools() []llm.Tool {
 				"revenue":              numProp("Revenue; use per-share revenue for P/S, total revenue for EV/Revenue"),
 			}, []string{"price", "eps", "book_value_per_share", "ebitda", "enterprise_value", "revenue"}),
 		),
+		tool("calculate_pfcf",
+			"Calculate the Price / Free Cash Flow (P/FCF) ratio, a valuation multiple for growth/quality stocks.",
+			obj(map[string]any{
+				"price":                    numProp("Current share price"),
+				"free_cash_flow_per_share": numProp("Free cash flow per share (must be > 0)"),
+				"currency":                 str("Currency code, e.g. USD (optional, informational only)"),
+			}, []string{"price", "free_cash_flow_per_share"}),
+		),
+		tool("calculate_peg",
+			"Calculate the PEG ratio (P/E ÷ expected annual growth rate). Interpretation: <1 undervalued, 1-2 reasonable, >2 overvalued — treat as a heuristic, not a definitive signal.",
+			obj(map[string]any{
+				"pe_ratio":            numProp("Price/earnings ratio (must be > 0)"),
+				"growth_rate_percent": numProp("Expected annual earnings growth rate in percent, e.g. 15 for 15%"),
+			}, []string{"pe_ratio", "growth_rate_percent"}),
+		),
+		tool("calculate_dividend_yield",
+			"Calculate the annual dividend yield on price. Provide either annual_dividend_per_share directly, or quarterly_dividends (last 4 quarterly payments) to derive a trailing-twelve-month yield.",
+			obj(map[string]any{
+				"price":                     numProp("Current share price (must be > 0)"),
+				"annual_dividend_per_share": numProp("Annual dividend per share (optional if quarterly_dividends is provided)"),
+				"quarterly_dividends":       arrNum("Last 4 quarterly dividends per share, used to derive TTM yield (optional)"),
+			}, []string{"price"}),
+		),
+		tool("calculate_dividend_growth",
+			"Calculate the compound annual growth rate (CAGR) of a chronological dividend-per-share series.",
+			obj(map[string]any{
+				"dividends": arrNum("Chronological dividends per share (minimum 2 values, first must be > 0)"),
+			}, []string{"dividends"}),
+		),
 		tool("convert_currency",
 			"Convert an amount between two currencies using an explicit exchange rate. Fetch the rate from market data first.",
 			obj(map[string]any{
@@ -521,6 +550,19 @@ func (a *Agent) dispatchInner(ctx context.Context, call llm.ToolCall, lastKind *
 		r := calcMultiples(numVal("price"), numVal("eps"), numVal("book_value_per_share"),
 			numVal("ebitda"), numVal("enterprise_value"), numVal("revenue"))
 		return encode(r, nil)
+	case "calculate_pfcf":
+		return encode(calcPFCF(numVal("price"), numVal("free_cash_flow_per_share"), str("currency")))
+	case "calculate_peg":
+		return encode(calcPEG(numVal("pe_ratio"), numVal("growth_rate_percent")))
+	case "calculate_dividend_yield":
+		quarterly, _ := arrNumVal("quarterly_dividends")
+		return encode(calcDividendYield(numVal("price"), numVal("annual_dividend_per_share"), quarterly))
+	case "calculate_dividend_growth":
+		dividends, ok := arrNumVal("dividends")
+		if !ok {
+			return `error: dividends must be an array of numbers`
+		}
+		return encode(calcDividendGrowth(dividends))
 	case "convert_currency":
 		return encode(calcCurrencyConversion(numVal("amount"), str("from_currency"), str("to_currency"), numVal("exchange_rate")))
 	case "calculate_compound_interest":

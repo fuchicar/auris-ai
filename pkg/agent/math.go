@@ -525,6 +525,121 @@ func calcMultiples(price, eps, bookValuePerShare, ebitda, enterpriseValue, reven
 
 func f64ptr(v float64) *float64 { r := round2(v); return &r }
 
+// --- Price / Free Cash Flow -----------------------------------------------------
+
+type pfcfResult struct {
+	PFCF     float64 `json:"pfcf"`
+	Currency string  `json:"currency,omitempty"`
+	Summary  string  `json:"summary"`
+}
+
+func calcPFCF(price, fcfPerShare float64, currency string) (pfcfResult, error) {
+	if price <= 0 {
+		return pfcfResult{}, errors.New("price must be greater than zero")
+	}
+	if fcfPerShare <= 0 {
+		return pfcfResult{}, errors.New("free_cash_flow_per_share must be greater than zero")
+	}
+	pfcf := round2(price / fcfPerShare)
+	return pfcfResult{
+		PFCF:     pfcf,
+		Currency: currency,
+		Summary:  fmt.Sprintf("P/FCF=%.2f", pfcf),
+	}, nil
+}
+
+// --- PEG ratio -------------------------------------------------------------------
+
+type pegResult struct {
+	PEG            float64 `json:"peg"`
+	Interpretation string  `json:"interpretation"`
+	Summary        string  `json:"summary"`
+}
+
+func calcPEG(peRatio, growthRatePercent float64) (pegResult, error) {
+	if peRatio <= 0 {
+		return pegResult{}, errors.New("pe_ratio must be greater than zero")
+	}
+	if growthRatePercent == 0 {
+		return pegResult{}, errors.New("growth_rate_percent cannot be zero")
+	}
+	peg := round2(peRatio / growthRatePercent)
+	interp := "reasonable"
+	switch {
+	case peg < 1:
+		interp = "undervalued"
+	case peg > 2:
+		interp = "overvalued"
+	}
+	summary := fmt.Sprintf("PEG=%.2f (%s)", peg, interp)
+	if growthRatePercent < 0 {
+		summary += " — WARNING: negative growth rate makes PEG uninterpretable as a valuation signal"
+	}
+	return pegResult{
+		PEG:            peg,
+		Interpretation: interp,
+		Summary:        summary,
+	}, nil
+}
+
+// --- Dividend yield ---------------------------------------------------------------
+
+type dividendYieldResult struct {
+	AnnualDividend float64 `json:"annual_dividend"`
+	YieldPercent   float64 `json:"yield_percent"`
+	Summary        string  `json:"summary"`
+}
+
+func calcDividendYield(price, annualDividendPerShare float64, quarterlyDividends []float64) (dividendYieldResult, error) {
+	if price <= 0 {
+		return dividendYieldResult{}, errors.New("price must be greater than zero")
+	}
+	annual := annualDividendPerShare
+	source := "annual_dividend_per_share"
+	if len(quarterlyDividends) > 0 {
+		if len(quarterlyDividends) != 4 {
+			return dividendYieldResult{}, errors.New("quarterly_dividends must contain exactly 4 values")
+		}
+		annual = 0
+		for _, d := range quarterlyDividends {
+			annual += d
+		}
+		source = "trailing twelve months (sum of quarterly_dividends)"
+	}
+	if annual <= 0 {
+		return dividendYieldResult{}, errors.New("must provide annual_dividend_per_share or quarterly_dividends")
+	}
+	y := round4(annual / price * 100)
+	return dividendYieldResult{
+		AnnualDividend: round4(annual),
+		YieldPercent:   y,
+		Summary:        fmt.Sprintf("%.4f%% dividend yield, based on %s", y, source),
+	}, nil
+}
+
+// --- Dividend growth ---------------------------------------------------------------
+
+type dividendGrowthResult struct {
+	CAGRPercent float64 `json:"cagr_percent"`
+	Summary     string  `json:"summary"`
+}
+
+func calcDividendGrowth(dividends []float64) (dividendGrowthResult, error) {
+	if len(dividends) < 2 {
+		return dividendGrowthResult{}, errors.New("dividends must contain at least 2 chronological values")
+	}
+	first, last := dividends[0], dividends[len(dividends)-1]
+	if first <= 0 {
+		return dividendGrowthResult{}, errors.New("dividends[0] must be greater than zero")
+	}
+	years := float64(len(dividends) - 1)
+	cagr := (math.Pow(last/first, 1/years) - 1) * 100
+	return dividendGrowthResult{
+		CAGRPercent: round2(cagr),
+		Summary:     fmt.Sprintf("%.2f%% dividend CAGR over %d periods (%.4f → %.4f)", cagr, len(dividends)-1, first, last),
+	}, nil
+}
+
 // --- Currency conversion -------------------------------------------------------
 
 type currencyResult struct {

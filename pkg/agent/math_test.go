@@ -434,6 +434,185 @@ func TestCalcMultiples_ZeroDenominators(t *testing.T) {
 	}
 }
 
+// ---- calcPFCF ------------------------------------------------------------------
+
+func TestCalcPFCF_Normal(t *testing.T) {
+	r, err := calcPFCF(150, 12.5, "USD")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !approxEqual(r.PFCF, 12.0, 0.01) {
+		t.Errorf("PFCF: want ~12.0, got %v", r.PFCF)
+	}
+	if r.Currency != "USD" {
+		t.Errorf("Currency: want USD, got %q", r.Currency)
+	}
+	if !strings.Contains(r.Summary, "P/FCF") {
+		t.Errorf("summary should mention P/FCF, got %q", r.Summary)
+	}
+}
+
+func TestCalcPFCF_ZeroFCF(t *testing.T) {
+	_, err := calcPFCF(150, 0, "")
+	if err == nil {
+		t.Error("expected error for free_cash_flow_per_share <= 0")
+	}
+}
+
+func TestCalcPFCF_ZeroPrice(t *testing.T) {
+	_, err := calcPFCF(0, 12.5, "")
+	if err == nil {
+		t.Error("expected error for price <= 0")
+	}
+}
+
+// ---- calcPEG -------------------------------------------------------------------
+
+func TestCalcPEG_Undervalued(t *testing.T) {
+	r, err := calcPEG(15, 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !approxEqual(r.PEG, 0.75, 0.01) {
+		t.Errorf("PEG: want ~0.75, got %v", r.PEG)
+	}
+	if r.Interpretation != "undervalued" {
+		t.Errorf("Interpretation: want undervalued, got %q", r.Interpretation)
+	}
+}
+
+func TestCalcPEG_Overvalued(t *testing.T) {
+	r, err := calcPEG(30, 5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Interpretation != "overvalued" {
+		t.Errorf("Interpretation: want overvalued, got %q", r.Interpretation)
+	}
+}
+
+func TestCalcPEG_Reasonable(t *testing.T) {
+	r, err := calcPEG(20, 15)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Interpretation != "reasonable" {
+		t.Errorf("Interpretation: want reasonable, got %q", r.Interpretation)
+	}
+}
+
+func TestCalcPEG_NegativeGrowth_WarnsInSummary(t *testing.T) {
+	r, err := calcPEG(20, -10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(r.Summary, "WARNING") {
+		t.Errorf("summary should warn about negative growth, got %q", r.Summary)
+	}
+}
+
+func TestCalcPEG_ZeroPE(t *testing.T) {
+	_, err := calcPEG(0, 15)
+	if err == nil {
+		t.Error("expected error for pe_ratio <= 0")
+	}
+}
+
+func TestCalcPEG_ZeroGrowth(t *testing.T) {
+	_, err := calcPEG(20, 0)
+	if err == nil {
+		t.Error("expected error for growth_rate_percent == 0")
+	}
+}
+
+// ---- calcDividendYield -----------------------------------------------------------
+
+func TestCalcDividendYield_AnnualDividend(t *testing.T) {
+	r, err := calcDividendYield(100, 2.5, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !approxEqual(r.YieldPercent, 2.5, 0.001) {
+		t.Errorf("YieldPercent: want 2.5, got %v", r.YieldPercent)
+	}
+}
+
+func TestCalcDividendYield_QuarterlyTTM(t *testing.T) {
+	// Sum of quarterly = 4.0 → yield = 4/100*100 = 4%.
+	r, err := calcDividendYield(100, 0, []float64{1, 1, 1, 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !approxEqual(r.YieldPercent, 4.0, 0.001) {
+		t.Errorf("YieldPercent: want 4.0, got %v", r.YieldPercent)
+	}
+	if !strings.Contains(r.Summary, "trailing twelve months") {
+		t.Errorf("summary should mention TTM source, got %q", r.Summary)
+	}
+}
+
+func TestCalcDividendYield_QuarterlyTakesPriority(t *testing.T) {
+	// Both provided: quarterly (sum=8) must win over annual (2.5).
+	r, err := calcDividendYield(100, 2.5, []float64{2, 2, 2, 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !approxEqual(r.YieldPercent, 8.0, 0.001) {
+		t.Errorf("YieldPercent: want 8.0 (quarterly priority), got %v", r.YieldPercent)
+	}
+}
+
+func TestCalcDividendYield_WrongQuarterlyLength(t *testing.T) {
+	_, err := calcDividendYield(100, 0, []float64{1, 1, 1})
+	if err == nil {
+		t.Error("expected error for quarterly_dividends length != 4")
+	}
+}
+
+func TestCalcDividendYield_NoDividendProvided(t *testing.T) {
+	_, err := calcDividendYield(100, 0, nil)
+	if err == nil {
+		t.Error("expected error when neither annual_dividend_per_share nor quarterly_dividends is provided")
+	}
+}
+
+func TestCalcDividendYield_ZeroPrice(t *testing.T) {
+	_, err := calcDividendYield(0, 2.5, nil)
+	if err == nil {
+		t.Error("expected error for price <= 0")
+	}
+}
+
+// ---- calcDividendGrowth -----------------------------------------------------------
+
+func TestCalcDividendGrowth_Normal(t *testing.T) {
+	// 1.00 → 1.21 over 2 periods = 10% CAGR.
+	r, err := calcDividendGrowth([]float64{1.00, 1.10, 1.21})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !approxEqual(r.CAGRPercent, 10.0, 0.01) {
+		t.Errorf("CAGRPercent: want ~10.0, got %v", r.CAGRPercent)
+	}
+	if !strings.Contains(r.Summary, "CAGR") {
+		t.Errorf("summary should mention CAGR, got %q", r.Summary)
+	}
+}
+
+func TestCalcDividendGrowth_TooFewValues(t *testing.T) {
+	_, err := calcDividendGrowth([]float64{1.0})
+	if err == nil {
+		t.Error("expected error for fewer than 2 dividends")
+	}
+}
+
+func TestCalcDividendGrowth_ZeroFirst(t *testing.T) {
+	_, err := calcDividendGrowth([]float64{0, 1.0})
+	if err == nil {
+		t.Error("expected error for dividends[0] <= 0")
+	}
+}
+
 // ---- calcCurrencyConversion --------------------------------------------------
 
 func TestCalcCurrencyConversion_Normal(t *testing.T) {
@@ -1394,6 +1573,106 @@ func TestDispatch_CalculateCorrelationMatrix_BadArgType(t *testing.T) {
 	}, &lk)
 	if result[:6] != "error:" {
 		t.Errorf("non-object series should produce an error, got %s", result)
+	}
+}
+
+func TestDispatch_CalculatePFCF_OK(t *testing.T) {
+	a := New(&mockLLM{}, &mockMarket{}, "")
+	var lk ProgressKind
+	args := toolCallArgs(t, map[string]any{"price": 150.0, "free_cash_flow_per_share": 12.5})
+	result := a.dispatch(context.Background(), llm.ToolCall{
+		Function: llm.ToolCallFunction{Name: "calculate_pfcf", Arguments: args},
+	}, &lk)
+	if result[:6] == "error:" {
+		t.Fatalf("unexpected error: %s", result)
+	}
+	var r pfcfResult
+	if err := json.Unmarshal([]byte(result), &r); err != nil {
+		t.Fatalf("invalid JSON: %s — %v", result, err)
+	}
+	if !approxEqual(r.PFCF, 12.0, 0.01) {
+		t.Errorf("PFCF: want ~12.0, got %v", r.PFCF)
+	}
+}
+
+func TestDispatch_CalculatePEG_OK(t *testing.T) {
+	a := New(&mockLLM{}, &mockMarket{}, "")
+	var lk ProgressKind
+	args := toolCallArgs(t, map[string]any{"pe_ratio": 20.0, "growth_rate_percent": 15.0})
+	result := a.dispatch(context.Background(), llm.ToolCall{
+		Function: llm.ToolCallFunction{Name: "calculate_peg", Arguments: args},
+	}, &lk)
+	if result[:6] == "error:" {
+		t.Fatalf("unexpected error: %s", result)
+	}
+	var r pegResult
+	if err := json.Unmarshal([]byte(result), &r); err != nil {
+		t.Fatalf("invalid JSON: %s — %v", result, err)
+	}
+	if r.Interpretation != "reasonable" {
+		t.Errorf("Interpretation: want reasonable, got %q", r.Interpretation)
+	}
+}
+
+func TestDispatch_CalculateDividendYield_OK(t *testing.T) {
+	a := New(&mockLLM{}, &mockMarket{}, "")
+	var lk ProgressKind
+	args := toolCallArgs(t, map[string]any{"price": 100.0, "annual_dividend_per_share": 2.5})
+	result := a.dispatch(context.Background(), llm.ToolCall{
+		Function: llm.ToolCallFunction{Name: "calculate_dividend_yield", Arguments: args},
+	}, &lk)
+	if result[:6] == "error:" {
+		t.Fatalf("unexpected error: %s", result)
+	}
+	var r dividendYieldResult
+	if err := json.Unmarshal([]byte(result), &r); err != nil {
+		t.Fatalf("invalid JSON: %s — %v", result, err)
+	}
+	if !approxEqual(r.YieldPercent, 2.5, 0.001) {
+		t.Errorf("YieldPercent: want 2.5, got %v", r.YieldPercent)
+	}
+}
+
+func TestDispatch_CalculateDividendYield_MissingBoth(t *testing.T) {
+	a := New(&mockLLM{}, &mockMarket{}, "")
+	var lk ProgressKind
+	args := toolCallArgs(t, map[string]any{"price": 100.0})
+	result := a.dispatch(context.Background(), llm.ToolCall{
+		Function: llm.ToolCallFunction{Name: "calculate_dividend_yield", Arguments: args},
+	}, &lk)
+	if result[:6] != "error:" {
+		t.Errorf("missing both dividend inputs should produce an error, got %s", result)
+	}
+}
+
+func TestDispatch_CalculateDividendGrowth_OK(t *testing.T) {
+	a := New(&mockLLM{}, &mockMarket{}, "")
+	var lk ProgressKind
+	args := toolCallArgs(t, map[string]any{"dividends": []float64{1.00, 1.10, 1.21}})
+	result := a.dispatch(context.Background(), llm.ToolCall{
+		Function: llm.ToolCallFunction{Name: "calculate_dividend_growth", Arguments: args},
+	}, &lk)
+	if result[:6] == "error:" {
+		t.Fatalf("unexpected error: %s", result)
+	}
+	var r dividendGrowthResult
+	if err := json.Unmarshal([]byte(result), &r); err != nil {
+		t.Fatalf("invalid JSON: %s — %v", result, err)
+	}
+	if !approxEqual(r.CAGRPercent, 10.0, 0.01) {
+		t.Errorf("CAGRPercent: want ~10.0, got %v", r.CAGRPercent)
+	}
+}
+
+func TestDispatch_CalculateDividendGrowth_BadType(t *testing.T) {
+	a := New(&mockLLM{}, &mockMarket{}, "")
+	var lk ProgressKind
+	args := toolCallArgs(t, map[string]any{"dividends": "not an array"})
+	result := a.dispatch(context.Background(), llm.ToolCall{
+		Function: llm.ToolCallFunction{Name: "calculate_dividend_growth", Arguments: args},
+	}, &lk)
+	if result[:6] != "error:" {
+		t.Errorf("non-array dividends should produce an error, got %s", result)
 	}
 }
 
