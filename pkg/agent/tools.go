@@ -288,9 +288,22 @@ func buildTools() []llm.Tool {
 			}, []string{"series"}),
 		),
 		tool("portfolio_calculate_metrics",
-			"Aggregate metrics for a portfolio: current value, realised vs unrealised P&L, concentration (HHI + per-symbol weights), weighted dividend yield, weighted beta. If portfolio_id is omitted, uses the current portfolio. Fetches current quotes via the configured market provider; symbols with no quote are skipped and reported in missing_quotes.",
+			"Aggregate metrics for a portfolio: current value, realised vs unrealised P&L, concentration (HHI + per-symbol weights), weighted dividend yield, weighted beta. If portfolio_id is omitted, uses the current portfolio. Symbols present in the optional quotes snapshot use those values directly; all other holdings fall back to the configured market provider. Symbols with no quote from either source are skipped and reported in missing_quotes.",
 			obj(map[string]any{
 				"portfolio_id": str("Portfolio ID (optional; omit to use the current portfolio)"),
+				"quotes": map[string]any{
+					"type":        "object",
+					"description": "Optional price snapshot to avoid market provider calls, e.g. {\"AAPL\": {\"last\": 190.5, \"dividend_yield_ttm\": 0.005, \"beta\": 1.2}}. dividend_yield_ttm and beta are optional per symbol.",
+					"additionalProperties": map[string]any{
+						"type": "object",
+						"properties": map[string]any{
+							"last":               numProp("Last traded price"),
+							"dividend_yield_ttm": numProp("Trailing-twelve-month dividend yield as a fraction, e.g. 0.025 for 2.5%"),
+							"beta":               numProp("Asset beta vs benchmark"),
+						},
+						"required": []string{"last"},
+					},
+				},
 			}, []string{}),
 		),
 
@@ -879,10 +892,34 @@ func (a *Agent) dispatchInner(ctx context.Context, call llm.ToolCall, lastKind *
 			if p == nil {
 				return `error: portfolio not found`
 			}
-			// Auto-fetch a quote per holding. Symbols whose quote fails or
-			// returns Last=0 end up in MissingQuotes and are excluded from
-			// valuation, concentration, and dividend/beta aggregates.
+			// Preload any snapshot quotes the caller already knows, so the
+			// auto-fetch loop below skips those symbols (it already checks
+			// "seen" per symbol).
 			quotes := make(map[string]portfolio.Quote, len(p.Instruments))
+			if raw, ok := args["quotes"].(map[string]any); ok {
+				for symbol, v := range raw {
+					entry, ok := v.(map[string]any)
+					if !ok {
+						continue
+					}
+					last, ok := entry["last"].(float64)
+					if !ok || last <= 0 {
+						continue
+					}
+					pq := portfolio.Quote{Last: last}
+					if dy, ok := entry["dividend_yield_ttm"].(float64); ok {
+						pq.DividendYieldTTM = dy
+					}
+					if beta, ok := entry["beta"].(float64); ok {
+						pq.Beta = beta
+					}
+					quotes[symbol] = pq
+				}
+			}
+			// Auto-fetch a quote per holding not already covered by the
+			// snapshot above. Symbols whose quote fails or returns Last=0 end
+			// up in MissingQuotes and are excluded from valuation,
+			// concentration, and dividend/beta aggregates.
 			if a.market != nil {
 				for _, ins := range p.Instruments {
 					if ins.Type != portfolio.InstrumentHolding {

@@ -59,8 +59,12 @@ type Portfolio struct {
 	ActiveSessionID string       `json:"active_session_id,omitempty"`
 	Instruments     []Instrument `json:"instruments,omitempty"`
 	RealizedPnL     float64      `json:"realized_pnl"`
-	CreatedAt       time.Time    `json:"created_at"`
-	UpdatedAt       time.Time    `json:"updated_at"`
+	// TargetAllocation maps symbol → target weight as a fraction (e.g. 0.3
+	// for 30%). Consumed by the portfolio_suggest_rebalance tool (MATH-12,
+	// not yet implemented); left unset/empty until that tool is built.
+	TargetAllocation map[string]float64 `json:"target_allocation,omitempty"`
+	CreatedAt        time.Time          `json:"created_at"`
+	UpdatedAt        time.Time          `json:"updated_at"`
 }
 
 // SellResult holds the outcome of a FIFO sell operation.

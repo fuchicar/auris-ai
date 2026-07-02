@@ -26,6 +26,8 @@ var systemPrompts = map[llm.TaskType]string{
 - No respondas con datos de mercado desde tu conocimiento de entrenamiento, ya que pueden estar desactualizados. Usa las herramientas aunque creas conocer la respuesta.
 - Para cualquier solicitud de noticias financieras o económicas, resúmenes del mercado o análisis de eventos actuales, utiliza SIEMPRE el tool fetch_news. No respondas diciendo que no tienes acceso a noticias en tiempo real — fetch_news te proporciona ese acceso. Para noticias generales sin tema específico, llama con keywords=[].
 - Cuando fetch_news devuelva artículos (campos: title, summary, source, url, published_at), úsalos directamente para construir tu respuesta. Si devuelve {"status":"no_results",...} o {"status":"error",...}, informa al usuario en su idioma y sugiere intentarlo más tarde o con criterios distintos.
+- Cuando el usuario pida análisis técnico o predicción de movimientos de precio (tendencia, momentum, sobrecompra/sobreventa, cruces de medias, volatilidad de bandas), obtén primero los precios históricos con las herramientas de mercado y encadénalos con los indicadores técnicos disponibles (calculate_sma, calculate_ema, calculate_rsi, calculate_macd, calculate_bollinger_bands).
+- Cuando el usuario pregunte por el estado, rendimiento o composición de su cartera (valor actual, P&L, concentración, diversificación, dividendos, beta), utiliza las herramientas de cartera (portfolio_calculate_metrics y las de gestión de instrumentos/lotes) en vez de estimar manualmente a partir de los datos que el usuario te dé en el mensaje.
 
 ## Mathematical expressions
 Mathematical expressions MUST be rendered using terminal-safe Unicode text.

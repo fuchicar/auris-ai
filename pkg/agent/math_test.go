@@ -1769,6 +1769,68 @@ func TestRegression_INCON2_PortfolioMetricsFundamentalsFailureIsNonFatal(t *test
 	}
 }
 
+// DD-2: a quotes snapshot passed by the caller must be used directly and
+// must NOT trigger a market provider auto-fetch for the symbols it covers.
+// AAPL's mock quote is configured to error out, so if the dispatch tried to
+// auto-fetch it despite the snapshot, AAPL would end up in MissingQuotes and
+// its value would be excluded — this test would then fail.
+func TestRegression_DD2_PortfolioMetricsQuotesSnapshotSkipsAutoFetch(t *testing.T) {
+	tmp := t.TempDir()
+	prev := portfolio.SetPortfoliosDirForTest(tmp)
+	t.Cleanup(func() { portfolio.SetPortfoliosDirForTest(prev) })
+
+	now := time.Now().UTC().Truncate(time.Second)
+	p := portfolio.NewPortfolio("regression-dd2")
+	p.Instruments = append(p.Instruments,
+		portfolio.Instrument{
+			ID: "ins-AAPL", Symbol: "AAPL", Name: "AAPL", Type: portfolio.InstrumentHolding,
+			Lots: []portfolio.Lot{{ID: "lot-AAPL", Quantity: 10, Price: 100, Date: now}},
+		},
+		portfolio.Instrument{
+			ID: "ins-MSFT", Symbol: "MSFT", Name: "MSFT", Type: portfolio.InstrumentHolding,
+			Lots: []portfolio.Lot{{ID: "lot-MSFT", Quantity: 5, Price: 100, Date: now}},
+		},
+	)
+	if err := portfolio.SavePortfolio(p); err != nil {
+		t.Fatal(err)
+	}
+
+	mp := &mockMarket{
+		// AAPL would fail if the dispatch ever tried to auto-fetch it.
+		quoteErrBySymbol: map[string]error{"AAPL": market.ErrNotFound},
+		// MSFT has no snapshot entry, so it must come from auto-fetch.
+		quotesBySymbol: map[string]market.Quote{"MSFT": {Last: 200}},
+	}
+	a := New(&mockLLM{}, mp, "")
+	a.currentPortfolioID = p.ID
+
+	var lk ProgressKind
+	args := toolCallArgs(t, map[string]any{
+		"quotes": map[string]any{
+			"AAPL": map[string]any{"last": 150.0, "dividend_yield_ttm": 0.005, "beta": 1.2},
+		},
+	})
+	result := a.dispatch(context.Background(), llm.ToolCall{
+		Function: llm.ToolCallFunction{Name: "portfolio_calculate_metrics", Arguments: args},
+	}, &lk)
+	if result == "" || result[:6] == "error:" {
+		t.Fatalf("DD-2 regression: unexpected error or empty result: %s", result)
+	}
+	var m portfolio.PortfolioMetrics
+	if err := json.Unmarshal([]byte(result), &m); err != nil {
+		t.Fatalf("invalid JSON: %s — %v", result, err)
+	}
+	for _, sym := range m.MissingQuotes {
+		if sym == "AAPL" {
+			t.Fatalf("DD-2 regression: AAPL should be valued from the snapshot, not auto-fetched (missing_quotes=%v)", m.MissingQuotes)
+		}
+	}
+	// AAPL: 10 * 150 = 1500, MSFT: 5 * 200 = 1000 → current_value = 2500.
+	if m.CurrentValue != 2500 {
+		t.Errorf("DD-2 regression: CurrentValue want 2500 (snapshot AAPL + auto-fetched MSFT), got %v", m.CurrentValue)
+	}
+}
+
 func TestDispatch_PortfolioCalculateMetrics_NoMarketProvider(t *testing.T) {
 	// With a nil market provider, the tool still runs but flags the
 	// limitation in the summary.
