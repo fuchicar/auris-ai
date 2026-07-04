@@ -402,6 +402,13 @@ func buildTools() []llm.Tool {
 				"symbol":       str("Ticker symbol of the instrument to remove"),
 			}, []string{"symbol"}),
 		),
+		tool("portfolio_set_cash",
+			"Set the portfolio's available liquid cash balance. This REPLACES the current value entirely.",
+			obj(map[string]any{
+				"portfolio_id": str("Portfolio ID (optional; omit to use the current portfolio)"),
+				"cash":         numProp("New cash balance (must be >= 0)"),
+			}, []string{"cash"}),
+		),
 		tool("portfolio_set_target_allocation",
 			"Set the portfolio's target allocation (symbol → target weight as a fraction, e.g. 0.4 = 40%), used by future rebalancing tools. This REPLACES any existing target allocation entirely — it is not a partial merge.",
 			obj(map[string]any{
@@ -948,6 +955,32 @@ func (a *Agent) dispatchInner(ctx context.Context, call llm.ToolCall, lastKind *
 				return encode(nil, err)
 			}
 			return encode(map[string]any{"removed": symbol, "portfolio_id": p.ID}, nil)
+
+		case "portfolio_set_cash":
+			id, err := resolvePortfolioID()
+			if err != nil {
+				return encode(nil, err)
+			}
+			p, err := portfolio.LoadPortfolio(id)
+			if err != nil {
+				return encode(nil, err)
+			}
+			if p == nil {
+				return `error: portfolio not found`
+			}
+			cash, ok := args["cash"].(float64)
+			if !ok || cash < 0 {
+				return `error: cash must be a non-negative number`
+			}
+			p.Cash = cash
+			if err := portfolio.SavePortfolio(p); err != nil {
+				return encode(nil, err)
+			}
+			return encode(map[string]any{
+				"portfolio_id": p.ID,
+				"cash":         round2(cash),
+				"summary":      fmt.Sprintf("cash balance set to %.2f", cash),
+			}, nil)
 
 		case "portfolio_set_target_allocation":
 			id, err := resolvePortfolioID()

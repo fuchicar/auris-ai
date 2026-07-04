@@ -59,6 +59,7 @@ type Portfolio struct {
 	ActiveSessionID string       `json:"active_session_id,omitempty"`
 	Instruments     []Instrument `json:"instruments,omitempty"`
 	RealizedPnL     float64      `json:"realized_pnl"`
+	Cash            float64      `json:"cash"`
 	// TargetAllocation maps symbol → target weight as a fraction (e.g. 0.3
 	// for 30%). Consumed by the portfolio_suggest_rebalance tool (MATH-12,
 	// not yet implemented); left unset/empty until that tool is built.

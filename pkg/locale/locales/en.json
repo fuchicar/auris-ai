@@ -570,6 +570,15 @@
   "portfolio.create.desc.hint": {
     "other": "Enter description · Enter next · Esc back"
   },
+  "portfolio.create.cash.label": {
+    "other": "Available cash"
+  },
+  "portfolio.create.cash.hint": {
+    "other": "Enter amount (0 if none) · Enter next · Esc back"
+  },
+  "portfolio.create.cash.error_invalid": {
+    "other": "Enter a valid non-negative amount."
+  },
   "portfolio.create.model.label": {
     "other": "Assign AI model"
   },
@@ -600,6 +609,9 @@
   },
   "portfolio.view.summary.invested": {
     "other": "Invested"
+  },
+  "portfolio.view.summary.cash": {
+    "other": "Cash"
   },
   "portfolio.view.summary.current_value": {
     "other": "Current value"

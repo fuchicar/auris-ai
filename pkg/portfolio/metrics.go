@@ -41,6 +41,8 @@ type PortfolioMetrics struct {
 	CostBasis         float64        `json:"cost_basis"`
 	RealisedPnL       float64        `json:"realised_pnl"`
 	CurrentValue      float64        `json:"current_value"`      // sum of qty*last_price over holdings with quotes
+	Cash              float64        `json:"cash"`               // portfolio's liquid cash balance
+	TotalValue        float64        `json:"total_value"`        // current_value + cash
 	UnrealisedPnL     float64        `json:"unrealised_pnl"`     // current_value - cost_basis_of_quoted_holdings
 	TotalPnLAbsolute  float64        `json:"total_pnl_absolute"` // realised + unrealised
 	TotalPnLPercent   float64        `json:"total_pnl_percent"`  // total / cost_basis * 100; 0 if cost_basis == 0
@@ -94,7 +96,7 @@ func ComputeMetrics(p *Portfolio, quotes map[string]Quote) (PortfolioMetrics, er
 		holdings++
 		lots += len(ins.Lots)
 	}
-	if holdings == 0 {
+	if holdings == 0 && p.Cash <= 0 {
 		return PortfolioMetrics{}, ErrNoHoldings
 	}
 
@@ -210,6 +212,8 @@ func ComputeMetrics(p *Portfolio, quotes map[string]Quote) (PortfolioMetrics, er
 		CostBasis:         round2(costBasisTotal),
 		RealisedPnL:       round2(p.RealizedPnL),
 		CurrentValue:      round2(currentValue),
+		Cash:              round2(p.Cash),
+		TotalValue:        round2(currentValue + p.Cash),
 		UnrealisedPnL:     round2(unrealised),
 		TotalPnLAbsolute:  round2(totalPnL),
 		TotalPnLPercent:   round4(totalPnLPct),
@@ -219,20 +223,24 @@ func ComputeMetrics(p *Portfolio, quotes map[string]Quote) (PortfolioMetrics, er
 		DividendYield:     round4(dividendYield * 100), // store as percent for readability
 		WeightedBeta:      round4(weightedBeta),
 		MissingQuotes:     missing,
-		Summary:           summarise(weights, hhi, dividendYield, weightedBeta, currentValue, p.RealizedPnL, unrealised),
+		Summary:           summarise(weights, hhi, dividendYield, weightedBeta, currentValue, p.RealizedPnL, unrealised, p.Cash),
 	}, nil
 }
 
 // summarise produces a one-line human-readable summary that mirrors the JSON
 // fields, intended for tools whose LLM caller prefers prose over structured
 // output. Kept short on purpose: the model can elaborate.
-func summarise(weights []SymbolWeight, hhi, divYield, beta, currentValue, realised, unrealised float64) string {
-	if len(weights) == 0 {
-		return "no quoted holdings; realised P&L only"
+func summarise(weights []SymbolWeight, hhi, divYield, beta, currentValue, realised, unrealised, cash float64) string {
+	cashSuffix := ""
+	if cash > 0 {
+		cashSuffix = fmt.Sprintf(", cash=%.2f, total_value=%.2f", cash, currentValue+cash)
 	}
-	return fmt.Sprintf("value=%.2f, realised=%.2f, unrealised=%.2f, HHI=%.4f (%s), div_yield=%.4f%%, β=%.4f across %d holdings",
+	if len(weights) == 0 {
+		return "no quoted holdings; realised P&L only" + cashSuffix
+	}
+	return fmt.Sprintf("value=%.2f, realised=%.2f, unrealised=%.2f, HHI=%.4f (%s), div_yield=%.4f%%, β=%.4f across %d holdings%s",
 		currentValue, realised, unrealised, hhi,
-		hhiBucket(hhi), divYield, beta, len(weights))
+		hhiBucket(hhi), divYield, beta, len(weights), cashSuffix)
 }
 
 // hhiBucket returns the same label summarise uses, exposed as a helper so

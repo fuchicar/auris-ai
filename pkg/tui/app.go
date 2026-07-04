@@ -569,6 +569,7 @@ func (a *AppModel) transition(msg ScreenDoneMsg) (tea.Model, tea.Cmd) {
 				if p, err := portfolio.LoadPortfolio(r.EditID); err == nil && p != nil {
 					p.Name = r.Name
 					p.Description = r.Description
+					p.Cash = r.Cash
 					p.AIProvider = r.AIProvider
 					p.AIModel = r.AIModel
 					_ = portfolio.SavePortfolio(p)
@@ -578,6 +579,7 @@ func (a *AppModel) transition(msg ScreenDoneMsg) (tea.Model, tea.Cmd) {
 				// New portfolio.
 				p := portfolio.NewPortfolio(r.Name)
 				p.Description = r.Description
+				p.Cash = r.Cash
 				p.AIProvider = r.AIProvider
 				p.AIModel = r.AIModel
 				_ = portfolio.SavePortfolio(p)

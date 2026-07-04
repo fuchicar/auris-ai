@@ -570,6 +570,15 @@
   "portfolio.create.desc.hint": {
     "other": "Escribe la descripción · Enter siguiente · Esc volver"
   },
+  "portfolio.create.cash.label": {
+    "other": "Efectivo disponible"
+  },
+  "portfolio.create.cash.hint": {
+    "other": "Introduce la cantidad (0 si no hay) · Enter siguiente · Esc volver"
+  },
+  "portfolio.create.cash.error_invalid": {
+    "other": "Introduce una cantidad válida no negativa."
+  },
   "portfolio.create.model.label": {
     "other": "Modelo de IA asignado"
   },
@@ -600,6 +609,9 @@
   },
   "portfolio.view.summary.invested": {
     "other": "Invertido"
+  },
+  "portfolio.view.summary.cash": {
+    "other": "Efectivo"
   },
   "portfolio.view.summary.current_value": {
     "other": "Valor actual"

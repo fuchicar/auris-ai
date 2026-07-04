@@ -119,6 +119,9 @@ func BuildPortfolioSystemMessage(p *portfolio.Portfolio, profile *config.Financi
 	if p.Description != "" {
 		sb.WriteString(fmt.Sprintf("**Descripción:** %s\n", p.Description))
 	}
+	if p.Cash != 0 {
+		sb.WriteString(fmt.Sprintf("**Efectivo disponible:** %.2f\n", p.Cash))
+	}
 	sb.WriteString("\n")
 
 	var holdings, watchlist []portfolio.Instrument

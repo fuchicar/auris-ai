@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/spinner"
@@ -19,6 +20,7 @@ import (
 type PortfolioCreateResult struct {
 	Name        string
 	Description string
+	Cash        float64
 	AIProvider  string
 	AIModel     string
 	EditID      string // non-empty when editing an existing portfolio
@@ -30,6 +32,7 @@ type portfolioCreateStep int
 const (
 	pcStepName  portfolioCreateStep = iota // text input for portfolio name
 	pcStepDesc                             // text input for description (optional)
+	pcStepCash                             // text input for available cash (optional)
 	pcStepModel                            // provider/model picker (async load)
 )
 
@@ -43,13 +46,15 @@ const (
 
 // portfolioCreateModel is the multi-step form for creating or editing a portfolio.
 type portfolioCreateModel struct {
-	step        portfolioCreateStep
-	modelStep   portfolioModelStep
-	editID      string // non-empty when editing
-	allNames    []string
-	nameInput   textinput.Model
-	descInput   textinput.Model
-	nameErr     string
+	step      portfolioCreateStep
+	modelStep portfolioModelStep
+	editID    string // non-empty when editing
+	allNames  []string
+	nameInput textinput.Model
+	descInput textinput.Model
+	cashInput textinput.Model
+	nameErr   string
+	cashErr   string
 	// model picker state (same as AIDefaultModelModel)
 	entries        []registry.LLMEntry
 	modelsByProv   map[string][]llm.Model
@@ -60,7 +65,7 @@ type portfolioCreateModel struct {
 	selProvider    string
 	selModel       string
 	// spinner for when models are still loading
-	spin       spinner.Model
+	spin        spinner.Model
 	modelsReady bool
 	modelErr    string
 	height      int
@@ -86,18 +91,23 @@ func newPortfolioCreateModel(
 	descInput.Placeholder = locale.T("portfolio.create.desc.label")
 	descInput.CharLimit = 200
 
+	cashInput := textinput.New()
+	cashInput.Placeholder = locale.T("portfolio.create.cash.label")
+	cashInput.CharLimit = 20
+
 	sp := spinner.New()
 	sp.Spinner = spinner.Dot
 	sp.Style = s.Spinner
 
 	m := &portfolioCreateModel{
-		nameInput:   nameInput,
-		descInput:   descInput,
-		spin:        sp,
-		styles:      s,
-		entries:     entries,
+		nameInput:    nameInput,
+		descInput:    descInput,
+		cashInput:    cashInput,
+		spin:         sp,
+		styles:       s,
+		entries:      entries,
 		modelsByProv: byProv,
-		modelsReady: len(entries) > 0,
+		modelsReady:  len(entries) > 0,
 	}
 
 	// Build list of all portfolio names for uniqueness checking.
@@ -109,6 +119,9 @@ func newPortfolioCreateModel(
 		m.editID = existing.ID
 		nameInput.SetValue(existing.Name)
 		descInput.SetValue(existing.Description)
+		if existing.Cash != 0 {
+			cashInput.SetValue(strconv.FormatFloat(existing.Cash, 'f', -1, 64))
+		}
 		// Remove the current name from uniqueness check.
 		filtered := m.allNames[:0]
 		for _, n := range m.allNames {
@@ -124,6 +137,8 @@ func newPortfolioCreateModel(
 
 	nameInput.Focus()
 	m.nameInput = nameInput
+	m.descInput = descInput
+	m.cashInput = cashInput
 
 	// If only one provider, pre-select it and go straight to model step.
 	if len(entries) == 1 {
@@ -189,6 +204,8 @@ func (m *portfolioCreateModel) handleKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleNameStep(key)
 	case pcStepDesc:
 		return m.handleDescStep(key)
+	case pcStepCash:
+		return m.handleCashStep(key)
 	case pcStepModel:
 		return m.handleModelStep(key)
 	}
@@ -232,15 +249,42 @@ func (m *portfolioCreateModel) handleDescStep(key tea.KeyMsg) (tea.Model, tea.Cm
 		m.nameInput.Focus()
 		return m, textinput.Blink
 	case tea.KeyEnter:
-		m.step = pcStepModel
+		m.step = pcStepCash
 		m.descInput.Blur()
+		m.cashInput.Focus()
+		return m, textinput.Blink
+	}
+	var cmd tea.Cmd
+	m.descInput, cmd = m.descInput.Update(key)
+	return m, cmd
+}
+
+func (m *portfolioCreateModel) handleCashStep(key tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch key.Type {
+	case tea.KeyEsc:
+		m.step = pcStepDesc
+		m.cashInput.Blur()
+		m.descInput.Focus()
+		return m, textinput.Blink
+	case tea.KeyEnter:
+		raw := strings.TrimSpace(m.cashInput.Value())
+		if raw != "" {
+			cash, err := strconv.ParseFloat(raw, 64)
+			if err != nil || cash < 0 {
+				m.cashErr = locale.T("portfolio.create.cash.error_invalid")
+				return m, nil
+			}
+		}
+		m.cashErr = ""
+		m.step = pcStepModel
+		m.cashInput.Blur()
 		if !m.modelsReady {
 			return m, m.spin.Tick
 		}
 		return m, nil
 	}
 	var cmd tea.Cmd
-	m.descInput, cmd = m.descInput.Update(key)
+	m.cashInput, cmd = m.cashInput.Update(key)
 	return m, cmd
 }
 
@@ -264,8 +308,8 @@ func (m *portfolioCreateModel) handleModelStep(key tea.KeyMsg) (tea.Model, tea.C
 				m.provScrollOff = clampScrollOff(m.provCursor, m.provScrollOff, maxVis)
 			}
 		case tea.KeyEsc:
-			m.step = pcStepDesc
-			m.descInput.Focus()
+			m.step = pcStepCash
+			m.cashInput.Focus()
 			return m, textinput.Blink
 		case tea.KeyEnter:
 			m.selProvider = m.entries[m.provCursor].Key
@@ -291,8 +335,8 @@ func (m *portfolioCreateModel) handleModelStep(key tea.KeyMsg) (tea.Model, tea.C
 			if len(m.entries) > 1 {
 				m.modelStep = pmStepProvider
 			} else {
-				m.step = pcStepDesc
-				m.descInput.Focus()
+				m.step = pcStepCash
+				m.cashInput.Focus()
 				return m, textinput.Blink
 			}
 		case tea.KeyEnter:
@@ -303,6 +347,10 @@ func (m *portfolioCreateModel) handleModelStep(key tea.KeyMsg) (tea.Model, tea.C
 			modelID := models[m.modelCursor].ID
 			name := strings.TrimSpace(m.nameInput.Value())
 			desc := strings.TrimSpace(m.descInput.Value())
+			var cash float64
+			if raw := strings.TrimSpace(m.cashInput.Value()); raw != "" {
+				cash, _ = strconv.ParseFloat(raw, 64)
+			}
 			editID := m.editID
 			return m, func() tea.Msg {
 				return ScreenDoneMsg{
@@ -310,6 +358,7 @@ func (m *portfolioCreateModel) handleModelStep(key tea.KeyMsg) (tea.Model, tea.C
 					Result: PortfolioCreateResult{
 						Name:        name,
 						Description: desc,
+						Cash:        cash,
 						AIProvider:  prov,
 						AIModel:     modelID,
 						EditID:      editID,
@@ -331,7 +380,7 @@ func (m *portfolioCreateModel) View() string {
 	stepNum := int(m.step) + 1
 	progress := m.styles.Hint.Render(locale.Tp("portfolio.create.progress", map[string]any{
 		"Current": stepNum,
-		"Total":   3,
+		"Total":   4,
 	}))
 
 	var body []string
@@ -350,6 +399,15 @@ func (m *portfolioCreateModel) View() string {
 		input := m.styles.Input.Render(m.descInput.View())
 		hint := m.styles.Hint.Render(locale.T("portfolio.create.desc.hint"))
 		body = append(body, label, input, hint)
+
+	case pcStepCash:
+		label := m.styles.Subtitle.Render(locale.T("portfolio.create.cash.label"))
+		input := m.styles.Input.Render(m.cashInput.View())
+		hint := m.styles.Hint.Render(locale.T("portfolio.create.cash.hint"))
+		body = append(body, label, input, hint)
+		if m.cashErr != "" {
+			body = append(body, m.styles.Error.Render(fmt.Sprintf("✗ %s", m.cashErr)))
+		}
 
 	case pcStepModel:
 		if m.modelErr != "" {

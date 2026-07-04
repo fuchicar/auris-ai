@@ -238,10 +238,12 @@ func (m *portfolioViewModel) View() string {
 			totalCurrent += qty * price
 		}
 	}
-	unrealizedPnL := totalCurrent - totalInvested
+	totalCurrent += m.portfolio.Cash
+	unrealizedPnL := totalCurrent - totalInvested - m.portfolio.Cash
 
 	summaryLines = append(summaryLines,
 		fmt.Sprintf("  %-22s %.2f", locale.T("portfolio.view.summary.invested"), totalInvested),
+		fmt.Sprintf("  %-22s %.2f", locale.T("portfolio.view.summary.cash"), m.portfolio.Cash),
 	)
 
 	if m.loadingPrices {
@@ -252,7 +254,7 @@ func (m *portfolioViewModel) View() string {
 				m.spin.View(),
 			),
 		)
-	} else if len(m.prices) > 0 {
+	} else if len(m.prices) > 0 || holdingCount == 0 {
 		pnlStr := formatPnL(unrealizedPnL)
 		summaryLines = append(summaryLines,
 			fmt.Sprintf("  %-22s %.2f", locale.T("portfolio.view.summary.current_value"), totalCurrent),
