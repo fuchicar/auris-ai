@@ -52,14 +52,18 @@ type searchResultMsg struct {
 
 // instrumentSearchModel drives the multi-step instrument add flow.
 type instrumentSearchModel struct {
-	mp            market.ProviderAPI
-	step          instrumentSearchStep
-	searchVersion int
-	query         string
-	results       []market.Instrument
-	resultCursor  int
-	searching     bool
-	searchErr     string
+	mp              market.ProviderAPI
+	step            instrumentSearchStep
+	searchVersion   int
+	query           string
+	results         []market.Instrument
+	resultCursor    int
+	resultScrollOff int
+	searching       bool
+	searchErr       string
+
+	width  int
+	height int
 
 	// selected instrument
 	selectedSymbol string
@@ -84,7 +88,7 @@ type instrumentSearchModel struct {
 	styles     *Styles
 }
 
-func newInstrumentSearchModel(mp market.ProviderAPI, s *Styles) *instrumentSearchModel {
+func newInstrumentSearchModel(mp market.ProviderAPI, s *Styles, width, height int) *instrumentSearchModel {
 	queryInput := textinput.New()
 	queryInput.Placeholder = locale.T("portfolio.search.hint")
 	queryInput.CharLimit = 80
@@ -123,6 +127,8 @@ func newInstrumentSearchModel(mp market.ProviderAPI, s *Styles) *instrumentSearc
 		queryInput:        queryInput,
 		spin:              sp,
 		styles:            s,
+		width:             width,
+		height:            height,
 	}
 
 	if mp == nil {
@@ -140,8 +146,25 @@ func (m *instrumentSearchModel) Init() tea.Cmd {
 	return textinput.Blink
 }
 
+// maxVisible returns the number of result rows that fit inside the box.
+func (m *instrumentSearchModel) maxVisible() int {
+	if m.height == 0 {
+		return 10
+	}
+	n := m.height - 8 // title + box border/padding + hint line + margin
+	if n < 3 {
+		return 3
+	}
+	return n
+}
+
 func (m *instrumentSearchModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.width = msg.Width
+		m.height = msg.Height
+		return m, nil
+
 	case spinner.TickMsg:
 		if m.searching {
 			var cmd tea.Cmd
@@ -178,6 +201,7 @@ func (m *instrumentSearchModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.searchErr = ""
 			m.results = msg.results
 			m.resultCursor = 0
+			m.resultScrollOff = 0
 		}
 		m.step = searchStepResults
 		return m, nil
@@ -264,10 +288,12 @@ func (m *instrumentSearchModel) handleResults(key tea.KeyMsg) (tea.Model, tea.Cm
 	case tea.KeyUp:
 		if m.resultCursor > 0 {
 			m.resultCursor--
+			m.resultScrollOff = clampScrollOff(m.resultCursor, m.resultScrollOff, m.maxVisible())
 		}
 	case tea.KeyDown:
 		if m.resultCursor < len(m.results)-1 {
 			m.resultCursor++
+			m.resultScrollOff = clampScrollOff(m.resultCursor, m.resultScrollOff, m.maxVisible())
 		}
 	case tea.KeyEsc:
 		m.step = searchStepInput
@@ -512,8 +538,18 @@ func (m *instrumentSearchModel) viewResults() []string {
 			m.styles.Hint.Render(locale.T("portfolio.search.hint")),
 		}
 	}
+	maxVis := m.maxVisible()
+	end := m.resultScrollOff + maxVis
+	if end > len(m.results) {
+		end = len(m.results)
+	}
+
 	var rows []string
-	for i, ins := range m.results {
+	if m.resultScrollOff > 0 {
+		rows = append(rows, m.styles.Hint.Render(locale.T("setup.ai.model.scroll_up")))
+	}
+	for i := m.resultScrollOff; i < end; i++ {
+		ins := m.results[i]
 		label := fmt.Sprintf("%-8s %s", ins.Symbol, ins.Name)
 		if i == m.resultCursor {
 			rows = append(rows, fmt.Sprintf("%s %s", m.styles.Cursor.Render(">"), m.styles.Selected.Render(label)))
@@ -521,8 +557,12 @@ func (m *instrumentSearchModel) viewResults() []string {
 			rows = append(rows, fmt.Sprintf("  %s", m.styles.Unselected.Render(label)))
 		}
 	}
-	rows = append(rows, "", m.styles.Hint.Render(locale.T("portfolio.search.hint")))
-	return rows
+	if end < len(m.results) {
+		rows = append(rows, m.styles.Hint.Render(locale.T("setup.ai.model.scroll_down")))
+	}
+
+	box := m.styles.Preview.Render(strings.Join(rows, "\n"))
+	return []string{box, m.styles.Hint.Render(locale.T("portfolio.search.hint"))}
 }
 
 func (m *instrumentSearchModel) viewTypeSelect() []string {

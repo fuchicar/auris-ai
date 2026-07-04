@@ -612,7 +612,7 @@ func (a *AppModel) transition(msg ScreenDoneMsg) (tea.Model, tea.Cmd) {
 				a.instrumentSearchOrigin = ScreenPortfolioView
 				mp := a.buildMarketProvider()
 				a.screen = ScreenInstrumentSearch
-				a.current = newInstrumentSearchModel(mp, a.styles)
+				a.current = newInstrumentSearchModel(mp, a.styles, a.width, a.height)
 			case "edit":
 				a.activePortfolio = r.Portfolio
 				a.pendingPortfolioEdit = true
@@ -644,7 +644,7 @@ func (a *AppModel) transition(msg ScreenDoneMsg) (tea.Model, tea.Cmd) {
 				a.instrumentSearchOrigin = ScreenPortfolioInstruments
 				mp := a.buildMarketProvider()
 				a.screen = ScreenInstrumentSearch
-				a.current = newInstrumentSearchModel(mp, a.styles)
+				a.current = newInstrumentSearchModel(mp, a.styles, a.width, a.height)
 			}
 		}
 
