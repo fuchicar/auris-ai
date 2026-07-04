@@ -788,6 +788,9 @@
   "portfolio.instrument.action.add_lot": {
     "other": "Añadir lote"
   },
+  "portfolio.instrument.action.buy": {
+    "other": "Comprar"
+  },
   "portfolio.instrument.action.sell": {
     "other": "Vender"
   },
@@ -826,6 +829,9 @@
   },
   "portfolio.instrument.add_lot.success": {
     "other": "Lote añadido."
+  },
+  "portfolio.instrument.buy.success": {
+    "other": "Comprado. Añadido a la cartera."
   },
   "portfolio.instrument.change_type.to_watchlist": {
     "other": "Cambiado a seguimiento. Se han eliminado los lotes existentes."

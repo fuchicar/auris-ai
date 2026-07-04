@@ -44,6 +44,12 @@ var instrumentActions = []string{
 	"portfolio.instrument.action.delete",
 }
 
+var watchlistInstrumentActions = []string{
+	"portfolio.instrument.action.buy",
+	"portfolio.instrument.action.change_type",
+	"portfolio.instrument.action.delete",
+}
+
 // portfolioInstrumentViewModel shows a single instrument with lot details and inline actions.
 type portfolioInstrumentViewModel struct {
 	portfolio  *portfolio.Portfolio
@@ -203,13 +209,13 @@ func (m *portfolioInstrumentViewModel) visibleActions() []string {
 	if m.instrument.Type == portfolio.InstrumentHolding {
 		return instrumentActions // all 4
 	}
-	// Watchlist: hide add_lot and sell.
-	return instrumentActions[2:] // change_type + delete
+	// Watchlist: offer buy instead of add_lot/sell.
+	return watchlistInstrumentActions
 }
 
 func (m *portfolioInstrumentViewModel) selectAction(actionKey string) (tea.Model, tea.Cmd) {
 	switch actionKey {
-	case "portfolio.instrument.action.add_lot":
+	case "portfolio.instrument.action.add_lot", "portfolio.instrument.action.buy":
 		m.mode = ivModeAddQty
 		m.addQtyInput.Focus()
 		return m, textinput.Blink
@@ -374,11 +380,18 @@ func (m *portfolioInstrumentViewModel) handleAddDate(key tea.KeyMsg) (tea.Model,
 func (m *portfolioInstrumentViewModel) finishAddLot(date time.Time) (tea.Model, tea.Cmd) {
 	qty, _ := strconv.ParseFloat(strings.TrimSpace(m.addQtyInput.Value()), 64)
 	price, _ := strconv.ParseFloat(strings.TrimSpace(m.addPriceInput.Value()), 64)
+	wasWatchlist := m.instrument.Type == portfolio.InstrumentWatchlist
 	lot := portfolio.NewLot(qty, price, date)
 	m.instrument.Lots = append(m.instrument.Lots, lot)
+	if wasWatchlist {
+		m.instrument.Type = portfolio.InstrumentHolding
+	}
 	if err := portfolio.SavePortfolio(m.portfolio); err != nil {
 		m.infoMsg = locale.Tp("portfolio.error.save", map[string]any{"Error": err.Error()})
 		m.infoIsErr = true
+	} else if wasWatchlist {
+		m.infoMsg = locale.T("portfolio.instrument.buy.success")
+		m.infoIsErr = false
 	} else {
 		m.infoMsg = locale.T("portfolio.instrument.add_lot.success")
 		m.infoIsErr = false

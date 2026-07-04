@@ -788,6 +788,9 @@
   "portfolio.instrument.action.add_lot": {
     "other": "Add lot"
   },
+  "portfolio.instrument.action.buy": {
+    "other": "Buy"
+  },
   "portfolio.instrument.action.sell": {
     "other": "Sell"
   },
@@ -826,6 +829,9 @@
   },
   "portfolio.instrument.add_lot.success": {
     "other": "Lot added."
+  },
+  "portfolio.instrument.buy.success": {
+    "other": "Bought. Added to holdings."
   },
   "portfolio.instrument.change_type.to_watchlist": {
     "other": "Changed to watchlist. Existing lots removed."
