@@ -65,14 +65,20 @@ type Portfolio struct {
 	// SuggestRebalance in metrics.go); left unset/empty until the user sets
 	// it via portfolio_set_target_allocation.
 	TargetAllocation map[string]float64 `json:"target_allocation,omitempty"`
-	CreatedAt        time.Time          `json:"created_at"`
-	UpdatedAt        time.Time          `json:"updated_at"`
+	// Transactions is the append-only log of cash-flow and position events
+	// (buys, sells, dividends, deposits/withdrawals, adjustments). See
+	// transaction.go. Absent/nil on portfolios created before this field
+	// existed — safe zero value, no migration needed.
+	Transactions []Transaction `json:"transactions,omitempty"`
+	CreatedAt    time.Time     `json:"created_at"`
+	UpdatedAt    time.Time     `json:"updated_at"`
 }
 
 // SellResult holds the outcome of a FIFO sell operation.
 type SellResult struct {
-	RealizedPnL   float64 // positive = gain, negative = loss
-	RemainingLots []Lot   // lots remaining after the sale
+	RealizedPnL   float64          // positive = gain, negative = loss
+	RemainingLots []Lot            // lots remaining after the sale
+	ConsumedLots  []LotConsumption // per-lot detail of what was consumed, oldest-first
 }
 
 // ErrInsufficientLots is returned when a sell quantity exceeds the available lots.
@@ -97,6 +103,7 @@ func ApplyFIFOSell(lots []Lot, qty, sellPrice float64) (SellResult, error) {
 
 	var pnl float64
 	toSell := qty
+	var consumedLots []LotConsumption
 
 	for i := 0; i < len(remaining) && toSell > 1e-12; i++ {
 		lot := &remaining[i]
@@ -105,10 +112,16 @@ func ApplyFIFOSell(lots []Lot, qty, sellPrice float64) (SellResult, error) {
 			consumed := lot.Quantity
 			pnl += consumed * (sellPrice - lot.Price)
 			toSell -= consumed
+			consumedLots = append(consumedLots, LotConsumption{
+				LotID: lot.ID, Quantity: consumed, Price: lot.Price, Date: lot.Date,
+			})
 			lot.Quantity = 0
 		} else {
 			// Partially consume this lot.
 			pnl += toSell * (sellPrice - lot.Price)
+			consumedLots = append(consumedLots, LotConsumption{
+				LotID: lot.ID, Quantity: toSell, Price: lot.Price, Date: lot.Date,
+			})
 			lot.Quantity -= toSell
 			toSell = 0
 		}
@@ -125,6 +138,7 @@ func ApplyFIFOSell(lots []Lot, qty, sellPrice float64) (SellResult, error) {
 	return SellResult{
 		RealizedPnL:   math.Round(pnl*1e8) / 1e8, // avoid floating point noise
 		RemainingLots: filtered,
+		ConsumedLots:  consumedLots,
 	}, nil
 }
 
@@ -173,6 +187,11 @@ func newLotID() string {
 // NewInstrumentID generates a timestamp-based ID for an instrument.
 func NewInstrumentID() string {
 	return time.Now().Format("20060102-150405.000")
+}
+
+// newTransactionID generates a timestamp-based ID for a transaction.
+func newTransactionID() string {
+	return time.Now().Format("20060102-150405.000000")
 }
 
 // NewLot creates a Lot with a generated ID.

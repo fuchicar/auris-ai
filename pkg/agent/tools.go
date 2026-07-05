@@ -413,11 +413,38 @@ func buildTools() []llm.Tool {
 			}, []string{"symbol"}),
 		),
 		tool("portfolio_set_cash",
-			"Set the portfolio's available liquid cash balance. This REPLACES the current value entirely.",
+			"Set the portfolio's available liquid cash balance. This REPLACES the current value entirely; the implied difference from the current balance is recorded as an 'adjustment' transaction (not a deposit/withdrawal) so the change is auditable without being confused with a real cash movement the user reported.",
 			obj(map[string]any{
 				"portfolio_id": str("Portfolio ID (optional; omit to use the current portfolio)"),
 				"cash":         numProp("New cash balance (must be >= 0)"),
 			}, []string{"cash"}),
+		),
+		tool("portfolio_deposit_cash",
+			"Record a cash deposit into the portfolio (e.g. adding funds from an external account). Increases available cash and logs a 'deposit' transaction.",
+			obj(map[string]any{
+				"portfolio_id": str("Portfolio ID (optional; omit to use the current portfolio)"),
+				"amount":       numProp("Amount deposited (must be > 0)"),
+				"date":         str("Deposit date ISO 8601 or YYYY-MM-DD (optional; defaults to today)"),
+				"note":         str("Optional free-text note, e.g. source of funds"),
+			}, []string{"amount"}),
+		),
+		tool("portfolio_withdraw_cash",
+			"Record a cash withdrawal from the portfolio (e.g. moving funds out to an external account). Decreases available cash and logs a 'withdrawal' transaction. Cash may go negative if the withdrawal exceeds the available balance — no blocking check is performed.",
+			obj(map[string]any{
+				"portfolio_id": str("Portfolio ID (optional; omit to use the current portfolio)"),
+				"amount":       numProp("Amount withdrawn (must be > 0)"),
+				"date":         str("Withdrawal date ISO 8601 or YYYY-MM-DD (optional; defaults to today)"),
+				"note":         str("Optional free-text note, e.g. destination of funds"),
+			}, []string{"amount"}),
+		),
+		tool("portfolio_record_dividend",
+			"Record a dividend payment received in cash from a held instrument. Increases available cash and logs a 'dividend' transaction. The symbol must be an existing holding in the portfolio.",
+			obj(map[string]any{
+				"portfolio_id": str("Portfolio ID (optional; omit to use the current portfolio)"),
+				"symbol":       str("Ticker symbol of the instrument that paid the dividend; must be an existing holding in the portfolio"),
+				"amount":       numProp("Total cash amount received (not per-share, must be > 0)"),
+				"date":         str("Payment date ISO 8601 or YYYY-MM-DD (optional; defaults to today)"),
+			}, []string{"symbol", "amount"}),
 		),
 		tool("portfolio_set_target_allocation",
 			"Set the portfolio's target allocation (symbol → target weight as a fraction, e.g. 0.4 = 40%), used by future rebalancing tools. This REPLACES any existing target allocation entirely — it is not a partial merge.",
@@ -849,7 +876,12 @@ func (a *Agent) dispatchInner(ctx context.Context, call llm.ToolCall, lastKind *
 				qty := numVal("quantity")
 				price := numVal("price")
 				if qty > 0 && price > 0 {
-					ins.Lots = []portfolio.Lot{portfolio.NewLot(qty, price, parseLotDate("date"))}
+					date := parseLotDate("date")
+					ins.Lots = []portfolio.Lot{portfolio.NewLot(qty, price, date)}
+					p.RecordTransaction(portfolio.Transaction{
+						Type: portfolio.TransactionBuy, Symbol: symbol,
+						Quantity: qty, Price: price, CashDelta: -qty * price, Date: date,
+					})
 				}
 			}
 			p.Instruments = append(p.Instruments, ins)
@@ -893,7 +925,12 @@ func (a *Agent) dispatchInner(ctx context.Context, call llm.ToolCall, lastKind *
 				if ins.Type != portfolio.InstrumentHolding {
 					return `error: instrument is not a holding; change its type to holding first`
 				}
-				p.Instruments[i].Lots = append(p.Instruments[i].Lots, portfolio.NewLot(qty, price, parseLotDate("date")))
+				date := parseLotDate("date")
+				p.Instruments[i].Lots = append(p.Instruments[i].Lots, portfolio.NewLot(qty, price, date))
+				p.RecordTransaction(portfolio.Transaction{
+					Type: portfolio.TransactionBuy, Symbol: ins.Symbol,
+					Quantity: qty, Price: price, CashDelta: -qty * price, Date: date,
+				})
 				if err := portfolio.SavePortfolio(p); err != nil {
 					return encode(nil, err)
 				}
@@ -939,6 +976,12 @@ func (a *Agent) dispatchInner(ctx context.Context, call llm.ToolCall, lastKind *
 				}
 				p.Instruments[i].Lots = result.RemainingLots
 				p.RealizedPnL += result.RealizedPnL
+				p.RecordTransaction(portfolio.Transaction{
+					Type: portfolio.TransactionSell, Symbol: ins.Symbol,
+					Quantity: qty, Price: sellPrice, CashDelta: qty * sellPrice,
+					RealizedPnL: result.RealizedPnL, ConsumedLots: result.ConsumedLots,
+					Date: time.Now(),
+				})
 				if err := portfolio.SavePortfolio(p); err != nil {
 					return encode(nil, err)
 				}
@@ -998,14 +1041,117 @@ func (a *Agent) dispatchInner(ctx context.Context, call llm.ToolCall, lastKind *
 			if !ok || validateNonNegative("cash", cash) != nil {
 				return `error: cash must be a non-negative number`
 			}
-			p.Cash = cash
+			delta := cash - p.Cash
+			p.RecordTransaction(portfolio.Transaction{
+				Type: portfolio.TransactionAdjustment, CashDelta: delta, Date: time.Now(),
+				Note: "cash balance overwritten via portfolio_set_cash",
+			})
 			if err := portfolio.SavePortfolio(p); err != nil {
 				return encode(nil, err)
 			}
 			return encode(map[string]any{
 				"portfolio_id": p.ID,
-				"cash":         round2(cash),
+				"cash":         round2(p.Cash),
 				"summary":      fmt.Sprintf("cash balance set to %.2f", cash),
+			}, nil)
+
+		case "portfolio_deposit_cash":
+			id, err := resolvePortfolioID()
+			if err != nil {
+				return encode(nil, err)
+			}
+			p, err := portfolio.LoadPortfolio(id)
+			if err != nil {
+				return encode(nil, err)
+			}
+			if p == nil {
+				return `error: portfolio not found`
+			}
+			amount := numVal("amount")
+			if validatePositive("amount", amount) != nil {
+				return `error: amount must be positive`
+			}
+			tx := p.RecordTransaction(portfolio.Transaction{
+				Type: portfolio.TransactionDeposit, CashDelta: amount,
+				Date: parseLotDate("date"), Note: str("note"),
+			})
+			if err := portfolio.SavePortfolio(p); err != nil {
+				return encode(nil, err)
+			}
+			return encode(map[string]any{
+				"portfolio_id":   p.ID,
+				"transaction_id": tx.ID,
+				"cash":           round2(p.Cash),
+			}, nil)
+
+		case "portfolio_withdraw_cash":
+			id, err := resolvePortfolioID()
+			if err != nil {
+				return encode(nil, err)
+			}
+			p, err := portfolio.LoadPortfolio(id)
+			if err != nil {
+				return encode(nil, err)
+			}
+			if p == nil {
+				return `error: portfolio not found`
+			}
+			amount := numVal("amount")
+			if validatePositive("amount", amount) != nil {
+				return `error: amount must be positive`
+			}
+			tx := p.RecordTransaction(portfolio.Transaction{
+				Type: portfolio.TransactionWithdrawal, CashDelta: -amount,
+				Date: parseLotDate("date"), Note: str("note"),
+			})
+			if err := portfolio.SavePortfolio(p); err != nil {
+				return encode(nil, err)
+			}
+			return encode(map[string]any{
+				"portfolio_id":   p.ID,
+				"transaction_id": tx.ID,
+				"cash":           round2(p.Cash),
+			}, nil)
+
+		case "portfolio_record_dividend":
+			id, err := resolvePortfolioID()
+			if err != nil {
+				return encode(nil, err)
+			}
+			p, err := portfolio.LoadPortfolio(id)
+			if err != nil {
+				return encode(nil, err)
+			}
+			if p == nil {
+				return `error: portfolio not found`
+			}
+			symbol := str("symbol")
+			amount := numVal("amount")
+			if validatePositive("amount", amount) != nil {
+				return `error: amount must be positive`
+			}
+			found := false
+			for _, ins := range p.Instruments {
+				if ins.Symbol == symbol && ins.Type == portfolio.InstrumentHolding {
+					found = true
+					break
+				}
+			}
+			if !found {
+				return `error: instrument not found in portfolio or is not a holding`
+			}
+			tx := p.RecordTransaction(portfolio.Transaction{
+				Type: portfolio.TransactionDividend, Symbol: symbol, CashDelta: amount,
+				Date: parseLotDate("date"),
+			})
+			if err := portfolio.SavePortfolio(p); err != nil {
+				return encode(nil, err)
+			}
+			return encode(map[string]any{
+				"portfolio_id":   p.ID,
+				"transaction_id": tx.ID,
+				"symbol":         symbol,
+				"cash":           round2(p.Cash),
 			}, nil)
 
 		case "portfolio_set_target_allocation":
