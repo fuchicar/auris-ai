@@ -19,6 +19,12 @@ type roiResult struct {
 }
 
 func calcROI(costBasis, currentValue float64) (roiResult, error) {
+	if err := validateFinite("cost_basis", costBasis); err != nil {
+		return roiResult{}, err
+	}
+	if err := validateFinite("current_value", currentValue); err != nil {
+		return roiResult{}, err
+	}
 	if costBasis == 0 {
 		return roiResult{}, errors.New("cost_basis cannot be zero")
 	}
@@ -43,11 +49,14 @@ type cagrResult struct {
 }
 
 func calcCAGR(initialValue, finalValue, years float64) (cagrResult, error) {
-	if initialValue <= 0 {
-		return cagrResult{}, errors.New("initial_value must be greater than zero")
+	if err := validatePositive("initial_value", initialValue); err != nil {
+		return cagrResult{}, err
 	}
-	if years <= 0 {
-		return cagrResult{}, errors.New("years must be greater than zero")
+	if err := validateNonNegative("final_value", finalValue); err != nil {
+		return cagrResult{}, err
+	}
+	if err := validatePositive("years", years); err != nil {
+		return cagrResult{}, err
 	}
 	cagr := (math.Pow(finalValue/initialValue, 1/years) - 1) * 100
 	return cagrResult{
@@ -68,11 +77,11 @@ func calcVolatility(prices []float64) (volatilityResult, error) {
 	if len(prices) < 2 {
 		return volatilityResult{}, errors.New("at least 2 prices required")
 	}
+	if err := validatePositiveAll("prices", prices); err != nil {
+		return volatilityResult{}, err
+	}
 	returns := make([]float64, len(prices)-1)
 	for i := 1; i < len(prices); i++ {
-		if prices[i-1] <= 0 {
-			return volatilityResult{}, errors.New("all prices must be positive")
-		}
 		returns[i-1] = math.Log(prices[i] / prices[i-1])
 	}
 	sd := sampleStddev(returns)
@@ -100,6 +109,12 @@ type sharpeResult struct {
 func calcSharpe(returns []float64, riskFreeAnnual float64) (sharpeResult, error) {
 	if len(returns) == 0 {
 		return sharpeResult{}, errors.New("returns must not be empty")
+	}
+	if err := validateReturnSlice("returns", returns); err != nil {
+		return sharpeResult{}, err
+	}
+	if err := validateRate("risk_free_rate_annual", riskFreeAnnual); err != nil {
+		return sharpeResult{}, err
 	}
 	dailyRF := math.Pow(1+riskFreeAnnual, 1.0/252) - 1
 	m := meanFloat(returns)
@@ -131,6 +146,9 @@ type maxDrawdownResult struct {
 func calcMaxDrawdown(prices []float64) (maxDrawdownResult, error) {
 	if len(prices) < 2 {
 		return maxDrawdownResult{}, errors.New("at least 2 prices required")
+	}
+	if err := validatePositiveAll("prices", prices); err != nil {
+		return maxDrawdownResult{}, err
 	}
 	runPeak := prices[0]
 	maxDD := 0.0
@@ -177,8 +195,14 @@ func calcPnL(entryPrice, currentPrice, quantity float64, positionType string) (p
 	if positionType != "long" && positionType != "short" {
 		return pnlResult{}, fmt.Errorf("position_type must be \"long\" or \"short\", got %q", positionType)
 	}
-	if entryPrice == 0 {
-		return pnlResult{}, errors.New("entry_price cannot be zero")
+	if err := validatePositive("entry_price", entryPrice); err != nil {
+		return pnlResult{}, err
+	}
+	if err := validatePositive("current_price", currentPrice); err != nil {
+		return pnlResult{}, err
+	}
+	if err := validateFinite("quantity", quantity); err != nil {
+		return pnlResult{}, err
 	}
 	qty := math.Abs(quantity)
 	if qty == 0 {
@@ -334,6 +358,12 @@ func calcBeta(assetReturns, benchmarkReturns []float64) (betaResult, error) {
 	if n < 2 {
 		return betaResult{}, errors.New("at least 2 return observations required")
 	}
+	if err := validateReturnSlice("asset_returns", assetReturns); err != nil {
+		return betaResult{}, err
+	}
+	if err := validateReturnSlice("benchmark_returns", benchmarkReturns); err != nil {
+		return betaResult{}, err
+	}
 	meanA := meanFloat(assetReturns)
 	meanB := meanFloat(benchmarkReturns)
 	cov, varA, varB := 0.0, 0.0, 0.0
@@ -383,8 +413,17 @@ func calcVaR(returns []float64, confidenceLevel, portfolioValue float64, method 
 	if len(returns) == 0 {
 		return varResult{}, errors.New("returns must not be empty")
 	}
+	if err := validateReturnSlice("returns", returns); err != nil {
+		return varResult{}, err
+	}
+	if err := validateFinite("confidence_level", confidenceLevel); err != nil {
+		return varResult{}, err
+	}
 	if confidenceLevel <= 0 || confidenceLevel >= 1 {
 		return varResult{}, fmt.Errorf("confidence_level must be between 0 and 1 exclusive, got %.4f", confidenceLevel)
+	}
+	if err := validatePositive("portfolio_value", portfolioValue); err != nil {
+		return varResult{}, err
 	}
 	if method != "parametric" && method != "historical" {
 		return varResult{}, fmt.Errorf("method must be \"parametric\" or \"historical\", got %q", method)
@@ -445,6 +484,18 @@ func calcDCF(freeCashFlows []float64, discountRate, terminalGrowthRate, sharesOu
 	if len(freeCashFlows) == 0 {
 		return dcfResult{}, errors.New("free_cash_flows must not be empty")
 	}
+	if err := validateFiniteAll("free_cash_flows", freeCashFlows); err != nil {
+		return dcfResult{}, err
+	}
+	if err := validateRate("discount_rate", discountRate); err != nil {
+		return dcfResult{}, err
+	}
+	if err := validateRate("terminal_growth_rate", terminalGrowthRate); err != nil {
+		return dcfResult{}, err
+	}
+	if err := validateNonNegative("shares_outstanding", sharesOutstanding); err != nil {
+		return dcfResult{}, err
+	}
 	if discountRate <= terminalGrowthRate {
 		return dcfResult{}, errors.New("discount_rate must be greater than terminal_growth_rate to avoid infinite terminal value")
 	}
@@ -496,7 +547,25 @@ type multiplesResult struct {
 	Summary      string   `json:"summary"`
 }
 
-func calcMultiples(price, eps, bookValuePerShare, ebitda, enterpriseValue, revenue float64) multiplesResult {
+func calcMultiples(price, eps, bookValuePerShare, ebitda, enterpriseValue, revenue float64) (multiplesResult, error) {
+	if err := validatePositive("price", price); err != nil {
+		return multiplesResult{}, err
+	}
+	if err := validateFinite("eps", eps); err != nil {
+		return multiplesResult{}, err
+	}
+	if err := validateFinite("book_value_per_share", bookValuePerShare); err != nil {
+		return multiplesResult{}, err
+	}
+	if err := validateFinite("ebitda", ebitda); err != nil {
+		return multiplesResult{}, err
+	}
+	if err := validateFinite("enterprise_value", enterpriseValue); err != nil {
+		return multiplesResult{}, err
+	}
+	if err := validateFinite("revenue", revenue); err != nil {
+		return multiplesResult{}, err
+	}
 	r := multiplesResult{}
 	var parts []string
 	if eps != 0 {
@@ -521,7 +590,7 @@ func calcMultiples(price, eps, bookValuePerShare, ebitda, enterpriseValue, reven
 	} else {
 		r.Summary = strings.Join(parts, ", ")
 	}
-	return r
+	return r, nil
 }
 
 func f64ptr(v float64) *float64 { r := round2(v); return &r }
@@ -535,11 +604,11 @@ type pfcfResult struct {
 }
 
 func calcPFCF(price, fcfPerShare float64, currency string) (pfcfResult, error) {
-	if price <= 0 {
-		return pfcfResult{}, errors.New("price must be greater than zero")
+	if err := validatePositive("price", price); err != nil {
+		return pfcfResult{}, err
 	}
-	if fcfPerShare <= 0 {
-		return pfcfResult{}, errors.New("free_cash_flow_per_share must be greater than zero")
+	if err := validatePositive("free_cash_flow_per_share", fcfPerShare); err != nil {
+		return pfcfResult{}, err
 	}
 	pfcf := round2(price / fcfPerShare)
 	return pfcfResult{
@@ -558,8 +627,11 @@ type pegResult struct {
 }
 
 func calcPEG(peRatio, growthRatePercent float64) (pegResult, error) {
-	if peRatio <= 0 {
-		return pegResult{}, errors.New("pe_ratio must be greater than zero")
+	if err := validatePositive("pe_ratio", peRatio); err != nil {
+		return pegResult{}, err
+	}
+	if err := validateFinite("growth_rate_percent", growthRatePercent); err != nil {
+		return pegResult{}, err
 	}
 	if growthRatePercent == 0 {
 		return pegResult{}, errors.New("growth_rate_percent cannot be zero")
@@ -592,8 +664,14 @@ type dividendYieldResult struct {
 }
 
 func calcDividendYield(price, annualDividendPerShare float64, quarterlyDividends []float64) (dividendYieldResult, error) {
-	if price <= 0 {
-		return dividendYieldResult{}, errors.New("price must be greater than zero")
+	if err := validatePositive("price", price); err != nil {
+		return dividendYieldResult{}, err
+	}
+	if err := validateNonNegative("annual_dividend_per_share", annualDividendPerShare); err != nil {
+		return dividendYieldResult{}, err
+	}
+	if err := validateNonNegativeAll("quarterly_dividends", quarterlyDividends); err != nil {
+		return dividendYieldResult{}, err
 	}
 	annual := annualDividendPerShare
 	source := "annual_dividend_per_share"
@@ -629,6 +707,9 @@ func calcDividendGrowth(dividends []float64) (dividendGrowthResult, error) {
 	if len(dividends) < 2 {
 		return dividendGrowthResult{}, errors.New("dividends must contain at least 2 chronological values")
 	}
+	if err := validateNonNegativeAll("dividends", dividends); err != nil {
+		return dividendGrowthResult{}, err
+	}
 	first, last := dividends[0], dividends[len(dividends)-1]
 	if first <= 0 {
 		return dividendGrowthResult{}, errors.New("dividends[0] must be greater than zero")
@@ -657,11 +738,14 @@ type stressTestResult struct {
 }
 
 func calcStressTest(currentValue float64, shocksPercent []float64, label string) (stressTestResult, error) {
-	if currentValue <= 0 {
-		return stressTestResult{}, errors.New("current_value must be greater than zero")
+	if err := validatePositive("current_value", currentValue); err != nil {
+		return stressTestResult{}, err
 	}
 	if len(shocksPercent) == 0 {
 		return stressTestResult{}, errors.New("shocks_percent must contain at least 1 value")
+	}
+	if err := validateReturnPercentSlice("shocks_percent", shocksPercent); err != nil {
+		return stressTestResult{}, err
 	}
 	scenarios := make([]stressScenario, len(shocksPercent))
 	worst := 0
@@ -720,14 +804,17 @@ type monteCarloResult struct {
 // S(T) = S(0)·exp((μ − ½σ²)·T + σ·√T·Z), Z ~ N(0,1) — only the final-price
 // distribution is needed, so this avoids day-by-day path stepping.
 func calcMonteCarloSimulation(lastPrice, driftAnnual, volatilityAnnual float64, days, numSimulations int) (monteCarloResult, error) {
-	if lastPrice <= 0 {
-		return monteCarloResult{}, errors.New("last_price must be greater than zero")
+	if err := validatePositive("last_price", lastPrice); err != nil {
+		return monteCarloResult{}, err
 	}
 	if days <= 0 {
 		return monteCarloResult{}, errors.New("days must be greater than zero")
 	}
-	if volatilityAnnual < 0 {
-		return monteCarloResult{}, errors.New("volatility_annual must be >= 0")
+	if err := validateRate("drift_annual", driftAnnual); err != nil {
+		return monteCarloResult{}, err
+	}
+	if err := validateNonNegative("volatility_annual", volatilityAnnual); err != nil {
+		return monteCarloResult{}, err
 	}
 	if numSimulations <= 0 {
 		return monteCarloResult{}, errors.New("num_simulations must be greater than zero")
@@ -782,8 +869,11 @@ type currencyResult struct {
 }
 
 func calcCurrencyConversion(amount float64, fromCurrency, toCurrency string, exchangeRate float64) (currencyResult, error) {
-	if exchangeRate <= 0 {
-		return currencyResult{}, errors.New("exchange_rate must be greater than zero")
+	if err := validateFinite("amount", amount); err != nil {
+		return currencyResult{}, err
+	}
+	if err := validatePositive("exchange_rate", exchangeRate); err != nil {
+		return currencyResult{}, err
 	}
 	converted := amount * exchangeRate
 	return currencyResult{
@@ -803,6 +893,15 @@ type compoundInterestResult struct {
 }
 
 func calcCompoundInterest(principal, annualRate, years float64, compoundsPerYear int) (compoundInterestResult, error) {
+	if err := validatePositive("principal", principal); err != nil {
+		return compoundInterestResult{}, err
+	}
+	if err := validateRate("annual_rate", annualRate); err != nil {
+		return compoundInterestResult{}, err
+	}
+	if err := validateFinite("years", years); err != nil {
+		return compoundInterestResult{}, err
+	}
 	if compoundsPerYear <= 0 {
 		return compoundInterestResult{}, errors.New("compounds_per_year must be at least 1")
 	}
@@ -839,6 +938,9 @@ type statsResult struct {
 func calcStats(values []float64, label string) (statsResult, error) {
 	if len(values) == 0 {
 		return statsResult{}, errors.New("values must not be empty")
+	}
+	if err := validateFiniteAll("values", values); err != nil {
+		return statsResult{}, err
 	}
 	s := make([]float64, len(values))
 	copy(s, values)
@@ -903,6 +1005,9 @@ func calcSMA(prices []float64, period int) (smaResult, error) {
 	if len(prices) < period {
 		return smaResult{}, fmt.Errorf("at least %d prices required for SMA, got %d", period, len(prices))
 	}
+	if err := validatePositiveAll("prices", prices); err != nil {
+		return smaResult{}, err
+	}
 	values := make([]float64, len(prices))
 	for i := range values {
 		values[i] = math.NaN()
@@ -965,6 +1070,12 @@ func calcEMA(prices []float64, period int, alpha float64) (emaResult, error) {
 	if len(prices) == 0 {
 		return emaResult{}, errors.New("prices must not be empty")
 	}
+	if err := validatePositiveAll("prices", prices); err != nil {
+		return emaResult{}, err
+	}
+	if err := validateFinite("alpha", alpha); err != nil {
+		return emaResult{}, err
+	}
 	if alpha <= 0 {
 		alpha = 2.0 / (float64(period) + 1)
 	}
@@ -1024,6 +1135,9 @@ func calcRSI(prices []float64, period int) (rsiResult, error) {
 	// value to populate PreviousValue.
 	if len(prices) < period+2 {
 		return rsiResult{}, fmt.Errorf("at least %d prices required for RSI(%d), got %d", period+2, period, len(prices))
+	}
+	if err := validatePositiveAll("prices", prices); err != nil {
+		return rsiResult{}, err
 	}
 	changes := make([]float64, len(prices)-1)
 	for i := 1; i < len(prices); i++ {
@@ -1133,6 +1247,9 @@ func calcMACD(prices []float64, fastPeriod, slowPeriod, signalPeriod int) (macdR
 		return macdResult{}, fmt.Errorf("at least %d prices required for MACD(%d,%d,%d), got %d",
 			slowPeriod+signalPeriod, fastPeriod, slowPeriod, signalPeriod, len(prices))
 	}
+	if err := validatePositiveAll("prices", prices); err != nil {
+		return macdResult{}, err
+	}
 	fastEMA := emaSeries(prices, fastPeriod)
 	slowEMA := emaSeries(prices, slowPeriod)
 	macdLine := make([]float64, len(prices))
@@ -1197,11 +1314,17 @@ func calcBollingerBands(prices []float64, period int, numStd float64) (bollinger
 	if period <= 0 {
 		return bollingerResult{}, fmt.Errorf("period must be greater than zero, got %d", period)
 	}
+	if err := validateFinite("num_std", numStd); err != nil {
+		return bollingerResult{}, err
+	}
 	if numStd <= 0 {
 		return bollingerResult{}, fmt.Errorf("num_std must be positive, got %.4f", numStd)
 	}
 	if len(prices) < period {
 		return bollingerResult{}, fmt.Errorf("at least %d prices required for Bollinger(%d), got %d", period, period, len(prices))
+	}
+	if err := validatePositiveAll("prices", prices); err != nil {
+		return bollingerResult{}, err
 	}
 	upper := make([]float64, len(prices))
 	middle := make([]float64, len(prices))
@@ -1287,6 +1410,11 @@ func calcCorrelationMatrix(series map[string][]float64) (correlationMatrixResult
 	}
 	if n < 2 {
 		return correlationMatrixResult{}, fmt.Errorf("each series must have at least 2 observations, got %d", n)
+	}
+	for _, k := range keys {
+		if err := validateFiniteAll(fmt.Sprintf("series[%q]", k), series[k]); err != nil {
+			return correlationMatrixResult{}, err
+		}
 	}
 	matrix := make([][]float64, len(keys))
 	for i := range matrix {

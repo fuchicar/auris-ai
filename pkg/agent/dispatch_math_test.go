@@ -154,6 +154,16 @@ func TestDispatch_MathTools_OK(t *testing.T) {
 			},
 			wantKey: "mean",
 		},
+		{
+			// REF-3: a legitimate 1000% single-period return (a 10x move)
+			// must not be rejected by the plausibility bound.
+			tool: "calculate_sharpe",
+			args: map[string]any{
+				"returns":               []any{0.01, -0.02, 10.0, 0.015},
+				"risk_free_rate_annual": 0.04,
+			},
+			wantKey: "sharpe_ratio",
+		},
 	}
 
 	for _, tc := range tests {
@@ -212,6 +222,18 @@ func TestDispatch_MathTools_Error(t *testing.T) {
 			"years": 1.0, "compounds_per_year": 0.0,
 		}},
 		{"calculate_stats", map[string]any{"values": []any{}, "label": "empty"}},
+		// REF-3: numeric input validation — implausible/non-finite magnitudes
+		// that are representable as JSON numbers (NaN/±Inf can't be, since
+		// JSON has no literal for them).
+		{"calculate_sharpe", map[string]any{
+			"returns":               []any{0.01, 1e6, 0.02},
+			"risk_free_rate_annual": 0.04,
+		}},
+		{"calculate_multiples", map[string]any{
+			"price": -50.0, "eps": 2.5, "book_value_per_share": 20.0,
+			"ebitda": 1e9, "enterprise_value": 5e9, "revenue": 2e9,
+		}},
+		{"calculate_max_drawdown", map[string]any{"prices": []any{100.0, 0.0, 90.0}}},
 	}
 
 	for _, tc := range tests {

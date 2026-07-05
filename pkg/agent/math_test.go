@@ -396,7 +396,10 @@ func TestCalcDCF_ZeroShares(t *testing.T) {
 // ---- calcMultiples -----------------------------------------------------------
 
 func TestCalcMultiples_AllValid(t *testing.T) {
-	r := calcMultiples(50, 2.5, 20, 1e9, 5e9, 2e9)
+	r, err := calcMultiples(50, 2.5, 20, 1e9, 5e9, 2e9)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if r.PER == nil || !approxEqual(*r.PER, 20.0, 0.01) {
 		t.Errorf("P/E: want ~20, got %v", r.PER)
 	}
@@ -416,7 +419,10 @@ func TestCalcMultiples_AllValid(t *testing.T) {
 
 func TestCalcMultiples_ZeroDenominators(t *testing.T) {
 	// All denominators zero → no multiples computed, no error.
-	r := calcMultiples(50, 0, 0, 0, 1e9, 0)
+	r, err := calcMultiples(50, 0, 0, 0, 1e9, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if r.PER != nil {
 		t.Error("P/E should be nil when eps=0")
 	}
@@ -2644,5 +2650,163 @@ func TestDispatch_PortfolioCalculateMetrics_NoMarketProvider(t *testing.T) {
 	}
 	if !strings.Contains(result, "no market provider configured") {
 		t.Errorf("summary must warn about missing market provider, got: %s", result)
+	}
+}
+
+// ---- REF-3: numeric input validation ------------------------------------------
+
+func TestRegression_REF3_CalcSharpe_RejectsNaNReturn(t *testing.T) {
+	if _, err := calcSharpe([]float64{0.01, math.NaN(), 0.02}, 0.04); err == nil {
+		t.Error("expected error for NaN in returns")
+	}
+}
+
+func TestRegression_REF3_CalcSharpe_RejectsInfReturn(t *testing.T) {
+	if _, err := calcSharpe([]float64{0.01, math.Inf(1), 0.02}, 0.04); err == nil {
+		t.Error("expected error for +Inf in returns")
+	}
+}
+
+func TestRegression_REF3_CalcSharpe_Accepts1000PercentReturn(t *testing.T) {
+	// A single-period return of +1000% (the position multiplied ~11x) is a
+	// real, if extreme, market event and must not be rejected.
+	returns := []float64{0.01, -0.02, 10.0, 0.015}
+	if _, err := calcSharpe(returns, 0.04); err != nil {
+		t.Errorf("a legitimate 1000%% return must be accepted, got error: %v", err)
+	}
+}
+
+func TestRegression_REF3_CalcVaR_RejectsNaNReturn(t *testing.T) {
+	if _, err := calcVaR([]float64{0.01, math.NaN()}, 0.95, 100000, "historical"); err == nil {
+		t.Error("expected error for NaN in returns")
+	}
+}
+
+func TestRegression_REF3_CalcVaR_RejectsNonPositivePortfolioValue(t *testing.T) {
+	if _, err := calcVaR([]float64{0.01, -0.01}, 0.95, 0, "historical"); err == nil {
+		t.Error("expected error for zero portfolio_value")
+	}
+	if _, err := calcVaR([]float64{0.01, -0.01}, 0.95, -100, "historical"); err == nil {
+		t.Error("expected error for negative portfolio_value")
+	}
+}
+
+func TestRegression_REF3_CalcBeta_RejectsInfReturn(t *testing.T) {
+	assetReturns := []float64{0.01, math.Inf(-1), 0.02}
+	benchmarkReturns := []float64{0.01, 0.02, 0.015}
+	if _, err := calcBeta(assetReturns, benchmarkReturns); err == nil {
+		t.Error("expected error for -Inf in asset_returns")
+	}
+}
+
+func TestRegression_REF3_CalcVolatility_RejectsZeroOrNegativePrice(t *testing.T) {
+	if _, err := calcVolatility([]float64{100, 0, 105}); err == nil {
+		t.Error("expected error for zero price in series")
+	}
+	if _, err := calcVolatility([]float64{100, -50, 105}); err == nil {
+		t.Error("expected error for negative price in series")
+	}
+}
+
+func TestRegression_REF3_CalcMaxDrawdown_RejectsNonPositivePrice(t *testing.T) {
+	// calcMaxDrawdown previously had zero validation on its prices series.
+	if _, err := calcMaxDrawdown([]float64{100, 0, 90}); err == nil {
+		t.Error("expected error for zero price in series")
+	}
+	if _, err := calcMaxDrawdown([]float64{100, math.NaN(), 90}); err == nil {
+		t.Error("expected error for NaN price in series")
+	}
+}
+
+func TestRegression_REF3_CalcSMA_RejectsNonPositivePrice(t *testing.T) {
+	if _, err := calcSMA([]float64{100, 101, -5, 103, 104}, 3); err == nil {
+		t.Error("expected error for negative price in series")
+	}
+}
+
+func TestRegression_REF3_CalcMultiples_RejectsNonPositivePrice(t *testing.T) {
+	if _, err := calcMultiples(0, 2.5, 20, 1e9, 5e9, 2e9); err == nil {
+		t.Error("expected error for zero price")
+	}
+	if _, err := calcMultiples(-10, 2.5, 20, 1e9, 5e9, 2e9); err == nil {
+		t.Error("expected error for negative price")
+	}
+	if _, err := calcMultiples(math.NaN(), 2.5, 20, 1e9, 5e9, 2e9); err == nil {
+		t.Error("expected error for NaN price")
+	}
+}
+
+func TestRegression_REF3_CalcMultiples_AcceptsNegativeEPS(t *testing.T) {
+	// EPS (and the other multiples denominators) can legitimately be
+	// negative (a loss-making company) — only price positivity is enforced.
+	r, err := calcMultiples(50, -2.5, 20, 1e9, 5e9, 2e9)
+	if err != nil {
+		t.Fatalf("negative eps should not be rejected: %v", err)
+	}
+	if r.PER == nil || !approxEqual(*r.PER, -20.0, 0.01) {
+		t.Errorf("P/E: want ~-20, got %v", r.PER)
+	}
+}
+
+func TestRegression_REF3_CalcCompoundInterest_RejectsNaNPrincipalOrRate(t *testing.T) {
+	if _, err := calcCompoundInterest(math.NaN(), 0.05, 5, 1); err == nil {
+		t.Error("expected error for NaN principal")
+	}
+	if _, err := calcCompoundInterest(1000, math.NaN(), 5, 1); err == nil {
+		t.Error("expected error for NaN annual_rate")
+	}
+}
+
+func TestRegression_REF3_CalcCompoundInterest_RejectsImplausibleRate(t *testing.T) {
+	if _, err := calcCompoundInterest(1000, 50.0, 5, 1); err == nil {
+		t.Error("expected error for a 5,000% annual_rate")
+	}
+}
+
+func TestRegression_REF3_CalcCompoundInterest_AcceptsHighButPlausibleRate(t *testing.T) {
+	if _, err := calcCompoundInterest(1000, 2.0, 1, 1); err != nil {
+		t.Errorf("a 200%% annual_rate must be accepted, got error: %v", err)
+	}
+}
+
+func TestRegression_REF3_CalcPnL_RejectsNaNOrNegativeCurrentPrice(t *testing.T) {
+	// current_price was previously completely unvalidated.
+	if _, err := calcPnL(100, math.NaN(), 10, "long"); err == nil {
+		t.Error("expected error for NaN current_price")
+	}
+	if _, err := calcPnL(100, -50, 10, "long"); err == nil {
+		t.Error("expected error for negative current_price")
+	}
+}
+
+func TestRegression_REF3_CalcDCF_SharesOutstandingZeroStillSkipsPerShare(t *testing.T) {
+	// shares_outstanding == 0 is an intentional sentinel meaning "skip the
+	// per-share calculation" — REF-3 must not break that behaviour.
+	fcf := []float64{100, 110, 120, 130, 140}
+	r, err := calcDCF(fcf, 0.10, 0.03, 0)
+	if err != nil {
+		t.Fatalf("shares_outstanding=0 should still succeed: %v", err)
+	}
+	if r.IntrinsicValuePerShare != 0 {
+		t.Errorf("IntrinsicValuePerShare: want 0 when shares_outstanding=0, got %v", r.IntrinsicValuePerShare)
+	}
+}
+
+func TestRegression_REF3_CalcDCF_RejectsNegativeSharesOutstanding(t *testing.T) {
+	fcf := []float64{100, 110, 120, 130, 140}
+	if _, err := calcDCF(fcf, 0.10, 0.03, -1000); err == nil {
+		t.Error("expected error for negative shares_outstanding")
+	}
+}
+
+func TestRegression_REF3_CalcStressTest_Accepts1000PercentShock(t *testing.T) {
+	if _, err := calcStressTest(10000, []float64{-20, 1000}, "portfolio"); err != nil {
+		t.Errorf("a +1000%% shock must be accepted, got error: %v", err)
+	}
+}
+
+func TestRegression_REF3_CalcStressTest_RejectsShockBelowTotalLoss(t *testing.T) {
+	if _, err := calcStressTest(10000, []float64{-150}, "portfolio"); err == nil {
+		t.Error("expected error for a shock below -100%")
 	}
 }

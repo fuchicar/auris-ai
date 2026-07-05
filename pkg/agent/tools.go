@@ -602,9 +602,8 @@ func (a *Agent) dispatchInner(ctx context.Context, call llm.ToolCall, lastKind *
 		}
 		return encode(calcDCF(fcf, numVal("discount_rate"), numVal("terminal_growth_rate"), numVal("shares_outstanding")))
 	case "calculate_multiples":
-		r := calcMultiples(numVal("price"), numVal("eps"), numVal("book_value_per_share"),
-			numVal("ebitda"), numVal("enterprise_value"), numVal("revenue"))
-		return encode(r, nil)
+		return encode(calcMultiples(numVal("price"), numVal("eps"), numVal("book_value_per_share"),
+			numVal("ebitda"), numVal("enterprise_value"), numVal("revenue")))
 	case "calculate_pfcf":
 		return encode(calcPFCF(numVal("price"), numVal("free_cash_flow_per_share"), str("currency")))
 	case "calculate_peg":
@@ -881,10 +880,10 @@ func (a *Agent) dispatchInner(ctx context.Context, call llm.ToolCall, lastKind *
 			symbol := str("symbol")
 			qty := numVal("quantity")
 			price := numVal("price")
-			if qty <= 0 {
+			if validatePositive("quantity", qty) != nil {
 				return `error: quantity must be positive`
 			}
-			if price <= 0 {
+			if validatePositive("price", price) != nil {
 				return `error: price must be positive`
 			}
 			for i, ins := range p.Instruments {
@@ -921,10 +920,10 @@ func (a *Agent) dispatchInner(ctx context.Context, call llm.ToolCall, lastKind *
 			symbol := str("symbol")
 			qty := numVal("quantity")
 			sellPrice := numVal("sell_price")
-			if qty <= 0 {
+			if validatePositive("quantity", qty) != nil {
 				return `error: quantity must be positive`
 			}
-			if sellPrice <= 0 {
+			if validatePositive("sell_price", sellPrice) != nil {
 				return `error: sell_price must be positive`
 			}
 			for i, ins := range p.Instruments {
@@ -996,7 +995,7 @@ func (a *Agent) dispatchInner(ctx context.Context, call llm.ToolCall, lastKind *
 				return `error: portfolio not found`
 			}
 			cash, ok := args["cash"].(float64)
-			if !ok || cash < 0 {
+			if !ok || validateNonNegative("cash", cash) != nil {
 				return `error: cash must be a non-negative number`
 			}
 			p.Cash = cash
@@ -1029,7 +1028,7 @@ func (a *Agent) dispatchInner(ctx context.Context, call llm.ToolCall, lastKind *
 			sum := 0.0
 			for symbol, v := range raw {
 				w, ok := v.(float64)
-				if !ok || w < 0 {
+				if !ok || validateNonNegative("weight", w) != nil {
 					return fmt.Sprintf("error: target_allocation[%q] must be a non-negative number", symbol)
 				}
 				alloc[symbol] = w
@@ -1073,7 +1072,7 @@ func (a *Agent) dispatchInner(ctx context.Context, call llm.ToolCall, lastKind *
 						continue
 					}
 					last, ok := entry["last"].(float64)
-					if !ok || last <= 0 {
+					if !ok || validatePositive("last", last) != nil {
 						continue
 					}
 					pq := portfolio.Quote{Last: last}
@@ -1143,7 +1142,7 @@ func (a *Agent) dispatchInner(ctx context.Context, call llm.ToolCall, lastKind *
 			quotes := make(map[string]portfolio.Quote, len(p.Instruments)+len(p.TargetAllocation))
 			if raw, ok := args["quotes"].(map[string]any); ok {
 				for symbol, v := range raw {
-					if last, ok := v.(float64); ok && last > 0 {
+					if last, ok := v.(float64); ok && validatePositive("last", last) == nil {
 						quotes[symbol] = portfolio.Quote{Last: last}
 					}
 				}
@@ -1173,6 +1172,9 @@ func (a *Agent) dispatchInner(ctx context.Context, call llm.ToolCall, lastKind *
 				}
 			}
 			maxDrift := numVal("max_drift_percent")
+			if err := validateNonNegative("max_drift_percent", maxDrift); err != nil {
+				return fmt.Sprintf("error: %s", err)
+			}
 			result, err := portfolio.SuggestRebalance(p, quotes, maxDrift)
 			if err != nil {
 				return encode(nil, err)
