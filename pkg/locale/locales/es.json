@@ -640,6 +640,9 @@
   "portfolio.view.action.allocation": {
     "other": "Fijar asignación objetivo"
   },
+  "portfolio.view.action.transactions": {
+    "other": "Ver historial de transacciones"
+  },
   "portfolio.view.action.add": {
     "other": "Añadir instrumento"
   },
@@ -679,6 +682,55 @@
   },
   "portfolio.allocation.saved": {
     "other": "Asignación objetivo guardada"
+  },
+
+  "portfolio.transactions.title": {
+    "other": "Historial de Transacciones"
+  },
+  "portfolio.transactions.empty": {
+    "other": "(Sin transacciones registradas aún)"
+  },
+  "portfolio.transactions.hint": {
+    "other": "↑↓ navegar · Esc volver"
+  },
+  "portfolio.transactions.col.date": {
+    "other": "Fecha"
+  },
+  "portfolio.transactions.col.type": {
+    "other": "Tipo"
+  },
+  "portfolio.transactions.col.symbol": {
+    "other": "Símbolo"
+  },
+  "portfolio.transactions.col.qty": {
+    "other": "Cant."
+  },
+  "portfolio.transactions.col.price": {
+    "other": "Precio"
+  },
+  "portfolio.transactions.col.cash_delta": {
+    "other": "Δ Cash"
+  },
+  "portfolio.transactions.col.realized_pnl": {
+    "other": "P&L Realizado"
+  },
+  "portfolio.transactions.type.buy": {
+    "other": "Compra"
+  },
+  "portfolio.transactions.type.sell": {
+    "other": "Venta"
+  },
+  "portfolio.transactions.type.dividend": {
+    "other": "Dividendo"
+  },
+  "portfolio.transactions.type.deposit": {
+    "other": "Depósito"
+  },
+  "portfolio.transactions.type.withdrawal": {
+    "other": "Retirada"
+  },
+  "portfolio.transactions.type.adjustment": {
+    "other": "Ajuste"
   },
 
   "portfolio.instruments.title": {

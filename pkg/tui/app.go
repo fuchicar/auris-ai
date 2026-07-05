@@ -44,6 +44,7 @@ const (
 	ScreenInstrumentSearch               // search + add instrument flow
 	ScreenPortfolioInstrumentView        // single instrument detail
 	ScreenPortfolioAllocation            // target allocation editor
+	ScreenPortfolioTransactions          // read-only transaction/cash-flow history
 )
 
 // FlowContext distinguishes whether a settings screen was opened during first-
@@ -610,6 +611,10 @@ func (a *AppModel) transition(msg ScreenDoneMsg) (tea.Model, tea.Cmd) {
 				a.activePortfolio = r.Portfolio
 				a.screen = ScreenPortfolioAllocation
 				a.current = newPortfolioAllocationModel(r.Portfolio, a.styles)
+			case "transactions":
+				a.activePortfolio = r.Portfolio
+				a.screen = ScreenPortfolioTransactions
+				a.current = newPortfolioTransactionsModel(r.Portfolio, a.styles)
 			case "add":
 				a.activePortfolio = r.Portfolio
 				a.instrumentSearchOrigin = ScreenPortfolioView
@@ -667,6 +672,11 @@ func (a *AppModel) transition(msg ScreenDoneMsg) (tea.Model, tea.Cmd) {
 				}
 				if r.Lot != nil {
 					ins.Lots = []portfolio.Lot{*r.Lot}
+					a.activePortfolio.RecordTransaction(portfolio.Transaction{
+						Type: portfolio.TransactionBuy, Symbol: r.Symbol,
+						Quantity: r.Lot.Quantity, Price: r.Lot.Price,
+						CashDelta: -r.Lot.Quantity * r.Lot.Price, Date: r.Lot.Date,
+					})
 				}
 				a.activePortfolio.Instruments = append(a.activePortfolio.Instruments, ins)
 				_ = portfolio.SavePortfolio(a.activePortfolio)
@@ -687,6 +697,17 @@ func (a *AppModel) transition(msg ScreenDoneMsg) (tea.Model, tea.Cmd) {
 	case ScreenPortfolioAllocation:
 		switch r := msg.Result.(type) {
 		case PortfolioAllocationResult:
+			if r.Portfolio != nil {
+				a.activePortfolio = r.Portfolio
+			}
+			mp := a.buildMarketProvider()
+			a.screen = ScreenPortfolioView
+			a.current = newPortfolioViewModel(a.activePortfolio, mp, a.styles)
+		}
+
+	case ScreenPortfolioTransactions:
+		switch r := msg.Result.(type) {
+		case PortfolioTransactionsResult:
 			if r.Portfolio != nil {
 				a.activePortfolio = r.Portfolio
 			}

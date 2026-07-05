@@ -640,6 +640,9 @@
   "portfolio.view.action.allocation": {
     "other": "Set target allocation"
   },
+  "portfolio.view.action.transactions": {
+    "other": "View transaction history"
+  },
   "portfolio.view.action.add": {
     "other": "Add instrument"
   },
@@ -679,6 +682,55 @@
   },
   "portfolio.allocation.saved": {
     "other": "Target allocation saved"
+  },
+
+  "portfolio.transactions.title": {
+    "other": "Transaction History"
+  },
+  "portfolio.transactions.empty": {
+    "other": "(No transactions recorded yet)"
+  },
+  "portfolio.transactions.hint": {
+    "other": "↑↓ navigate · Esc back"
+  },
+  "portfolio.transactions.col.date": {
+    "other": "Date"
+  },
+  "portfolio.transactions.col.type": {
+    "other": "Type"
+  },
+  "portfolio.transactions.col.symbol": {
+    "other": "Symbol"
+  },
+  "portfolio.transactions.col.qty": {
+    "other": "Qty"
+  },
+  "portfolio.transactions.col.price": {
+    "other": "Price"
+  },
+  "portfolio.transactions.col.cash_delta": {
+    "other": "Cash Δ"
+  },
+  "portfolio.transactions.col.realized_pnl": {
+    "other": "Realized P&L"
+  },
+  "portfolio.transactions.type.buy": {
+    "other": "Buy"
+  },
+  "portfolio.transactions.type.sell": {
+    "other": "Sell"
+  },
+  "portfolio.transactions.type.dividend": {
+    "other": "Dividend"
+  },
+  "portfolio.transactions.type.deposit": {
+    "other": "Deposit"
+  },
+  "portfolio.transactions.type.withdrawal": {
+    "other": "Withdrawal"
+  },
+  "portfolio.transactions.type.adjustment": {
+    "other": "Adjustment"
   },
 
   "portfolio.instruments.title": {

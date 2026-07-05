@@ -281,6 +281,12 @@ func (m *portfolioInstrumentViewModel) handleSellPrice(key tea.KeyMsg) (tea.Mode
 		}
 		m.instrument.Lots = res.RemainingLots
 		m.portfolio.RealizedPnL += res.RealizedPnL
+		m.portfolio.RecordTransaction(portfolio.Transaction{
+			Type: portfolio.TransactionSell, Symbol: m.instrument.Symbol,
+			Quantity: qty, Price: price, CashDelta: qty * price,
+			RealizedPnL: res.RealizedPnL, ConsumedLots: res.ConsumedLots,
+			Date: time.Now(),
+		})
 		if err := portfolio.SavePortfolio(m.portfolio); err != nil {
 			m.infoMsg = locale.Tp("portfolio.error.save", map[string]any{"Error": err.Error()})
 			m.infoIsErr = true
@@ -386,6 +392,10 @@ func (m *portfolioInstrumentViewModel) finishAddLot(date time.Time) (tea.Model, 
 	if wasWatchlist {
 		m.instrument.Type = portfolio.InstrumentHolding
 	}
+	m.portfolio.RecordTransaction(portfolio.Transaction{
+		Type: portfolio.TransactionBuy, Symbol: m.instrument.Symbol,
+		Quantity: qty, Price: price, CashDelta: -qty * price, Date: date,
+	})
 	if err := portfolio.SavePortfolio(m.portfolio); err != nil {
 		m.infoMsg = locale.Tp("portfolio.error.save", map[string]any{"Error": err.Error()})
 		m.infoIsErr = true
