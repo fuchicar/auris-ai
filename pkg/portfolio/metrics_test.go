@@ -1,6 +1,7 @@
 package portfolio
 
 import (
+	"errors"
 	"math"
 	"testing"
 	"time"
@@ -246,3 +247,197 @@ func TestComputeMetrics_SummaryContainsKey(t *testing.T) {
 
 // approxEqualP is a local helper for tolerance-based float comparison.
 func approxEqualP(a, b, tol float64) bool { return math.Abs(a-b) <= tol }
+
+func TestSuggestRebalance_NoTargetAllocation(t *testing.T) {
+	p := makePortfolio("AAPL")
+	_, err := SuggestRebalance(p, map[string]Quote{"AAPL": {Last: 150}}, 0)
+	if !errors.Is(err, ErrNoTargetAllocation) {
+		t.Errorf("expected ErrNoTargetAllocation, got %v", err)
+	}
+}
+
+func TestSuggestRebalance_NegativeMaxDrift(t *testing.T) {
+	p := makePortfolio("AAPL")
+	p.TargetAllocation = map[string]float64{"AAPL": 1.0}
+	_, err := SuggestRebalance(p, map[string]Quote{"AAPL": {Last: 150}}, -1)
+	if err == nil {
+		t.Error("expected error for negative max_drift_percent")
+	}
+}
+
+func TestSuggestRebalance_NoBasis(t *testing.T) {
+	// No quotes and no cash: nothing to compute a rebalance basis from.
+	p := makePortfolio("AAPL")
+	p.TargetAllocation = map[string]float64{"AAPL": 1.0}
+	_, err := SuggestRebalance(p, nil, 0)
+	if !errors.Is(err, ErrNoRebalanceBasis) {
+		t.Errorf("expected ErrNoRebalanceBasis, got %v", err)
+	}
+}
+
+func TestSuggestRebalance_Overweight_SuggestsSell(t *testing.T) {
+	// AAPL: 10 shares @ 150 = 1500 current value, no cash → basis 1500.
+	// Target 50% → target value 750. diff = 750 - 1500 = -750 → sell 750/150 = 5 shares.
+	p := makePortfolio("AAPL")
+	p.TargetAllocation = map[string]float64{"AAPL": 0.5}
+	r, err := SuggestRebalance(p, map[string]Quote{"AAPL": {Last: 150}}, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.TotalValue != 1500 {
+		t.Errorf("TotalValue: want 1500, got %v", r.TotalValue)
+	}
+	if len(r.Operations) != 1 {
+		t.Fatalf("Operations: want 1, got %d", len(r.Operations))
+	}
+	op := r.Operations[0]
+	if op.Symbol != "AAPL" || op.Action != "sell" {
+		t.Errorf("op: want sell AAPL, got %+v", op)
+	}
+	if !approxEqualP(op.Quantity, 5, 1e-9) {
+		t.Errorf("Quantity: want 5, got %v", op.Quantity)
+	}
+}
+
+func TestSuggestRebalance_Underweight_SuggestsBuy(t *testing.T) {
+	// AAPL: 10 shares @ 150 = 1500, cash 1500, basis = 3000. Target 100% AAPL
+	// → target value 3000, diff = 1500 → buy 1500/150 = 10 shares.
+	p := makePortfolio("AAPL")
+	p.Cash = 1500
+	p.TargetAllocation = map[string]float64{"AAPL": 1.0}
+	r, err := SuggestRebalance(p, map[string]Quote{"AAPL": {Last: 150}}, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(r.Operations) != 1 {
+		t.Fatalf("Operations: want 1, got %d", len(r.Operations))
+	}
+	op := r.Operations[0]
+	if op.Action != "buy" {
+		t.Errorf("Action: want buy, got %s", op.Action)
+	}
+	if !approxEqualP(op.Quantity, 10, 1e-9) {
+		t.Errorf("Quantity: want 10, got %v", op.Quantity)
+	}
+}
+
+func TestSuggestRebalance_NewTargetSymbol_NotCurrentlyHeld(t *testing.T) {
+	// Portfolio holds only AAPL but targets a 50/50 split with MSFT, a symbol
+	// not currently held at all.
+	p := makePortfolio("AAPL")
+	p.TargetAllocation = map[string]float64{"AAPL": 0.5, "MSFT": 0.5}
+	quotes := map[string]Quote{"AAPL": {Last: 150}, "MSFT": {Last: 200}}
+	r, err := SuggestRebalance(p, quotes, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var msft *RebalanceOp
+	for i := range r.Operations {
+		if r.Operations[i].Symbol == "MSFT" {
+			msft = &r.Operations[i]
+		}
+	}
+	if msft == nil {
+		t.Fatal("expected a suggested operation for MSFT")
+	}
+	if msft.Action != "buy" {
+		t.Errorf("MSFT action: want buy, got %s", msft.Action)
+	}
+	// basis = 1500 (AAPL only, no cash), target value for MSFT = 750, price 200 → 3.75 shares.
+	if !approxEqualP(msft.Quantity, 3.75, 1e-9) {
+		t.Errorf("MSFT quantity: want 3.75, got %v", msft.Quantity)
+	}
+}
+
+func TestSuggestRebalance_HeldSymbolAbsentFromTarget_SellsToZero(t *testing.T) {
+	// AAPL is held but not present in target_allocation at all → full sell.
+	p := makePortfolio("AAPL")
+	p.TargetAllocation = map[string]float64{"MSFT": 1.0}
+	quotes := map[string]Quote{"AAPL": {Last: 150}, "MSFT": {Last: 200}}
+	r, err := SuggestRebalance(p, quotes, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var aapl *RebalanceOp
+	for i := range r.Operations {
+		if r.Operations[i].Symbol == "AAPL" {
+			aapl = &r.Operations[i]
+		}
+	}
+	if aapl == nil {
+		t.Fatal("expected a suggested operation for AAPL")
+	}
+	if aapl.Action != "sell" {
+		t.Errorf("AAPL action: want sell, got %s", aapl.Action)
+	}
+	if !approxEqualP(aapl.Quantity, 10, 1e-9) {
+		t.Errorf("AAPL quantity: want full 10-share position, got %v", aapl.Quantity)
+	}
+}
+
+func TestSuggestRebalance_WithinTolerance_NoOperations(t *testing.T) {
+	// AAPL is exactly at target weight (100%, no cash) → zero drift, no ops
+	// regardless of max_drift_percent.
+	p := makePortfolio("AAPL")
+	p.TargetAllocation = map[string]float64{"AAPL": 1.0}
+	r, err := SuggestRebalance(p, map[string]Quote{"AAPL": {Last: 150}}, 5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(r.Operations) != 0 {
+		t.Errorf("Operations: want 0 (within tolerance), got %d: %+v", len(r.Operations), r.Operations)
+	}
+}
+
+func TestSuggestRebalance_MaxDriftPercent_SuppressesSmallDrift(t *testing.T) {
+	// AAPL 1500, MSFT 1500, basis 3000. Target AAPL 55%, MSFT 45% → drift is
+	// 5 percentage points on each side, which a 10% tolerance should suppress.
+	p := makePortfolio("AAPL", "MSFT")
+	p.TargetAllocation = map[string]float64{"AAPL": 0.55, "MSFT": 0.45}
+	quotes := map[string]Quote{"AAPL": {Last: 150}, "MSFT": {Last: 150}}
+	r, err := SuggestRebalance(p, quotes, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(r.Operations) != 0 {
+		t.Errorf("Operations: want 0 (within 10%% tolerance), got %d: %+v", len(r.Operations), r.Operations)
+	}
+}
+
+func TestSuggestRebalance_MissingQuote_Excluded(t *testing.T) {
+	// MSFT has no quote at all; it should be skipped and reported as missing,
+	// while AAPL is still rebalanced normally.
+	p := makePortfolio("AAPL", "MSFT")
+	p.TargetAllocation = map[string]float64{"AAPL": 0.5, "MSFT": 0.5}
+	r, err := SuggestRebalance(p, map[string]Quote{"AAPL": {Last: 150}}, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(r.MissingQuotes) != 1 || r.MissingQuotes[0] != "MSFT" {
+		t.Errorf("MissingQuotes: want [MSFT], got %v", r.MissingQuotes)
+	}
+	for _, op := range r.Operations {
+		if op.Symbol == "MSFT" {
+			t.Errorf("MSFT should not have a suggested operation without a quote, got %+v", op)
+		}
+	}
+}
+
+func TestSuggestRebalance_SellsSortedBeforeBuys(t *testing.T) {
+	p := makePortfolio("AAPL", "MSFT")
+	// AAPL overweight (target 0 → sell), MSFT underweight relative to a big
+	// cash-funded target (target 100% of basis incl. cash → buy).
+	p.Cash = 1000
+	p.TargetAllocation = map[string]float64{"MSFT": 1.0}
+	quotes := map[string]Quote{"AAPL": {Last: 150}, "MSFT": {Last: 150}}
+	r, err := SuggestRebalance(p, quotes, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(r.Operations) != 2 {
+		t.Fatalf("Operations: want 2, got %d", len(r.Operations))
+	}
+	if r.Operations[0].Action != "sell" || r.Operations[1].Action != "buy" {
+		t.Errorf("expected sell before buy, got %s then %s", r.Operations[0].Action, r.Operations[1].Action)
+	}
+}

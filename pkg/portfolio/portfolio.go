@@ -61,8 +61,9 @@ type Portfolio struct {
 	RealizedPnL     float64      `json:"realized_pnl"`
 	Cash            float64      `json:"cash"`
 	// TargetAllocation maps symbol → target weight as a fraction (e.g. 0.3
-	// for 30%). Consumed by the portfolio_suggest_rebalance tool (MATH-12,
-	// not yet implemented); left unset/empty until that tool is built.
+	// for 30%). Consumed by the portfolio_suggest_rebalance tool (see
+	// SuggestRebalance in metrics.go); left unset/empty until the user sets
+	// it via portfolio_set_target_allocation.
 	TargetAllocation map[string]float64 `json:"target_allocation,omitempty"`
 	CreatedAt        time.Time          `json:"created_at"`
 	UpdatedAt        time.Time          `json:"updated_at"`

@@ -422,6 +422,20 @@ func buildTools() []llm.Tool {
 				},
 			}, []string{"target_allocation"}),
 		),
+		tool("portfolio_suggest_rebalance",
+			"Suggest buy/sell operations to move a portfolio's current holdings toward its target_allocation (set via portfolio_set_target_allocation). Uses current market prices, or an optional price snapshot. Only suggests trades — never executes them; pair with portfolio_sell / portfolio_add_lot to apply. Symbols held but absent from target_allocation are treated as target weight 0 (recommended for full sale). Fails if target_allocation is not set.",
+			obj(map[string]any{
+				"portfolio_id":      str("Portfolio ID (optional; omit to use the current portfolio)"),
+				"max_drift_percent": numProp("Minimum weight drift in percentage points (e.g. 5 = 5%) required before suggesting a trade; symbols within tolerance are omitted. Default 0."),
+				"quotes": map[string]any{
+					"type":        "object",
+					"description": "Optional symbol → last price snapshot to avoid market provider calls, e.g. {\"AAPL\": 190.5}.",
+					"additionalProperties": map[string]any{
+						"type": "number",
+					},
+				},
+			}, []string{}),
+		),
 	}
 }
 
@@ -1096,6 +1110,65 @@ func (a *Agent) dispatchInner(ctx context.Context, call llm.ToolCall, lastKind *
 				m.Summary = m.Summary + " [WARNING: no market provider configured — only realised P&L and cost basis are accurate]"
 			}
 			return encode(m, nil)
+
+		case "portfolio_suggest_rebalance":
+			id, err := resolvePortfolioID()
+			if err != nil {
+				return encode(nil, err)
+			}
+			p, err := portfolio.LoadPortfolio(id)
+			if err != nil {
+				return encode(nil, err)
+			}
+			if p == nil {
+				return `error: portfolio not found`
+			}
+			// Prices only — no dividend/beta enrichment, unlike
+			// portfolio_calculate_metrics, since rebalance math doesn't use them
+			// and fetching fundamentals here would just spend FMP calls for
+			// nothing.
+			quotes := make(map[string]portfolio.Quote, len(p.Instruments)+len(p.TargetAllocation))
+			if raw, ok := args["quotes"].(map[string]any); ok {
+				for symbol, v := range raw {
+					if last, ok := v.(float64); ok && last > 0 {
+						quotes[symbol] = portfolio.Quote{Last: last}
+					}
+				}
+			}
+			// Fetch a quote for every symbol we might need to price: current
+			// holdings plus any symbol that only appears in the target
+			// allocation (a new position not yet held).
+			if a.market != nil {
+				needed := make(map[string]bool, len(p.Instruments)+len(p.TargetAllocation))
+				for _, ins := range p.Instruments {
+					if ins.Type == portfolio.InstrumentHolding {
+						needed[ins.Symbol] = true
+					}
+				}
+				for symbol := range p.TargetAllocation {
+					needed[symbol] = true
+				}
+				for symbol := range needed {
+					if _, seen := quotes[symbol]; seen {
+						continue
+					}
+					q, qErr := a.market.GetQuote(ctx, symbol)
+					if qErr != nil || q.Last <= 0 {
+						continue
+					}
+					quotes[symbol] = portfolio.Quote{Last: q.Last}
+				}
+			}
+			maxDrift := numVal("max_drift_percent")
+			result, err := portfolio.SuggestRebalance(p, quotes, maxDrift)
+			if err != nil {
+				return encode(nil, err)
+			}
+			result.ComputedAt = time.Now().UTC().Format(time.RFC3339)
+			if a.market == nil {
+				result.Summary = result.Summary + " [WARNING: no market provider configured — rebalance suggestions may be incomplete]"
+			}
+			return encode(result, nil)
 		}
 	}
 

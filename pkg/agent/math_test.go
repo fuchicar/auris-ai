@@ -2021,6 +2021,116 @@ func TestDispatch_PortfolioCalculateMetrics_OK(t *testing.T) {
 	}
 }
 
+func TestDispatch_PortfolioSuggestRebalance_OK(t *testing.T) {
+	tmp := t.TempDir()
+	prev := portfolio.SetPortfoliosDirForTest(tmp)
+	t.Cleanup(func() { portfolio.SetPortfoliosDirForTest(prev) })
+
+	p := portfolio.NewPortfolio("test")
+	now := time.Now()
+	p.Instruments = append(p.Instruments, portfolio.Instrument{
+		ID:     "ins-AAPL",
+		Symbol: "AAPL",
+		Name:   "AAPL",
+		Type:   portfolio.InstrumentHolding,
+		Lots:   []portfolio.Lot{{ID: "lot-AAPL", Quantity: 10, Price: 100, Date: now}},
+	})
+	p.TargetAllocation = map[string]float64{"AAPL": 0.5}
+	if err := portfolio.SavePortfolio(p); err != nil {
+		t.Fatal(err)
+	}
+
+	mp := &mockMarket{
+		quotesBySymbol: map[string]market.Quote{"AAPL": {Last: 150}},
+	}
+	a := New(&mockLLM{}, mp, "")
+	a.currentPortfolioID = p.ID
+
+	var lk ProgressKind
+	result := a.dispatch(context.Background(), llm.ToolCall{
+		Function: llm.ToolCallFunction{Name: "portfolio_suggest_rebalance", Arguments: "{}"},
+	}, &lk)
+	if result[:6] == "error:" {
+		t.Fatalf("unexpected error: %s", result)
+	}
+	var r portfolio.RebalanceResult
+	if err := json.Unmarshal([]byte(result), &r); err != nil {
+		t.Fatalf("invalid JSON: %s — %v", result, err)
+	}
+	if r.ComputedAt == "" {
+		t.Error("ComputedAt must be populated by the dispatcher")
+	}
+	if len(r.Operations) != 1 {
+		t.Fatalf("Operations: want 1, got %d: %+v", len(r.Operations), r.Operations)
+	}
+	if r.Operations[0].Action != "sell" {
+		t.Errorf("Action: want sell (AAPL overweight vs 50%% target), got %s", r.Operations[0].Action)
+	}
+}
+
+func TestDispatch_PortfolioSuggestRebalance_NoTargetAllocation(t *testing.T) {
+	tmp := t.TempDir()
+	prev := portfolio.SetPortfoliosDirForTest(tmp)
+	t.Cleanup(func() { portfolio.SetPortfoliosDirForTest(prev) })
+
+	p := portfolio.NewPortfolio("test")
+	if err := portfolio.SavePortfolio(p); err != nil {
+		t.Fatal(err)
+	}
+
+	a := New(&mockLLM{}, &mockMarket{}, "")
+	a.currentPortfolioID = p.ID
+
+	var lk ProgressKind
+	result := a.dispatch(context.Background(), llm.ToolCall{
+		Function: llm.ToolCallFunction{Name: "portfolio_suggest_rebalance", Arguments: "{}"},
+	}, &lk)
+	if result[:6] != "error:" {
+		t.Errorf("missing target_allocation should produce an error, got %s", result)
+	}
+}
+
+func TestDispatch_PortfolioSuggestRebalance_MaxDriftPercent(t *testing.T) {
+	tmp := t.TempDir()
+	prev := portfolio.SetPortfoliosDirForTest(tmp)
+	t.Cleanup(func() { portfolio.SetPortfoliosDirForTest(prev) })
+
+	p := portfolio.NewPortfolio("test")
+	now := time.Now()
+	p.Instruments = append(p.Instruments, portfolio.Instrument{
+		ID:     "ins-AAPL",
+		Symbol: "AAPL",
+		Name:   "AAPL",
+		Type:   portfolio.InstrumentHolding,
+		Lots:   []portfolio.Lot{{ID: "lot-AAPL", Quantity: 10, Price: 100, Date: now}},
+	})
+	// AAPL is exactly at its target weight (100%, no cash) — zero drift.
+	p.TargetAllocation = map[string]float64{"AAPL": 1.0}
+	if err := portfolio.SavePortfolio(p); err != nil {
+		t.Fatal(err)
+	}
+
+	mp := &mockMarket{quotesBySymbol: map[string]market.Quote{"AAPL": {Last: 150}}}
+	a := New(&mockLLM{}, mp, "")
+	a.currentPortfolioID = p.ID
+
+	var lk ProgressKind
+	args := toolCallArgs(t, map[string]any{"max_drift_percent": 5.0})
+	result := a.dispatch(context.Background(), llm.ToolCall{
+		Function: llm.ToolCallFunction{Name: "portfolio_suggest_rebalance", Arguments: args},
+	}, &lk)
+	if result[:6] == "error:" {
+		t.Fatalf("unexpected error: %s", result)
+	}
+	var r portfolio.RebalanceResult
+	if err := json.Unmarshal([]byte(result), &r); err != nil {
+		t.Fatalf("invalid JSON: %s — %v", result, err)
+	}
+	if len(r.Operations) != 0 {
+		t.Errorf("Operations: want 0 (within tolerance), got %d: %+v", len(r.Operations), r.Operations)
+	}
+}
+
 // BUG-6: smaResult.Previous, emaResult.Previous, rsiResult.PreviousValue were
 // typed float64, not Float. When the input is the minimum valid size, "previous"
 // is NaN (warm-up slot); json.Marshal rejects NaN with UnsupportedValueError and

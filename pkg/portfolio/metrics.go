@@ -262,3 +262,192 @@ func round2(v float64) float64 { return math.Round(v*100) / 100 }
 
 // round4 mirrors the helper in pkg/agent; duplicated for the same reason.
 func round4(v float64) float64 { return math.Round(v*10000) / 10000 }
+
+// RebalanceOp is a single suggested trade to move a holding's weight toward
+// its target.
+type RebalanceOp struct {
+	Symbol        string  `json:"symbol"`
+	Action        string  `json:"action"` // "buy" or "sell"
+	Quantity      float64 `json:"quantity"`
+	Price         float64 `json:"price"`
+	Amount        float64 `json:"amount"` // quantity * price
+	CurrentValue  float64 `json:"current_value"`
+	TargetValue   float64 `json:"target_value"`
+	CurrentWeight float64 `json:"current_weight"` // fraction of basis, in [0, 1]
+	TargetWeight  float64 `json:"target_weight"`  // fraction of basis, in [0, 1]
+	DriftPercent  float64 `json:"drift_percent"`  // (current_weight - target_weight) * 100
+}
+
+// RebalanceResult is the outcome of suggesting a rebalance for a portfolio.
+type RebalanceResult struct {
+	PortfolioID     string        `json:"portfolio_id"`
+	TotalValue      float64       `json:"total_value"` // basis used for target amounts: quoted holdings + cash
+	Cash            float64       `json:"cash"`
+	MaxDriftPercent float64       `json:"max_drift_percent"`
+	Operations      []RebalanceOp `json:"operations"`
+	MissingQuotes   []string      `json:"missing_quotes,omitempty"`
+	Summary         string        `json:"summary"`
+	ComputedAt      string        `json:"computed_at"`
+}
+
+// ErrNoTargetAllocation is returned when SuggestRebalance is called on a
+// portfolio whose TargetAllocation is unset or empty.
+var ErrNoTargetAllocation = errors.New("portfolio: no target_allocation set; call portfolio_set_target_allocation first")
+
+// ErrNoRebalanceBasis is returned when the portfolio has no priced value
+// (quoted holdings + cash) to base target amounts on.
+var ErrNoRebalanceBasis = errors.New("portfolio: no computable value (missing quotes and no cash) to base a rebalance on")
+
+// SuggestRebalance compares a portfolio's current holdings against its
+// TargetAllocation and returns suggested buy/sell operations to close the
+// gap. It never mutates the portfolio or executes trades.
+//
+//   - quotes supplies last prices (and, incidentally, dividend/beta — unused
+//     here) for both currently-held symbols and any symbol that appears only
+//     in TargetAllocation (a new position not yet held). Symbols missing a
+//     usable quote are excluded from Operations and reported in
+//     MissingQuotes.
+//   - Symbols held but absent from TargetAllocation are treated as target
+//     weight 0 (a suggestion to liquidate the position).
+//   - maxDriftPercent (percentage points, e.g. 5 for 5%) suppresses
+//     operations for symbols whose current weight is already within
+//     tolerance of their target; must be >= 0.
+//   - The basis for target dollar amounts is TotalValue (quoted current
+//     holdings value + cash), so target weights are interpreted as a
+//     fraction of the whole portfolio, not just its invested holdings.
+func SuggestRebalance(p *Portfolio, quotes map[string]Quote, maxDriftPercent float64) (RebalanceResult, error) {
+	if p == nil {
+		return RebalanceResult{}, errors.New("portfolio: nil portfolio")
+	}
+	if len(p.TargetAllocation) == 0 {
+		return RebalanceResult{}, ErrNoTargetAllocation
+	}
+	if maxDriftPercent < 0 {
+		return RebalanceResult{}, errors.New("portfolio: max_drift_percent must be >= 0")
+	}
+
+	m, err := ComputeMetrics(p, quotes)
+	if err != nil && !errors.Is(err, ErrNoHoldings) {
+		return RebalanceResult{}, err
+	}
+	basis := m.CurrentValue + p.Cash
+	if basis <= 0 {
+		return RebalanceResult{}, ErrNoRebalanceBasis
+	}
+
+	// Index currently-held, quoted symbols for O(1) lookup, and the quantity
+	// each holding currently has (needed to cap suggested sell quantities).
+	type held struct {
+		value    float64
+		price    float64
+		quantity float64
+	}
+	heldBySymbol := make(map[string]held, len(m.WeightBySymbol))
+	for _, w := range m.WeightBySymbol {
+		heldBySymbol[w.Symbol] = held{value: w.Value, price: w.LastPrice, quantity: w.Quantity}
+	}
+
+	// Union of currently-held (quoted) symbols and target symbols.
+	symbols := make(map[string]bool, len(heldBySymbol)+len(p.TargetAllocation))
+	for sym := range heldBySymbol {
+		symbols[sym] = true
+	}
+	for sym := range p.TargetAllocation {
+		symbols[sym] = true
+	}
+
+	missingSet := make(map[string]bool, len(m.MissingQuotes))
+	for _, sym := range m.MissingQuotes {
+		missingSet[sym] = true
+	}
+	ops := make([]RebalanceOp, 0, len(symbols))
+	for sym := range symbols {
+		h, isHeld := heldBySymbol[sym]
+		targetWeight := p.TargetAllocation[sym]
+		targetValue := basis * targetWeight
+
+		price := h.price
+		if !isHeld {
+			if q, ok := quotes[sym]; ok && q.Last > 0 {
+				price = q.Last
+			} else {
+				missingSet[sym] = true
+				continue
+			}
+		}
+
+		currentValue := h.value
+		currentWeight := 0.0
+		if basis > 0 {
+			currentWeight = currentValue / basis
+		}
+		driftPercent := (currentWeight - targetWeight) * 100
+		if math.Abs(driftPercent) <= maxDriftPercent {
+			continue
+		}
+
+		diff := targetValue - currentValue
+		op := RebalanceOp{
+			Symbol:        sym,
+			Price:         round2(price),
+			CurrentValue:  round2(currentValue),
+			TargetValue:   round2(targetValue),
+			CurrentWeight: round4(currentWeight),
+			TargetWeight:  round4(targetWeight),
+			DriftPercent:  round4(driftPercent),
+		}
+		if diff > 0 {
+			op.Action = "buy"
+			op.Quantity = round4(diff / price)
+		} else {
+			op.Action = "sell"
+			qty := -diff / price
+			if isHeld && qty > h.quantity {
+				qty = h.quantity
+			}
+			op.Quantity = round4(qty)
+		}
+		op.Amount = round2(op.Quantity * price)
+		ops = append(ops, op)
+	}
+	missing := make([]string, 0, len(missingSet))
+	for sym := range missingSet {
+		missing = append(missing, sym)
+	}
+	sort.Strings(missing)
+
+	sort.Slice(ops, func(i, j int) bool {
+		if ops[i].Action != ops[j].Action {
+			return ops[i].Action == "sell" // sells before buys
+		}
+		return ops[i].Amount > ops[j].Amount
+	})
+
+	buys, sells := 0, 0
+	turnover := 0.0
+	for _, op := range ops {
+		if op.Action == "buy" {
+			buys++
+		} else {
+			sells++
+		}
+		turnover += op.Amount
+	}
+	var summary string
+	if len(ops) == 0 {
+		summary = fmt.Sprintf("portfolio already within target allocation (basis=%.2f, max_drift=%.2f%%)", basis, maxDriftPercent)
+	} else {
+		summary = fmt.Sprintf("rebalance vs target: %d buy(s), %d sell(s), turnover=%.2f (basis=%.2f, max_drift=%.2f%%)",
+			buys, sells, turnover, basis, maxDriftPercent)
+	}
+
+	return RebalanceResult{
+		PortfolioID:     p.ID,
+		TotalValue:      round2(basis),
+		Cash:            round2(p.Cash),
+		MaxDriftPercent: round4(maxDriftPercent),
+		Operations:      ops,
+		MissingQuotes:   missing,
+		Summary:         summary,
+	}, nil
+}
