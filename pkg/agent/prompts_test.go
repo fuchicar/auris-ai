@@ -28,7 +28,7 @@ func TestBuildSystemMessage_NilProfile(t *testing.T) {
 	if msg.Content == "" {
 		t.Error("Content should not be empty")
 	}
-	if strings.Contains(msg.Content, "Perfil financiero") {
+	if strings.Contains(msg.Content, "User financial profile") {
 		t.Error("profile section should not appear when profile is nil")
 	}
 }
@@ -40,7 +40,7 @@ func TestBuildSystemMessage_EmptyProfile(t *testing.T) {
 	if msg == nil {
 		t.Fatal("expected non-nil message")
 	}
-	if strings.Contains(msg.Content, "Perfil financiero") {
+	if strings.Contains(msg.Content, "User financial profile") {
 		t.Error("profile section should not appear for an empty profile")
 	}
 }
@@ -56,7 +56,7 @@ func TestBuildSystemMessage_WithProfile(t *testing.T) {
 	if msg == nil {
 		t.Fatal("expected non-nil message")
 	}
-	if !strings.Contains(msg.Content, "Perfil financiero") {
+	if !strings.Contains(msg.Content, "User financial profile") {
 		t.Error("profile section header missing")
 	}
 	if !strings.Contains(msg.Content, "under35") {
@@ -134,7 +134,7 @@ func TestFormatProfile_PartialFields(t *testing.T) {
 }
 
 // TestSystemPrompt_FetchNewsAlways verifies that the system prompt uses the same prescriptive
-// "SIEMPRE" pattern for fetch_news as it does for market data tools.
+// "ALWAYS" pattern for fetch_news as it does for market data tools.
 // Without this, models with "no internet access" training prior ignore the tool.
 func TestSystemPrompt_FetchNewsAlways(t *testing.T) {
 	msg := BuildSystemMessage(llm.TaskChat, nil)
@@ -154,13 +154,13 @@ func TestSystemPrompt_FetchNewsAlways(t *testing.T) {
 		end = len(msg.Content)
 	}
 	ctx := msg.Content[start:end]
-	if !strings.Contains(ctx, "SIEMPRE") {
-		t.Error("system prompt must include SIEMPRE directive near fetch_news (same pattern as market data)")
+	if !strings.Contains(ctx, "ALWAYS") {
+		t.Error("system prompt must include ALWAYS directive near fetch_news (same pattern as market data)")
 	}
 }
 
 // TestSystemPrompt_FetchNewsCountersPrior verifies that the system prompt explicitly
-// counters the LLM training prior "no tengo acceso a noticias en tiempo real".
+// counters the LLM training prior "I don't have access to real-time news".
 // Without an explicit counter, models trained to say "I can't access the internet" will
 // ignore fetch_news even when it's available as a tool.
 func TestSystemPrompt_FetchNewsCountersPrior(t *testing.T) {
@@ -169,9 +169,9 @@ func TestSystemPrompt_FetchNewsCountersPrior(t *testing.T) {
 		t.Fatal("BuildSystemMessage returned nil")
 	}
 	lower := strings.ToLower(msg.Content)
-	hasCounter := strings.Contains(lower, "no respondas") || strings.Contains(lower, "tiempo real")
+	hasCounter := strings.Contains(lower, "never tell") || strings.Contains(lower, "real-time")
 	if !hasCounter {
-		t.Error("system prompt must counter the 'no tengo acceso a noticias en tiempo real' training prior")
+		t.Error("system prompt must counter the 'I don't have access to real-time news' training prior")
 	}
 }
 
@@ -183,7 +183,7 @@ func TestFormatProfile_RestrictionsCountryOnlyWhenSet(t *testing.T) {
 	}
 
 	withoutCountry := &config.FinancialProfile{LifeStage: "under35"}
-	if strings.Contains(formatProfile(withoutCountry), "País de restricción") {
+	if strings.Contains(formatProfile(withoutCountry), "Restrictions country") {
 		t.Error("RestrictionsCountry label should not appear when field is empty")
 	}
 }
