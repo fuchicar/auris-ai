@@ -348,6 +348,7 @@ func (a *AppModel) transition(msg ScreenDoneMsg) (tea.Model, tea.Cmd) {
 			a.passphrase = r.Passphrase
 			a.cfg = r.Config
 			a.applyStoredTheme()
+			a.applyStoredLocale()
 		}
 		a.screen = ScreenMenu
 		a.current = newMenuModel(a.styles, a.cfg.ActiveAIProvider != "")
@@ -978,6 +979,16 @@ func (a *AppModel) saveConfig() {
 func (a *AppModel) applyStoredTheme() {
 	if a.cfg.Theme != "" {
 		a.styles = NewStyles(Theme(a.cfg.Theme))
+	}
+}
+
+// applyStoredLocale reinitializes translations using the locale persisted in
+// the loaded config, overriding the OS-detected locale used at process
+// startup (before the config was available).
+func (a *AppModel) applyStoredLocale() {
+	if a.cfg.Locale != "" {
+		_ = locale.Init(a.cfg.Locale)
+		a.detectedLocale = a.cfg.Locale
 	}
 }
 
