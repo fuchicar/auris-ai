@@ -1,0 +1,671 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Auris AI — Presentación TFM</title>
+<style>
+  /* ── Paleta: tema "dark" de la TUI (pkg/tui/styles.go) ─────────────────── */
+  :root{
+    --bg:        #0D0B12;  /* fondo de la sala */
+    --surface:   #120F1A;  /* fondo de la "ventana de terminal" */
+    --panel:     #1A1625;  /* bloque de agente (agent_render.go) */
+    --border:    #2A2438;
+    --accent:    #7C3AED;  /* acento / primario */
+    --accent2:   #A78BFA;  /* selected / labels You:/Auris: */
+    --text:      #D1D5DB;  /* texto normal */
+    --bright:    #EDE9FE;  /* valores destacados */
+    --agenttext: #DDD6FE;  /* texto dentro del bloque de agente */
+    --muted:     #8B90A0;  /* hints */
+    --dim:       #6B7280;
+    --warn:      #F59E0B;  /* warning (⚙, disclaimer) */
+    --err:       #F87171;  /* ✗ */
+    --ok:        #34D399;  /* ✓ */
+    --url:       #60A5FA;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{
+    font-size:clamp(11px, calc(0.46vw + 0.5vh + 3.5px), 20px);
+  }
+  body{
+    background:var(--bg);
+    color:var(--text);
+    font-family:ui-monospace,"JetBrains Mono","Cascadia Code","Fira Code",Consolas,Menlo,monospace;
+    height:100vh;overflow:hidden;
+    display:flex;align-items:center;justify-content:center;
+  }
+
+  /* ── Ventana de terminal ───────────────────────────────────────────────── */
+  .term{
+    width:min(96vw, 172vh);
+    height:min(94vh, 55vw);
+    background:var(--surface);
+    border:1px solid var(--border);
+    border-radius:.75rem;
+    box-shadow:0 0 90px rgba(124,58,237,.14), 0 30px 60px rgba(0,0,0,.55);
+    display:flex;flex-direction:column;overflow:hidden;
+  }
+  .titlebar{
+    display:flex;align-items:center;gap:.55rem;
+    padding:.6rem 1rem;
+    border-bottom:1px solid var(--border);
+    color:var(--dim);font-size:.78rem;
+    flex:0 0 auto;
+  }
+  .dot{width:.7rem;height:.7rem;border-radius:50%;opacity:.75}
+  .dot.r{background:#F87171}.dot.y{background:#F59E0B}.dot.g{background:#34D399}
+  .titlebar .name{margin-left:.6rem;letter-spacing:.02em}
+  .titlebar .counter{margin-left:auto;font-variant-numeric:tabular-nums}
+  .progress{height:2px;background:var(--border);flex:0 0 auto}
+  .progress i{display:block;height:100%;background:var(--accent);width:0;transition:width .25s ease}
+
+  .stage{flex:1 1 auto;position:relative;overflow:hidden}
+  .slide{
+    position:absolute;inset:0;
+    padding:2.6rem 4rem 2.2rem;
+    display:none;
+    flex-direction:column;
+  }
+  .slide.on{display:flex}
+
+  .hintbar{
+    flex:0 0 auto;
+    display:flex;align-items:center;justify-content:space-between;
+    padding:.55rem 1.1rem;
+    border-top:1px solid var(--border);
+    color:var(--dim);font-size:.75rem;font-style:italic;
+  }
+  .hintbar .squares{font-style:normal;color:var(--accent2);letter-spacing:.15em}
+
+  /* ── Cabecera de diapositiva (estilo TUI) ──────────────────────────────── */
+  .eyebrow{color:var(--dim);font-size:.8rem;margin-bottom:.35rem;letter-spacing:.08em}
+  h2{color:var(--accent2);font-size:1.7rem;font-weight:700;margin-bottom:.55rem}
+  .rule{
+    border:none;height:1px;margin:0 0 1.6rem;
+    background:repeating-linear-gradient(90deg,var(--border) 0 .6rem,transparent .6rem .95rem);
+  }
+  .body{flex:1 1 auto;display:flex;flex-direction:column;justify-content:center;min-height:0}
+
+  .acc{color:var(--accent2)} .warn{color:var(--warn)} .err{color:var(--err)}
+  .ok{color:var(--ok)} .mut{color:var(--muted)} .dimc{color:var(--dim)}
+  .bright{color:var(--bright)} .b{font-weight:700}
+  code,.code{color:var(--agenttext)}
+
+  /* ── Componentes reutilizables ─────────────────────────────────────────── */
+  .cards{display:grid;gap:1rem}
+  .card{
+    border:1px solid var(--border);border-radius:.6rem;
+    padding:1rem 1.2rem;background:rgba(26,22,37,.45);
+  }
+  .card h3{color:var(--bright);font-size:1rem;font-weight:700;margin-bottom:.45rem}
+  .card p{color:var(--muted);font-size:.86rem;line-height:1.5}
+  .card .ico{display:block;font-size:1.15rem;margin-bottom:.5rem}
+
+  .tile{border:1px solid var(--border);border-radius:.6rem;padding:1rem 1.2rem;background:rgba(26,22,37,.45)}
+  .tile .v{color:var(--bright);font-weight:700;font-size:2.1rem;line-height:1.15}
+  .tile .l{color:var(--muted);font-size:.8rem;margin-top:.3rem;line-height:1.35}
+
+  .box{
+    border:1px solid var(--accent);border-radius:.6rem;
+    padding:.55rem 1rem;text-align:center;background:rgba(124,58,237,.07);
+  }
+  .box small{display:block;color:var(--muted);font-size:.72rem;margin-top:.15rem}
+  .arrow{color:var(--dim);text-align:center;line-height:1.1}
+
+  ul.list{list-style:none}
+  ul.list li{padding:.34rem 0;line-height:1.5;font-size:.95rem}
+  ul.list li::before{content:"› ";color:var(--accent);font-weight:700}
+  ul.checks li::before{content:"✓ ";color:var(--ok);font-weight:700}
+  ul.crosses li::before{content:"✗ ";color:var(--err);font-weight:700}
+
+  .kbd{
+    border:1px solid var(--border);border-bottom-width:2px;border-radius:.3rem;
+    padding:0 .35rem;font-size:.85em;color:var(--agenttext)
+  }
+
+  /* ── Portada / cierre ──────────────────────────────────────────────────── */
+  .hero{align-items:center;text-align:center}
+  .hero .logo{font-size:4.6rem;font-weight:800;color:var(--accent2);letter-spacing:.02em}
+  .hero .logo .ai{color:var(--accent)}
+  .hero .tag{font-size:1.25rem;color:var(--text);margin-top:1rem}
+  .hero .meta{color:var(--dim);font-size:.9rem;margin-top:2.6rem;line-height:1.8}
+  .promptline{font-size:1.15rem;margin-top:2.2rem;color:var(--agenttext)}
+  .promptline .p{color:var(--accent);font-weight:700}
+  .cursor{display:inline-block;color:var(--agenttext);animation:blink 1.05s steps(1) infinite}
+  @keyframes blink{50%{opacity:0}}
+
+  /* ── Mock de chat (diapositiva 4) ──────────────────────────────────────── */
+  .chat{border:1px solid var(--border);border-radius:.6rem;overflow:hidden;font-size:.92rem}
+  .chat .chead{padding:.5rem 1rem;color:var(--accent2);font-weight:700;border-bottom:1px solid var(--border)}
+  .chat .cbody{padding:1rem 1.1rem;display:flex;flex-direction:column;gap:.55rem}
+  .chat .you b{color:var(--accent2)}
+  .chat .tool{color:var(--warn);font-size:.85rem}
+  .chat .agent{background:var(--panel);color:var(--agenttext);border-radius:.45rem;padding:.7rem .9rem;line-height:1.55}
+  .chat .agent b{color:var(--bright)}
+  .chat .cinput{display:flex;gap:.5rem;padding:.55rem 1rem;border-top:1px solid var(--border);color:var(--dim);font-style:italic}
+  .chat .cinput .p{color:var(--accent);font-weight:700;font-style:normal}
+
+  /* ── Barras del grid de herramientas ───────────────────────────────────── */
+  .toolcat{display:flex;flex-direction:column;gap:.3rem}
+  .toolcat .row{display:flex;justify-content:space-between;align-items:baseline;gap:1rem}
+  .toolcat .n{color:var(--bright);font-weight:700}
+  .toolcat .bar{height:.45rem;border-radius:.25rem;background:var(--border);overflow:hidden}
+  .toolcat .bar i{display:block;height:100%;background:var(--accent);border-radius:.25rem}
+  .toolcat .ex{color:var(--dim);font-size:.72rem;line-height:1.4}
+
+  /* ── Caja de disclaimer (ámbar, como la TUI) ───────────────────────────── */
+  .warnbox{
+    border:1px solid var(--warn);border-radius:.6rem;
+    padding:1rem 1.3rem;color:var(--warn);
+    background:rgba(245,158,11,.06);line-height:1.6;font-size:.95rem;
+  }
+
+  pre.snippet{
+    border:1px solid var(--border);border-radius:.6rem;background:#0F0C16;
+    padding:1rem 1.2rem;font-size:.82rem;line-height:1.6;color:var(--text);
+    overflow-x:auto;
+  }
+  pre.snippet .kw{color:var(--accent2)} pre.snippet .st{color:var(--ok)}
+  pre.snippet .cm{color:var(--dim);font-style:italic} pre.snippet .fn{color:var(--url)}
+</style>
+</head>
+<body data-palette="#7C3AED">
+
+<div class="term">
+  <div class="titlebar">
+    <span class="dot r"></span><span class="dot y"></span><span class="dot g"></span>
+    <span class="name">auris — <span id="tb-title">tfm</span></span>
+    <span class="counter"><span id="tb-cur">1</span>/<span id="tb-total">15</span></span>
+  </div>
+  <div class="progress"><i id="pbar"></i></div>
+
+  <div class="stage" id="stage">
+
+  <!-- 1 ─ Portada ─────────────────────────────────────────────────────────── -->
+  <section class="slide hero" data-title="portada">
+    <div class="body hero" style="align-items:center">
+      <div class="logo">Auris <span class="ai">AI</span></div>
+      <div class="tag">Tu asesor financiero personal, en tu terminal.</div>
+      <div class="promptline"><span class="p">&gt;</span> un agente que razona con IA y calcula con Go<span class="cursor">▌</span></div>
+      <div class="meta">
+        Trabajo Fin de Máster · Rafael Fernández<br>
+        <span class="dimc">2026</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- 2 ─ El problema ─────────────────────────────────────────────────────── -->
+  <section class="slide" data-title="el problema">
+    <div class="eyebrow">01 · contexto</div>
+    <h2>Invertir bien es difícil. Las herramientas no ayudan.</h2>
+    <hr class="rule">
+    <div class="body">
+      <div class="cards" style="grid-template-columns:repeat(2,1fr)">
+        <div class="card"><span class="ico err">✗</span>
+          <h3>Asesoramiento inaccesible</h3>
+          <p>El asesoramiento financiero profesional es caro y está fuera del alcance del inversor particular. La alternativa habitual: foros, vídeos y decisiones a ciegas.</p>
+        </div>
+        <div class="card"><span class="ico err">✗</span>
+          <h3>Información fragmentada</h3>
+          <p>Cotizaciones en una web, fundamentales en otra, la cartera en una hoja de cálculo y las noticias en un tercer sitio. Nada conversa entre sí.</p>
+        </div>
+        <div class="card"><span class="ico err">✗</span>
+          <h3>Los LLM «a pelo» alucinan</h3>
+          <p>Un chatbot genérico inventa precios, fechas y ratios con total confianza. No tiene datos de mercado reales ni una calculadora fiable: <em>hace las cuentas «de memoria»</em>.</p>
+        </div>
+        <div class="card"><span class="ico err">✗</span>
+          <h3>Privacidad comprometida</h3>
+          <p>Volcar tu situación patrimonial en un servicio en la nube significa ceder tus datos financieros más sensibles a un tercero.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 3 ─ La solución ─────────────────────────────────────────────────────── -->
+  <section class="slide" data-title="la solución">
+    <div class="eyebrow">02 · propuesta</div>
+    <h2>Auris: el LLM razona, Go calcula</h2>
+    <hr class="rule">
+    <div class="body">
+      <p style="font-size:1.05rem;line-height:1.7;margin-bottom:1.6rem">
+        Un <span class="bright b">agente ReAct en terminal</span> que combina el razonamiento de un LLM
+        con <span class="bright b">datos de mercado reales</span> y un
+        <span class="bright b">motor de cálculo determinista escrito en Go</span>.
+        El modelo decide <em>qué</em> calcular; el código decide <em>cuánto</em> da.
+      </p>
+      <div class="cards" style="grid-template-columns:repeat(3,1fr)">
+        <div class="card"><span class="ico ok">✓</span>
+          <h3>Datos reales, no recuerdos</h3>
+          <p>Cotizaciones, velas, fundamentales, dividendos y noticias llegan por API de proveedores de mercado. El LLM nunca «recuerda» un precio: lo consulta.</p>
+        </div>
+        <div class="card"><span class="ico ok">✓</span>
+          <h3>Ni un número inventado</h3>
+          <p>VaR, Sharpe, DCF, Monte Carlo… 52 herramientas deterministas y testeadas ejecutan cada cálculo. La aritmética jamás sale del modelo.</p>
+        </div>
+        <div class="card"><span class="ico ok">✓</span>
+          <h3>Local-first</h3>
+          <p>Configuración cifrada en tu disco y opción de inferencia 100 % local con Ollama: tus finanzas no tienen por qué salir de tu máquina.</p>
+        </div>
+      </div>
+      <p class="mut" style="margin-top:1.6rem;text-align:center">
+        <span class="acc b">razonamiento LLM</span> + <span class="acc b">datos de mercado</span> + <span class="acc b">cálculo en Go</span> = <span class="bright b">Auris</span>
+      </p>
+    </div>
+  </section>
+
+  <!-- 4 ─ La experiencia ──────────────────────────────────────────────────── -->
+  <section class="slide" data-title="agent mode">
+    <div class="eyebrow">03 · experiencia de uso</div>
+    <h2>Una conversación, todo el flujo de trabajo</h2>
+    <hr class="rule">
+    <div class="body">
+      <div class="chat">
+        <div class="chead">Agent Mode</div>
+        <div class="cbody">
+          <div class="you"><b>You:</b> ¿Cuál es el VaR a 1 día de mi cartera con un 95 % de confianza? ¿Y si el mercado cae un 20 %?</div>
+          <div class="tool">⚙ Consultando datos financieros… <span class="dimc">market_get_quote · market_get_candles</span></div>
+          <div class="tool">⚙ Calculando… <span class="dimc">portfolio_calculate_metrics · calculate_var · calculate_stress_test</span></div>
+          <div class="agent">
+            <b>Auris:</b> Tu cartera vale hoy <b>48.230 €</b>. Con datos de los últimos 252 días,
+            el VaR(95 %) a 1 día es <b>−612 € (−1,27 %)</b> por el método histórico.
+            En un shock del −20 %, la pérdida estimada sería de <b>−8.940 €</b>, amortiguada por
+            tu 7 % en liquidez. Tu concentración (HHI) es <b>moderada</b>: AAPL pesa un 34 %…
+          </div>
+        </div>
+        <div class="cinput"><span class="p">&gt;</span> Ask Auris anything…</div>
+      </div>
+      <div class="hintbar" style="border:none;padding:.7rem .2rem 0">
+        <span>Enter send · ↑↓ PgUp/Dn scroll · / commands · Shift+Tab toggle</span>
+        <span class="squares">■■■□□ <span class="mut" style="letter-spacing:0">3.2s</span></span>
+      </div>
+      <ul class="list" style="margin-top:1rem">
+        <li>El agente <span class="bright">encadena herramientas por sí solo</span>: cotización → histórico → métricas → riesgo.</li>
+        <li>Respuestas en Markdown renderizado, sesiones persistentes, paleta de comandos con <span class="kbd">/</span>, interfaz en español e inglés.</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- 5 ─ Arquitectura ────────────────────────────────────────────────────── -->
+  <section class="slide" data-title="arquitectura">
+    <div class="eyebrow">04 · arquitectura</div>
+    <h2>Capas limpias, abstracciones estrictas</h2>
+    <hr class="rule">
+    <div class="body">
+      <div style="display:grid;grid-template-columns:2.1fr 1fr;gap:2rem;align-items:center">
+        <div style="display:flex;flex-direction:column;gap:.4rem">
+          <div class="box">cmd/auris <small>punto de entrada</small></div>
+          <div class="arrow">↓</div>
+          <div class="box">pkg/tui <small>Bubble Tea · 24 pantallas · setup cifrado + chat + carteras</small></div>
+          <div class="arrow">↓</div>
+          <div class="box" style="border-color:var(--accent2);background:rgba(124,58,237,.13)">pkg/agent <small>bucle ReAct · 52 tools · motor de cálculo · validación</small></div>
+          <div class="arrow">↓&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;↓</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:.8rem">
+            <div class="box">pkg/llm <small>interfaz AIProvider</small></div>
+            <div class="box">pkg/market <small>interfaz ProviderAPI</small></div>
+          </div>
+          <div class="arrow">↓&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;↓</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:.8rem">
+            <div class="box" style="border-color:var(--border)"><span class="mut">drivers:</span> anthropic · gemini · ollama · minimax</div>
+            <div class="box" style="border-color:var(--border)"><span class="mut">driver:</span> fmp <small>Financial Modeling Prep</small></div>
+          </div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:.9rem">
+          <div class="tile"><div class="v">Go 1.25</div><div class="l">sin frameworks pesados: stdlib + Charm + SDKs oficiales</div></div>
+          <div class="tile"><div class="v">~23.500</div><div class="l">líneas de Go en 14 paquetes desacoplados</div></div>
+          <div class="tile"><div class="l" style="margin-top:0">servicios transversales</div><div class="l" style="color:var(--text)">portfolio · news (RSS) · config cifrada · locale (es/en)</div></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 6 ─ Patrón driver ───────────────────────────────────────────────────── -->
+  <section class="slide" data-title="extensibilidad">
+    <div class="eyebrow">05 · extensibilidad</div>
+    <h2>Patrón driver: cualquier LLM, cualquier mercado</h2>
+    <hr class="rule">
+    <div class="body">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.6rem;align-items:start">
+        <div>
+          <pre class="snippet"><span class="cm">// pkg/llm — una interfaz, N proveedores</span>
+<span class="kw">type</span> AIProvider <span class="kw">interface</span> {
+    Connect(ctx) <span class="kw">error</span>
+    ListModels(ctx) ([]Model, <span class="kw">error</span>)
+    Complete(ctx, req) (Response, <span class="kw">error</span>)
+    Stream(ctx, req) (&lt;-<span class="kw">chan</span> Chunk, <span class="kw">error</span>)
+}
+
+<span class="cm">// conformidad verificada en compilación</span>
+<span class="kw">var</span> _ llm.AIProvider = (*Driver)(<span class="kw">nil</span>)</pre>
+          <ul class="list" style="margin-top:.9rem;font-size:.88rem">
+            <li>Errores <span class="bright">sentinel</span> compartidos (<code>ErrRateLimit</code>, <code>ErrNotSupported</code>…): la TUI reacciona igual sea cual sea el proveedor.</li>
+            <li><code>Stream</code> garantiza cierre de canal tras <code>Done</code>: los consumidores hacen <code>range</code> sin fugas.</li>
+          </ul>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:1rem">
+          <div class="card">
+            <h3>4 drivers de IA</h3>
+            <p><span class="bright">Anthropic · Gemini · Ollama · MiniMax</span> — nube de frontera o inferencia local, elegibles por caso de uso.</p>
+          </div>
+          <div class="card">
+            <h3>1 driver de mercado</h3>
+            <p><span class="bright">Financial Modeling Prep</span>: cotizaciones, velas EOD e intradía, fundamentales, dividendos, splits y streaming por sondeo.</p>
+          </div>
+          <div class="card" style="border-color:var(--accent)">
+            <h3 class="acc">Añadir un proveedor</h3>
+            <p>= 1 paquete que implementa la interfaz + <span class="bright">1 línea en el registry</span>. Ni la TUI ni el agente cambian. Así se integraron 4 LLMs sin tocar el núcleo.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 7 ─ Bucle ReAct ─────────────────────────────────────────────────────── -->
+  <section class="slide" data-title="bucle react">
+    <div class="eyebrow">06 · el núcleo</div>
+    <h2>El bucle ReAct: razonar → actuar → observar</h2>
+    <hr class="rule">
+    <div class="body">
+      <div style="display:flex;flex-direction:column;gap:.5rem;max-width:60rem;margin:0 auto;width:100%">
+        <div style="display:grid;grid-template-columns:1fr auto 1.3fr auto 1fr;gap:.7rem;align-items:center">
+          <div class="box">pregunta<small>+ perfil financiero del usuario</small></div>
+          <div class="arrow">→</div>
+          <div class="box" style="border-color:var(--accent2);background:rgba(124,58,237,.13)">LLM · Complete()<small>con las 52 tools declaradas</small></div>
+          <div class="arrow">→</div>
+          <div class="box" style="border-color:var(--ok)"><span class="ok">respuesta final</span><small>stop_reason ≠ tool_calls</small></div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr auto 1.3fr auto 1fr;gap:.7rem;align-items:center">
+          <div></div><div></div>
+          <div class="arrow">↑ resultados&nbsp;&nbsp;&nbsp;&nbsp;tool_calls ↓</div>
+          <div></div><div></div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr auto 1.3fr auto 1fr;gap:.7rem;align-items:center">
+          <div></div><div></div>
+          <div class="box" style="border-color:var(--warn)"><span class="warn">⚙ dispatch()</span><small>mercado · cálculo · portfolio · noticias · tiempo</small></div>
+          <div></div><div></div>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:1rem;margin-top:1.8rem">
+        <div class="tile"><div class="v">≤ 10</div><div class="l">iteraciones por turno: el agente encadena consultas y cálculos, con freno determinista anti-bucle</div></div>
+        <div class="tile"><div class="v">3</div><div class="l">TaskTypes con system prompt propio (chat, análisis financiero, resumen) e inyección del perfil del usuario</div></div>
+        <div class="tile"><div class="v">⚙ en vivo</div><div class="l">cada tool call se reporta a la TUI como progreso: el usuario ve qué está consultando el agente</div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 8 ─ 52 herramientas ─────────────────────────────────────────────────── -->
+  <section class="slide" data-title="herramientas">
+    <div class="eyebrow">07 · capacidades</div>
+    <h2>52 herramientas al servicio del modelo</h2>
+    <hr class="rule">
+    <div class="body">
+      <div style="display:grid;grid-template-columns:1fr 2.4fr;gap:2rem;align-items:center">
+        <div class="tile" style="text-align:center">
+          <div class="v" style="font-size:4.4rem">52</div>
+          <div class="l">herramientas tipadas con JSON-Schema, todas despachadas por el agente y cubiertas por tests</div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:.85rem">
+          <div class="toolcat">
+            <div class="row"><span>Cálculo financiero <span class="n">18</span></span><span class="ex">roi · cagr · sharpe · var · dcf · monte_carlo · stress_test · peg…</span></div>
+            <div class="bar"><i style="width:100%"></i></div>
+          </div>
+          <div class="toolcat">
+            <div class="row"><span>Gestión de carteras <span class="n">14</span></span><span class="ex">create · add_lot · sell · record_dividend · suggest_rebalance…</span></div>
+            <div class="bar"><i style="width:78%"></i></div>
+          </div>
+          <div class="toolcat">
+            <div class="row"><span>Datos de mercado <span class="n">9</span></span><span class="ex">search · quote · candles · fundamentals · corporate_actions…</span></div>
+            <div class="bar"><i style="width:50%"></i></div>
+          </div>
+          <div class="toolcat">
+            <div class="row"><span>Indicadores técnicos <span class="n">6</span></span><span class="ex">sma · ema · rsi · macd · bollinger · correlation_matrix</span></div>
+            <div class="bar"><i style="width:33%"></i></div>
+          </div>
+          <div class="toolcat">
+            <div class="row"><span>Tiempo <span class="n">3</span> · Noticias <span class="n">1</span> · Divisas <span class="n">1</span></span><span class="ex">time_now · fetch_news (RSS) · convert_currency</span></div>
+            <div class="bar"><i style="width:28%"></i></div>
+          </div>
+        </div>
+      </div>
+      <p class="mut" style="margin-top:1.6rem">El LLM no ejecuta nada: <span class="bright">declara intenciones</span> y el agente las despacha contra código Go verificado.</p>
+    </div>
+  </section>
+
+  <!-- 9 ─ Motor de cálculo ────────────────────────────────────────────────── -->
+  <section class="slide" data-title="cálculo determinista">
+    <div class="eyebrow">08 · fiabilidad numérica</div>
+    <h2>Un motor cuantitativo que no alucina</h2>
+    <hr class="rule">
+    <div class="body">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.8rem;align-items:start">
+        <div>
+          <ul class="list">
+            <li><span class="bright b">Monte Carlo</span> (GBM) hasta <span class="bright">100.000 trayectorias</span> con percentiles de resultado.</li>
+            <li><span class="bright b">VaR</span> paramétrico e histórico; <span class="bright b">stress testing</span> por shocks.</li>
+            <li><span class="bright b">Valoración</span>: DCF con valor terminal, múltiplos, P/FCF, PEG.</li>
+            <li><span class="bright b">Riesgo y rendimiento</span>: Sharpe, beta, volatilidad, max drawdown, CAGR, P&amp;L.</li>
+            <li><span class="bright b">Técnico</span>: RSI (suavizado de Wilder), MACD, Bollinger, SMA/EMA, matriz de correlaciones.</li>
+          </ul>
+        </div>
+        <div>
+          <pre class="snippet"><span class="cm">// pkg/agent/validate.go — todo input del LLM</span>
+<span class="cm">// se valida por dominio ANTES de calcular</span>
+<span class="kw">func</span> <span class="fn">calcSharpe</span>(returns []<span class="kw">float64</span>, rf <span class="kw">float64</span>) {
+    <span class="kw">if</span> err := validateReturnSlice(<span class="st">"returns"</span>, returns);
+    …
+    <span class="kw">if</span> err := validateRate(<span class="st">"risk_free_rate"</span>, rf);
+    …
+}</pre>
+          <ul class="list" style="margin-top:.9rem;font-size:.88rem">
+            <li>Rechaza NaN, ±Inf y valores fuera del dominio real (precios ≤ 0, tasas absurdas…).</li>
+            <li>Parseo tolerante de números procedentes del LLM (<code>Float</code>/<code>FloatSlice</code> propios).</li>
+            <li>La validación vive en el propio motor, no en el despacho: <span class="bright">misma garantía para tests y llamadas directas</span>.</li>
+          </ul>
+        </div>
+      </div>
+      <p style="margin-top:1.5rem;text-align:center" class="mut">Un LLM con calculadora se equivoca menos. <span class="bright">Un LLM con un motor validado y testeado, casi nunca.</span></p>
+    </div>
+  </section>
+
+  <!-- 10 ─ Carteras ───────────────────────────────────────────────────────── -->
+  <section class="slide" data-title="carteras">
+    <div class="eyebrow">09 · gestión patrimonial</div>
+    <h2>Carteras de verdad: lotes, FIFO y rebalanceo</h2>
+    <hr class="rule">
+    <div class="body">
+      <div class="cards" style="grid-template-columns:repeat(2,1fr)">
+        <div class="card">
+          <h3>Contabilidad por lotes (FIFO)</h3>
+          <p>Cada compra es un lote con fecha y precio. Las ventas consumen lotes en orden FIFO y devuelven el <span class="bright">P&amp;L realizado exacto</span>, con el detalle de qué lote se consumió.</p>
+        </div>
+        <div class="card">
+          <h3>Historial de transacciones</h3>
+          <p>6 tipos — compra, venta, dividendo, depósito, retirada y ajuste — registrados y consultables desde la TUI y desde el propio agente.</p>
+        </div>
+        <div class="card">
+          <h3>Métricas de cartera</h3>
+          <p>Valor actual, pesos por símbolo, P&amp;L realizado y latente, dividend yield, beta agregada y <span class="bright">concentración HHI</span> con interpretación por tramos.</p>
+        </div>
+        <div class="card">
+          <h3>Rebalanceo sugerido</h3>
+          <p>Defines una asignación objetivo; Auris detecta la desviación y propone las <span class="bright">operaciones concretas</span> para volver al plan, respetando un umbral de tolerancia.</p>
+        </div>
+      </div>
+      <p class="mut" style="margin-top:1.5rem">Todo es accesible por chat: <span class="acc">«vende 10 AAPL»</span>, <span class="acc">«registra el dividendo de MSFT»</span>, <span class="acc">«¿me desvié de mi 60/40?»</span> — el agente opera la cartera con sus 14 tools de portfolio.</p>
+    </div>
+  </section>
+
+  <!-- 11 ─ Seguridad ──────────────────────────────────────────────────────── -->
+  <section class="slide" data-title="seguridad">
+    <div class="eyebrow">10 · seguridad y privacidad</div>
+    <h2>Local-first, cifrado por defecto</h2>
+    <hr class="rule">
+    <div class="body">
+      <div style="display:grid;grid-template-columns:1fr auto 1.35fr auto 1fr auto 1.2fr;gap:.6rem;align-items:center;max-width:62rem;margin:0 auto;width:100%">
+        <div class="box">passphrase<small>solo en memoria</small></div>
+        <div class="arrow">→</div>
+        <div class="box" style="border-color:var(--accent2)">Argon2id<small>64 MiB · salt aleatorio 16 B</small></div>
+        <div class="arrow">→</div>
+        <div class="box">clave 256 bits</div>
+        <div class="arrow">→</div>
+        <div class="box" style="border-color:var(--accent2)">AES-256-GCM<small>nonce 12 B por campo</small></div>
+      </div>
+      <div class="cards" style="grid-template-columns:repeat(3,1fr);margin-top:1.8rem">
+        <div class="card"><span class="ico ok">✓</span>
+          <h3>Credenciales cifradas en reposo</h3>
+          <p>Las API keys jamás tocan el disco en claro. KDF resistente a GPU (Argon2id) y cifrado autenticado; salt nuevo en cada guardado.</p>
+        </div>
+        <div class="card"><span class="ico ok">✓</span>
+          <h3>Tus datos, en tu máquina</h3>
+          <p>Perfil, carteras y sesiones de chat viven como ficheros locales en la ruta estándar del sistema. Sin cuentas, sin telemetría, sin nube obligatoria.</p>
+        </div>
+        <div class="card"><span class="ico ok">✓</span>
+          <h3>Modo 100 % offline</h3>
+          <p>Con el driver de Ollama, la inferencia corre en local: ni una sola palabra de tu situación financiera sale de tu ordenador.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 12 ─ Calidad ────────────────────────────────────────────────────────── -->
+  <section class="slide" data-title="calidad">
+    <div class="eyebrow">11 · ingeniería</div>
+    <h2>Calidad medible, no prometida</h2>
+    <hr class="rule">
+    <div class="body">
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:1rem">
+        <div class="tile"><div class="v">433</div><div class="l">funciones de test en el repositorio</div></div>
+        <div class="tile"><div class="v">236</div><div class="l">tests solo en pkg/agent: el motor de cálculo es la pieza más blindada</div></div>
+        <div class="tile"><div class="v">2</div><div class="l">idiomas completos (es/en) con detección automática del locale</div></div>
+        <div class="tile"><div class="v">6</div><div class="l">temas visuales con previsualización en vivo</div></div>
+      </div>
+      <ul class="list" style="margin-top:1.8rem">
+        <li><span class="bright b">Conformidad en compilación</span>: cada driver declara <code>var _ market.ProviderAPI = (*Driver)(nil)</code> — imposible registrar una implementación incompleta.</li>
+        <li><span class="bright b">Tests de integración honestos</span>: se saltan solos (<code>t.Skip</code>) si no hay credenciales; la suite corre limpia en cualquier máquina y en CI.</li>
+        <li><span class="bright b">Contratos explícitos</span>: errores sentinel compartidos y un contrato de streaming («el canal siempre se cierra») documentados y testeados.</li>
+        <li><span class="bright b">Validación exhaustiva de entradas</span>: ninguna función de cálculo acepta un número sin pasar por la capa de validación por dominio.</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- 13 ─ IA responsable ─────────────────────────────────────────────────── -->
+  <section class="slide" data-title="ia responsable">
+    <div class="eyebrow">12 · ética</div>
+    <h2>IA responsable, por diseño y por contrato</h2>
+    <hr class="rule">
+    <div class="body">
+      <div class="warnbox">
+        <span class="b">⚠ Aviso importante sobre el uso de IA</span><br><br>
+        Esta aplicación usa inteligencia artificial para ayudarte a gestionar y analizar información financiera.
+        Los modelos de IA pueden producir respuestas incorrectas o incompletas, incluso con aparente seguridad.
+        Esta herramienta no sustituye en ningún caso el consejo de un profesional financiero regulado.<br><br>
+        <span class="dimc" style="font-style:italic">Escribe «sí» para confirmar que has leído y entendido este aviso:</span> <span class="bright">sí▌</span>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.6rem;margin-top:1.6rem">
+        <ul class="list checks">
+          <li><span class="bright b">Consentimiento informado obligatorio</span>: el disclaimer bloquea el primer arranque hasta confirmarlo explícitamente.</li>
+          <li><span class="bright b">Posicionamiento honesto</span>: «para explorar ideas, no para decidir tu dinero».</li>
+        </ul>
+        <ul class="list checks">
+          <li><span class="bright b">Mitigación estructural, no solo textual</span>: el riesgo de alucinación numérica se elimina delegando toda la aritmética al motor determinista.</li>
+          <li><span class="bright b">Transparencia</span>: cada consulta de datos y cada cálculo se muestran en pantalla (⚙) mientras ocurren.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- 14 ─ Roadmap ────────────────────────────────────────────────────────── -->
+  <section class="slide" data-title="visión">
+    <div class="eyebrow">13 · visión</div>
+    <h2>Diseñado para crecer</h2>
+    <hr class="rule">
+    <div class="body">
+      <div class="cards" style="grid-template-columns:repeat(2,1fr)">
+        <div class="card">
+          <h3><span class="acc">›</span> Más mercados y brókers</h3>
+          <p>El patrón driver hace que integrar un nuevo proveedor de datos —o la API de un bróker para operar— sea un paquete aislado, sin tocar el núcleo.</p>
+        </div>
+        <div class="card">
+          <h3><span class="acc">›</span> Streaming en el chat</h3>
+          <p>La interfaz <code>Stream</code> ya existe y está testeada en los 4 drivers; conectarla a la TUI dará respuestas token a token.</p>
+        </div>
+        <div class="card">
+          <h3><span class="acc">›</span> Alertas y vigilancia</h3>
+          <p>Sobre la suscripción de cotizaciones ya implementada: avisos por precio, deriva de la asignación objetivo o eventos corporativos.</p>
+        </div>
+        <div class="card">
+          <h3><span class="acc">›</span> Más clases de activo</h3>
+          <p>El modelo de datos (<code>AssetType</code>) ya contempla más allá de la renta variable: fondos, ETFs, cripto y renta fija como evolución natural.</p>
+        </div>
+      </div>
+      <p class="mut" style="margin-top:1.5rem;text-align:center">Nada de esto exige rediseñar: <span class="bright">las abstracciones ya lo soportan</span>.</p>
+    </div>
+  </section>
+
+  <!-- 15 ─ Cierre ─────────────────────────────────────────────────────────── -->
+  <section class="slide hero" data-title="cierre">
+    <div class="body" style="align-items:center;text-align:center">
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:1rem;width:100%;max-width:62rem;margin-bottom:2.6rem">
+        <div class="tile"><div class="v" style="font-size:1.15rem">Datos reales</div><div class="l">el LLM consulta, nunca recuerda</div></div>
+        <div class="tile"><div class="v" style="font-size:1.15rem">Cálculo fiable</div><div class="l">52 tools deterministas y validadas</div></div>
+        <div class="tile"><div class="v" style="font-size:1.15rem">Privacidad</div><div class="l">cifrado fuerte y modo 100 % local</div></div>
+        <div class="tile"><div class="v" style="font-size:1.15rem">Extensible</div><div class="l">nuevos proveedores sin tocar el núcleo</div></div>
+      </div>
+      <div class="logo" style="font-size:3.4rem;font-weight:800;color:var(--accent2)">Auris <span style="color:var(--accent)">AI</span></div>
+      <div class="tag" style="margin-top:.6rem;color:var(--muted)">La inteligencia razona. El código calcula. Tú decides.</div>
+      <div class="promptline"><span class="p">&gt;</span> gracias<span class="cursor">▌</span></div>
+    </div>
+  </section>
+
+  </div><!-- /stage -->
+
+  <div class="hintbar">
+    <span><span class="kbd">←</span> <span class="kbd">→</span> navegar · <span class="kbd">Espacio</span> avanzar · <span class="kbd">Home</span>/<span class="kbd">End</span> extremos · <span class="kbd">F</span> pantalla completa</span>
+    <span class="squares" id="squares">■□□□□</span>
+  </div>
+</div>
+
+<script>
+(function(){
+  var slides = Array.prototype.slice.call(document.querySelectorAll('.slide'));
+  var cur = 0, total = slides.length;
+  document.getElementById('tb-total').textContent = total;
+
+  function show(i){
+    i = Math.max(0, Math.min(total-1, i));
+    slides[cur].classList.remove('on');
+    cur = i;
+    slides[cur].classList.add('on');
+    document.getElementById('tb-cur').textContent = cur+1;
+    document.getElementById('tb-title').textContent = slides[cur].dataset.title || 'tfm';
+    document.getElementById('pbar').style.width = ((cur+1)/total*100) + '%';
+    if (history.replaceState) history.replaceState(null,'','#'+(cur+1));
+  }
+
+  document.addEventListener('keydown', function(e){
+    if (e.key==='ArrowRight' || e.key===' ' || e.key==='PageDown') { e.preventDefault(); show(cur+1); }
+    else if (e.key==='ArrowLeft' || e.key==='PageUp') { e.preventDefault(); show(cur-1); }
+    else if (e.key==='Home') show(0);
+    else if (e.key==='End') show(total-1);
+    else if (e.key==='f' || e.key==='F'){
+      if (document.fullscreenElement) document.exitFullscreen();
+      else document.documentElement.requestFullscreen();
+    }
+  });
+  document.getElementById('stage').addEventListener('click', function(e){
+    var r = this.getBoundingClientRect();
+    show((e.clientX - r.left) < r.width*0.25 ? cur-1 : cur+1);
+  });
+
+  // Widget de inferencia de la TUI: cajitas ■/□ llenándose en ciclo
+  var sq = document.getElementById('squares'), f = 0;
+  setInterval(function(){
+    f = (f+1) % 6;
+    sq.textContent = '■'.repeat(f) + '□'.repeat(5-f) || '□□□□□';
+  }, 380);
+
+  var h = parseInt((location.hash||'').slice(1), 10);
+  show(isNaN(h) ? 0 : h-1);
+})();
+</script>
+</body>
+</html>

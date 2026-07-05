@@ -148,3 +148,20 @@ Pick the helper by the parameter's real-world domain — don't inline ad hoc `ma
 - **Domain-agnostic value that can legitimately be negative** (EPS, EBITDA, book value, free cash flow, a currency amount) → `validateFinite`/`validateFiniteAll` only — reject NaN/±Inf, but don't impose a sign or range bound the domain doesn't guarantee.
 
 When adding a new `calc*` function, its dispatch `case` in `tools.go` needs no additional validation — the function itself is the enforcement point.
+
+### Keeping the TFM presentation in sync (`doc/presentacion.html`)
+
+`doc/presentacion.html` is the TFM defense deck. It quotes real numbers from this codebase, so when a change alters one of them, update **only the affected figure(s)** in the HTML — edit the text in place; do not restructure slides, rewrite copy, rename CSS classes, or touch the styling/layout/JS. The deck's look and feel deliberately mirrors the TUI dark theme and must stay intact.
+
+Code-derived figures the deck quotes (and where the truth lives):
+
+- **52 tools** and the per-category counts (18 calculation, 14 portfolio, 9 market, 6 technical indicators, 3 time, 1 news, 1 currency) → `buildTools()` in `pkg/agent/tools.go` / `TestBuildTools_Count`. If you change the tool count, also rescale the category bar widths (`.toolcat .bar i`, sized relative to the largest category).
+- **433 test functions / 236 in pkg/agent** → recount with `grep -rn "func Test" --include="*_test.go" | wc -l`.
+- **4 AI drivers (Anthropic · Gemini · Ollama · MiniMax) and 1 market driver (FMP)** → `pkg/registry/`. A new driver changes slides 5, 6 and possibly 3/15.
+- **~23,500 LOC · 14 packages · Go 1.25 · 24 TUI screens · 2 locales · 6 themes** → recount when they drift meaningfully.
+- **≤ 10 ReAct iterations · 3 TaskTypes** → `maxLoopIterations` in `pkg/agent/agent.go`, `llm.TaskType`.
+- **Monte Carlo up to 100,000 paths** → `pkg/agent/math.go`.
+- **Argon2id (64 MiB, 16 B salt) + AES-256-GCM (12 B nonce)** → `pkg/config/crypto.go`.
+- **FIFO lots · 6 transaction types · HHI · rebalancing** → `pkg/portfolio/`.
+
+Roadmap items on slide 14 (chat streaming, alerts, more asset classes, broker drivers) are described as *future* work — if one ships, move it from roadmap phrasing to a factual claim instead of leaving it stale.
