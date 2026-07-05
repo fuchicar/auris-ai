@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"math/rand/v2"
 	"sort"
 	"strings"
 )
@@ -686,6 +687,89 @@ func calcStressTest(currentValue float64, shocksPercent []float64, label string)
 		WorstCase:    wc,
 		Summary: fmt.Sprintf("stress test on %s: %d scenarios, worst case %.2f%% → %.2f (Δ%.2f)",
 			subject, len(scenarios), wc.ShockPercent, wc.ResultingValue, wc.ChangeAbsolute),
+	}, nil
+}
+
+// --- Monte Carlo simulation ----------------------------------------------------
+
+// maxMonteCarloSimulations bounds num_simulations. This is a resource guard
+// (num_simulations directly controls a loop length supplied by the LLM), not
+// a "plausible financial range" check — thousands of simulations already
+// give stable percentiles, so 100k leaves ample headroom while keeping the
+// loop's time and memory footprint small.
+const maxMonteCarloSimulations = 100000
+
+// monteCarloTradingDaysPerYear mirrors the annualisation convention already
+// used by calcVolatility/calcSharpe, since drift_annual/volatility_annual are
+// expected to come from those same tools (DD-3).
+const monteCarloTradingDaysPerYear = 252.0
+
+type monteCarloResult struct {
+	MeanFinalPrice   float64 `json:"mean_final_price"`
+	MedianFinalPrice float64 `json:"median_final_price"` // P50
+	P5FinalPrice     float64 `json:"p5_final_price"`
+	P95FinalPrice    float64 `json:"p95_final_price"`
+	ProbAbovePercent float64 `json:"prob_above_start_percent"`
+	Days             int     `json:"days"`
+	NumSimulations   int     `json:"num_simulations"`
+	Summary          string  `json:"summary"`
+}
+
+// calcMonteCarloSimulation simulates the terminal price distribution under
+// Geometric Brownian Motion using the closed-form solution
+// S(T) = S(0)·exp((μ − ½σ²)·T + σ·√T·Z), Z ~ N(0,1) — only the final-price
+// distribution is needed, so this avoids day-by-day path stepping.
+func calcMonteCarloSimulation(lastPrice, driftAnnual, volatilityAnnual float64, days, numSimulations int) (monteCarloResult, error) {
+	if lastPrice <= 0 {
+		return monteCarloResult{}, errors.New("last_price must be greater than zero")
+	}
+	if days <= 0 {
+		return monteCarloResult{}, errors.New("days must be greater than zero")
+	}
+	if volatilityAnnual < 0 {
+		return monteCarloResult{}, errors.New("volatility_annual must be >= 0")
+	}
+	if numSimulations <= 0 {
+		return monteCarloResult{}, errors.New("num_simulations must be greater than zero")
+	}
+	if numSimulations > maxMonteCarloSimulations {
+		return monteCarloResult{}, fmt.Errorf("num_simulations must be <= %d", maxMonteCarloSimulations)
+	}
+
+	t := float64(days) / monteCarloTradingDaysPerYear
+	drift := (driftAnnual - 0.5*volatilityAnnual*volatilityAnnual) * t
+	diffusionSD := volatilityAnnual * math.Sqrt(t)
+
+	finals := make([]float64, numSimulations)
+	above := 0
+	sum := 0.0
+	for i := 0; i < numSimulations; i++ {
+		z := rand.NormFloat64()
+		final := lastPrice * math.Exp(drift+diffusionSD*z)
+		finals[i] = final
+		sum += final
+		if final > lastPrice {
+			above++
+		}
+	}
+	sort.Float64s(finals)
+
+	mean := sum / float64(numSimulations)
+	p5 := percentileInterp(finals, 0.05)
+	p50 := percentileInterp(finals, 0.50)
+	p95 := percentileInterp(finals, 0.95)
+	probAbove := float64(above) / float64(numSimulations) * 100
+
+	return monteCarloResult{
+		MeanFinalPrice:   round2(mean),
+		MedianFinalPrice: round2(p50),
+		P5FinalPrice:     round2(p5),
+		P95FinalPrice:    round2(p95),
+		ProbAbovePercent: round4(probAbove),
+		Days:             days,
+		NumSimulations:   numSimulations,
+		Summary: fmt.Sprintf("Monte Carlo (GBM, %d sims, %d days): mean=%.2f, P5=%.2f, P50=%.2f, P95=%.2f, P(up)=%.2f%%",
+			numSimulations, days, mean, p5, p50, p95, probAbove),
 	}, nil
 }
 

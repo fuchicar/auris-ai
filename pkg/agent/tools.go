@@ -185,6 +185,16 @@ func buildTools() []llm.Tool {
 				"method":           enum("Calculation method", []any{"parametric", "historical"}),
 			}, []string{"returns", "confidence_level", "portfolio_value", "method"}),
 		),
+		tool("calculate_monte_carlo_simulation",
+			"Simulate future price paths using Geometric Brownian Motion (GBM) and return the distribution of the final price after the given horizon. drift_annual and volatility_annual are decimal fractions (e.g. 0.08 = 8%), typically computed by the LLM beforehand via calculate_volatility/calculate_roi on historical prices — this tool only runs the simulation engine, it does not fetch or derive them.",
+			obj(map[string]any{
+				"last_price":        numProp("Current/starting price (must be > 0)"),
+				"drift_annual":      numProp("Expected annualized drift as a decimal fraction, e.g. 0.08 for 8%"),
+				"volatility_annual": numProp("Annualized volatility as a decimal fraction, e.g. 0.25 for 25% (must be >= 0)"),
+				"days":              intProp("Simulation horizon in trading days (must be > 0)"),
+				"num_simulations":   intProp("Number of simulated price paths (must be > 0, max 100000)"),
+			}, []string{"last_price", "drift_annual", "volatility_annual", "days", "num_simulations"}),
+		),
 		tool("calculate_dcf",
 			"Calculate intrinsic value using discounted cash flow (DCF) with Gordon Growth Model terminal value.",
 			obj(map[string]any{
@@ -582,6 +592,9 @@ func (a *Agent) dispatchInner(ctx context.Context, call llm.ToolCall, lastKind *
 			return `error: returns must be an array of numbers`
 		}
 		return encode(calcVaR(returns, numVal("confidence_level"), numVal("portfolio_value"), str("method")))
+	case "calculate_monte_carlo_simulation":
+		return encode(calcMonteCarloSimulation(numVal("last_price"), numVal("drift_annual"), numVal("volatility_annual"),
+			intVal("days", 0), intVal("num_simulations", 0)))
 	case "calculate_dcf":
 		fcf, ok := arrNumVal("free_cash_flows")
 		if !ok {

@@ -679,6 +679,92 @@ func TestCalcStressTest_EmptyShocks(t *testing.T) {
 	}
 }
 
+// ---- calcMonteCarloSimulation ------------------------------------------------
+
+func TestCalcMonteCarloSimulation_ZeroDriftAndVolatility(t *testing.T) {
+	// With no drift and no volatility, every path is flat: all final prices
+	// equal last_price, so mean/P5/P50/P95 collapse to it and nothing is
+	// ever strictly above the start.
+	r, err := calcMonteCarloSimulation(100, 0, 0, 30, 1000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !approxEqual(r.MeanFinalPrice, 100, 0.001) {
+		t.Errorf("MeanFinalPrice: want 100, got %v", r.MeanFinalPrice)
+	}
+	if !approxEqual(r.MedianFinalPrice, 100, 0.001) {
+		t.Errorf("MedianFinalPrice: want 100, got %v", r.MedianFinalPrice)
+	}
+	if !approxEqual(r.P5FinalPrice, 100, 0.001) || !approxEqual(r.P95FinalPrice, 100, 0.001) {
+		t.Errorf("P5/P95: want 100/100, got %v/%v", r.P5FinalPrice, r.P95FinalPrice)
+	}
+	if r.ProbAbovePercent != 0 {
+		t.Errorf("ProbAbovePercent: want 0, got %v", r.ProbAbovePercent)
+	}
+	if r.Days != 30 || r.NumSimulations != 1000 {
+		t.Errorf("Days/NumSimulations should echo input, got %d/%d", r.Days, r.NumSimulations)
+	}
+}
+
+func TestCalcMonteCarloSimulation_PositiveDrift_MeanTracksExpectedGrowth(t *testing.T) {
+	// Large sample to keep the test stable without a fixed seed. Expected
+	// mean of GBM's terminal price is last_price * exp(drift_annual * T).
+	const lastPrice, driftAnnual, volAnnual = 100.0, 0.20, 0.10
+	const days = 252
+	r, err := calcMonteCarloSimulation(lastPrice, driftAnnual, volAnnual, days, 50000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := lastPrice * math.Exp(driftAnnual*float64(days)/252.0)
+	// Generous tolerance: this is a statistical check, not exact arithmetic.
+	if !approxEqual(r.MeanFinalPrice, want, want*0.05) {
+		t.Errorf("MeanFinalPrice: want ~%.2f (±5%%), got %v", want, r.MeanFinalPrice)
+	}
+	if r.ProbAbovePercent <= 50 {
+		t.Errorf("positive drift should push most paths above the start, got ProbAbovePercent=%v", r.ProbAbovePercent)
+	}
+}
+
+func TestCalcMonteCarloSimulation_PercentileOrdering(t *testing.T) {
+	r, err := calcMonteCarloSimulation(100, 0.05, 0.25, 90, 5000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !(r.P5FinalPrice <= r.MedianFinalPrice && r.MedianFinalPrice <= r.P95FinalPrice) {
+		t.Errorf("expected P5 <= P50 <= P95, got %v <= %v <= %v", r.P5FinalPrice, r.MedianFinalPrice, r.P95FinalPrice)
+	}
+}
+
+func TestCalcMonteCarloSimulation_InvalidLastPrice(t *testing.T) {
+	if _, err := calcMonteCarloSimulation(0, 0.05, 0.2, 30, 100); err == nil {
+		t.Error("expected error for last_price <= 0")
+	}
+}
+
+func TestCalcMonteCarloSimulation_InvalidDays(t *testing.T) {
+	if _, err := calcMonteCarloSimulation(100, 0.05, 0.2, 0, 100); err == nil {
+		t.Error("expected error for days <= 0")
+	}
+}
+
+func TestCalcMonteCarloSimulation_InvalidNumSimulations(t *testing.T) {
+	if _, err := calcMonteCarloSimulation(100, 0.05, 0.2, 30, 0); err == nil {
+		t.Error("expected error for num_simulations <= 0")
+	}
+}
+
+func TestCalcMonteCarloSimulation_NumSimulationsOverCap(t *testing.T) {
+	if _, err := calcMonteCarloSimulation(100, 0.05, 0.2, 30, maxMonteCarloSimulations+1); err == nil {
+		t.Error("expected error for num_simulations over the cap")
+	}
+}
+
+func TestCalcMonteCarloSimulation_NegativeVolatility(t *testing.T) {
+	if _, err := calcMonteCarloSimulation(100, 0.05, -0.1, 30, 100); err == nil {
+		t.Error("expected error for negative volatility_annual")
+	}
+}
+
 // ---- calcCurrencyConversion --------------------------------------------------
 
 func TestCalcCurrencyConversion_Normal(t *testing.T) {
@@ -1765,6 +1851,52 @@ func TestDispatch_CalculateStressTest_OK(t *testing.T) {
 	}
 	if !approxEqual(r.WorstCase.ResultingValue, 6000, 0.01) {
 		t.Errorf("WorstCase.ResultingValue: want 6000, got %v", r.WorstCase.ResultingValue)
+	}
+}
+
+func TestDispatch_CalculateMonteCarloSimulation_OK(t *testing.T) {
+	a := New(&mockLLM{}, &mockMarket{}, "")
+	var lk ProgressKind
+	args := toolCallArgs(t, map[string]any{
+		"last_price":        100.0,
+		"drift_annual":      0.08,
+		"volatility_annual": 0.25,
+		"days":              90.0,
+		"num_simulations":   5000.0,
+	})
+	result := a.dispatch(context.Background(), llm.ToolCall{
+		Function: llm.ToolCallFunction{Name: "calculate_monte_carlo_simulation", Arguments: args},
+	}, &lk)
+	if result[:6] == "error:" {
+		t.Fatalf("unexpected error: %s", result)
+	}
+	var r monteCarloResult
+	if err := json.Unmarshal([]byte(result), &r); err != nil {
+		t.Fatalf("invalid JSON: %s — %v", result, err)
+	}
+	if r.Days != 90 {
+		t.Errorf("Days: want 90, got %d", r.Days)
+	}
+	if r.NumSimulations != 5000 {
+		t.Errorf("NumSimulations: want 5000, got %d", r.NumSimulations)
+	}
+}
+
+func TestDispatch_CalculateMonteCarloSimulation_InvalidInput(t *testing.T) {
+	a := New(&mockLLM{}, &mockMarket{}, "")
+	var lk ProgressKind
+	args := toolCallArgs(t, map[string]any{
+		"last_price":        0.0,
+		"drift_annual":      0.08,
+		"volatility_annual": 0.25,
+		"days":              90.0,
+		"num_simulations":   5000.0,
+	})
+	result := a.dispatch(context.Background(), llm.ToolCall{
+		Function: llm.ToolCallFunction{Name: "calculate_monte_carlo_simulation", Arguments: args},
+	}, &lk)
+	if result[:6] != "error:" {
+		t.Errorf("last_price <= 0 should produce an error, got %s", result)
 	}
 }
 
