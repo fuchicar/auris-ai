@@ -152,9 +152,14 @@ func (d *Driver) Stream(ctx context.Context, req llm.CompletionRequest) (<-chan 
 	}
 	contents, config := buildRequest(req)
 
-	ch := make(chan llm.StreamChunk, 16)
+	ch := make(chan llm.StreamChunk, 64)
 	go func() {
 		defer close(ch)
+		// mergedParts accumulates content parts across chunks (Gemini streams
+		// incremental deltas per candidate) so the terminal chunk can extract
+		// ToolCalls and rebuild an Extra["gemini:content"] payload identical in
+		// shape to what mapResponse produces for Complete.
+		var mergedParts []*genai.Part
 		for resp, err := range client.Models.GenerateContentStream(ctx, req.Model, contents, config) {
 			if err != nil {
 				ch <- llm.StreamChunk{Done: true, Err: fmt.Errorf("gemini: Stream: %w", mapErr(err))}
@@ -164,13 +169,27 @@ func (d *Driver) Stream(ctx context.Context, req llm.CompletionRequest) (<-chan 
 				continue
 			}
 			cand := resp.Candidates[0]
-			text := extractText(cand.Content)
+			var textDelta string
+			if cand.Content != nil {
+				textDelta = extractText(cand.Content)
+				mergedParts = append(mergedParts, cand.Content.Parts...)
+			}
 			done := cand.FinishReason != genai.FinishReasonUnspecified
-			chunk := llm.StreamChunk{Content: text, Done: done}
-			if done && resp.UsageMetadata != nil {
-				chunk.Usage = llm.TokenUsage{
-					PromptTokens:     int(resp.UsageMetadata.PromptTokenCount),
-					CompletionTokens: int(resp.UsageMetadata.CandidatesTokenCount),
+			chunk := llm.StreamChunk{Content: textDelta, Done: done}
+			if done {
+				toolCalls := partsToToolCalls(mergedParts)
+				if len(toolCalls) > 0 {
+					chunk.ToolCalls = toolCalls
+					chunk.Extra = map[string]any{
+						"gemini:content": &genai.Content{Role: "model", Parts: mergedParts},
+					}
+				}
+				chunk.StopReason = mapFinishReason(cand.FinishReason, len(toolCalls) > 0)
+				if resp.UsageMetadata != nil {
+					chunk.Usage = llm.TokenUsage{
+						PromptTokens:     int(resp.UsageMetadata.PromptTokenCount),
+						CompletionTokens: int(resp.UsageMetadata.CandidatesTokenCount),
+					}
 				}
 			}
 			ch <- chunk
@@ -307,24 +326,8 @@ func mapResponse(resp *genai.GenerateContentResponse) (llm.CompletionResponse, e
 	msg := llm.Message{Role: llm.RoleAssistant}
 
 	var toolCalls []llm.ToolCall
-	var textParts []string
-
 	if cand.Content != nil {
-		for _, part := range cand.Content.Parts {
-			switch {
-			case part.FunctionCall != nil:
-				argsJSON, _ := json.Marshal(part.FunctionCall.Args)
-				toolCalls = append(toolCalls, llm.ToolCall{
-					ID: part.FunctionCall.Name,
-					Function: llm.ToolCallFunction{
-						Name:      part.FunctionCall.Name,
-						Arguments: string(argsJSON),
-					},
-				})
-			case part.Text != "":
-				textParts = append(textParts, part.Text)
-			}
-		}
+		toolCalls = partsToToolCalls(cand.Content.Parts)
 	}
 
 	if len(toolCalls) > 0 {
@@ -335,7 +338,7 @@ func mapResponse(resp *genai.GenerateContentResponse) (llm.CompletionResponse, e
 			msg.Extra = map[string]any{"gemini:content": cand.Content}
 		}
 	} else {
-		msg.Content = strings.Join(textParts, "")
+		msg.Content = extractText(cand.Content)
 	}
 
 	var usage llm.TokenUsage
@@ -351,6 +354,25 @@ func mapResponse(resp *genai.GenerateContentResponse) (llm.CompletionResponse, e
 		Usage:      usage,
 		StopReason: mapFinishReason(cand.FinishReason, len(toolCalls) > 0),
 	}, nil
+}
+
+// partsToToolCalls extracts ToolCalls from content parts. Shared by mapResponse
+// and Stream so tool-call parsing isn't re-derived per code path.
+func partsToToolCalls(parts []*genai.Part) []llm.ToolCall {
+	var toolCalls []llm.ToolCall
+	for _, part := range parts {
+		if part.FunctionCall != nil {
+			argsJSON, _ := json.Marshal(part.FunctionCall.Args)
+			toolCalls = append(toolCalls, llm.ToolCall{
+				ID: part.FunctionCall.Name,
+				Function: llm.ToolCallFunction{
+					Name:      part.FunctionCall.Name,
+					Arguments: string(argsJSON),
+				},
+			})
+		}
+	}
+	return toolCalls
 }
 
 // extractText concatenates all Text parts from a Content.

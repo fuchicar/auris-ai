@@ -331,3 +331,66 @@ func TestComplete_ToolCall(t *testing.T) {
 		t.Error("expected non-empty Content in final response")
 	}
 }
+
+// TestStream_ToolCall documents that the delegation to the embedded Anthropic
+// driver preserves ToolCalls/StopReason/Extra on the terminal StreamChunk —
+// it does not re-test the accumulation logic itself (covered in the
+// anthropic package), only that MiniMax's thin wrapper doesn't lose them.
+func TestStream_ToolCall(t *testing.T) {
+	d := newConnectedDriver(t)
+	model := preferredModel(t, d)
+
+	tool := llm.Tool{
+		Type: "function",
+		Function: llm.ToolFunction{
+			Name:        "get_weather",
+			Description: "Get the current weather for a location.",
+			Parameters: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"location": map[string]any{
+						"type":        "string",
+						"description": "City name",
+					},
+				},
+				"required": []any{"location"},
+			},
+		},
+	}
+
+	ch, err := d.Stream(context.Background(), llm.CompletionRequest{
+		Model: model.ID,
+		Messages: []llm.Message{
+			{Role: llm.RoleUser, Content: "What is the weather in Madrid?"},
+		},
+		Tools: []llm.Tool{tool},
+	})
+	if err != nil {
+		skipIfRateLimited(t, err)
+		t.Fatalf("Stream: %v", err)
+	}
+
+	var final llm.StreamChunk
+	for chunk := range ch {
+		if chunk.Err != nil {
+			skipIfRateLimited(t, chunk.Err)
+			t.Fatalf("stream error: %v", chunk.Err)
+		}
+		if chunk.Done {
+			final = chunk
+		}
+	}
+
+	if final.StopReason != "tool_calls" {
+		t.Skipf("model did not invoke tool (stop_reason=%q); skipping tool-call assertions", final.StopReason)
+	}
+	if len(final.ToolCalls) == 0 {
+		t.Fatal("expected at least one ToolCall on the terminal chunk")
+	}
+	if final.ToolCalls[0].Function.Name != "get_weather" {
+		t.Errorf("expected tool name %q, got %q", "get_weather", final.ToolCalls[0].Function.Name)
+	}
+	if final.Extra == nil {
+		t.Error("expected Extra to carry the anthropic:content round-trip payload")
+	}
+}

@@ -56,7 +56,7 @@ cmd/auris/           — Entry point
 - `types.go` — `Message`, `Role`, `ToolCall`, `Tool`, `CompletionRequest/Response`, `StreamChunk`, `Model`, `TaskType`.
 - `errors.go` — Sentinel errors: `ErrNotConnected`, `ErrUnauthorized`, `ErrModelNotFound`, `ErrContextTooLong`, `ErrRateLimit`, `ErrNotSupported`.
 
-`Stream` always closes its channel after a `Done == true` chunk (even on cancellation) — callers can safely `range` over it.
+`Stream` always closes its channel after a `Done == true` chunk (even on cancellation) — callers can safely `range` over it. `StreamChunk.ToolCalls`/`StopReason`/`Extra` mirror `CompletionResponse`'s fields and are populated only on that terminal chunk, so a caller can reconstruct the exact same `llm.Message` from a streamed call as it would get from `Complete`.
 
 ### FMP driver (`pkg/drivers/fmp/fmp.go`)
 
@@ -130,6 +130,7 @@ Each screen emits a typed `ScreenDoneMsg.Result` (e.g. `UnlockResult`, `APIKeyRe
 4. Add compile-time check: `var _ llm.AIProvider = (*Driver)(nil)`.
 5. Register in `pkg/registry/llm.go`.
 6. Integration tests must `t.Skip` if credentials are absent.
+7. If the provider supports tool calling, `Stream` must populate `StreamChunk.ToolCalls`/`StopReason`/`Extra` on the terminal chunk exactly as `Complete` populates `CompletionResponse`/`Message.Extra` — reuse the same mapping helper in both code paths rather than re-deriving the parsing (see `mapResponse` in the anthropic/gemini drivers, or the SDK's own accumulator where available, e.g. `sdk.Message.Accumulate` for Anthropic).
 
 ### Adding or removing agent tools
 
@@ -156,7 +157,7 @@ When adding a new `calc*` function, its dispatch `case` in `tools.go` needs no a
 Code-derived figures the deck quotes (and where the truth lives):
 
 - **57 tools** and the per-category counts (21 calculation, 16 portfolio, 9 market, 6 technical indicators, 3 time, 1 news, 1 currency) → `buildTools()` in `pkg/agent/tools.go` / `TestBuildTools_Count`. If you change the tool count, also rescale the category bar widths (`.toolcat .bar i`, sized relative to the largest category).
-- **488 test functions / 266 in pkg/agent** → recount with `grep -rn "func Test" --include="*_test.go" | wc -l`.
+- **498 test functions / 271 in pkg/agent** → recount with `grep -rn "func Test" --include="*_test.go" | wc -l`.
 - **4 AI drivers (Anthropic · Gemini · Ollama · MiniMax) and 1 market driver (FMP)** → `pkg/registry/`. A new driver changes slides 5, 6 and possibly 3/15.
 - **~23,500 LOC · 14 packages · Go 1.25 · 24 TUI screens · 2 locales · 6 themes** → recount when they drift meaningfully.
 - **≤ 10 ReAct iterations · 3 TaskTypes** → `maxLoopIterations` in `pkg/agent/agent.go`, `llm.TaskType`.

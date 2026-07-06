@@ -80,7 +80,22 @@ type StreamChunk struct {
 	Content string
 	Done    bool
 	Usage   TokenUsage // populated only on the final frame
-	Err     error
+
+	// ToolCalls and StopReason mirror CompletionResponse.ToolCalls/StopReason
+	// and are populated only on the terminal (Done == true) frame; intermediate
+	// chunks leave them zero. StopReason is "stop" | "tool_calls" | "length".
+	ToolCalls  []ToolCall
+	StopReason string
+
+	// Extra carries the same provider-specific round-trip payload as
+	// Message.Extra (e.g. "anthropic:content", "gemini:content"), populated
+	// only on the terminal frame when ToolCalls is non-empty. Callers that
+	// reconstruct a Message from a terminal StreamChunk must copy this
+	// straight into Message.Extra so multi-turn tool-calling conversations
+	// keep working.
+	Extra map[string]any
+
+	Err error
 }
 
 // TokenUsage carries prompt and completion token counts.

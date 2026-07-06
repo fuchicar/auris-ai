@@ -154,28 +154,37 @@ func (d *Driver) Stream(ctx context.Context, req llm.CompletionRequest) (<-chan 
 	}
 
 	stream := client.Messages.NewStreaming(ctx, params)
-	ch := make(chan llm.StreamChunk, 16)
+	ch := make(chan llm.StreamChunk, 64)
 
 	go func() {
 		defer close(ch)
 		defer stream.Close()
 
-		var finalUsage llm.TokenUsage
+		// acc accumulates the full SDK Message across events (including tool_use
+		// blocks assembled from content_block_start/input_json_delta) using the
+		// SDK's own accumulator, so mapResponse — the exact function Complete
+		// uses — can be reused verbatim for the terminal chunk instead of
+		// re-deriving tool-call/Extra parsing here.
+		var acc sdk.Message
 
 		for stream.Next() {
 			ev := stream.Current()
-			switch ev.Type {
-			case "message_start":
-				finalUsage.PromptTokens = int(ev.Message.Usage.InputTokens)
-			case "content_block_delta":
-				if ev.Delta.Type == "text_delta" && ev.Delta.Text != "" {
-					ch <- llm.StreamChunk{Content: ev.Delta.Text}
+			if err := acc.Accumulate(ev); err != nil {
+				ch <- llm.StreamChunk{Done: true, Err: fmt.Errorf("anthropic: Stream: accumulate: %w", err)}
+				return
+			}
+			if ev.Type == "content_block_delta" && ev.Delta.Type == "text_delta" && ev.Delta.Text != "" {
+				ch <- llm.StreamChunk{Content: ev.Delta.Text}
+			}
+			if ev.Type == "message_stop" {
+				resp := mapResponse(&acc)
+				ch <- llm.StreamChunk{
+					Done:       true,
+					Usage:      resp.Usage,
+					StopReason: resp.StopReason,
+					ToolCalls:  resp.Message.ToolCalls,
+					Extra:      resp.Message.Extra,
 				}
-			case "message_delta":
-				finalUsage.PromptTokens = int(ev.Usage.InputTokens)
-				finalUsage.CompletionTokens = int(ev.Usage.OutputTokens)
-			case "message_stop":
-				ch <- llm.StreamChunk{Done: true, Usage: finalUsage}
 				return
 			}
 		}
@@ -189,7 +198,15 @@ func (d *Driver) Stream(ctx context.Context, req llm.CompletionRequest) (<-chan 
 			return
 		}
 
-		ch <- llm.StreamChunk{Done: true, Usage: finalUsage}
+		// Defensive fallback: the stream ended without an explicit message_stop.
+		resp := mapResponse(&acc)
+		ch <- llm.StreamChunk{
+			Done:       true,
+			Usage:      resp.Usage,
+			StopReason: resp.StopReason,
+			ToolCalls:  resp.Message.ToolCalls,
+			Extra:      resp.Message.Extra,
+		}
 	}()
 
 	return ch, nil

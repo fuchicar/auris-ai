@@ -84,6 +84,10 @@ type agentResponseMsg struct {
 // agentProgressMsg is emitted while the agent executes tools, one per unique ProgressKind.
 type agentProgressMsg struct{ kind agent.ProgressKind }
 
+// agentStreamChunkMsg carries one incremental text fragment from the agent's
+// streaming LLM call.
+type agentStreamChunkMsg struct{ text string }
+
 // activeSessionChangedMsg notifies AppModel that the active session ID changed
 // so it can persist the updated config.
 type activeSessionChangedMsg struct{ id string }
@@ -112,8 +116,9 @@ type AgentModel struct {
 	width        int
 	height       int
 	progressCh   chan agent.ProgressEvent
-	toolLogs     []string // display-only tool activity lines for the current turn
-	toolLogsTurn int      // index into session.History of the user message that owns toolLogs
+	streamCh     chan string // delivers incremental LLM text fragments to streambuf
+	toolLogs     []string    // display-only tool activity lines for the current turn
+	toolLogsTurn int         // index into session.History of the user message that owns toolLogs
 
 	// infoMsg is a transient status line shown after /export (cleared on next send).
 	infoMsg string
@@ -219,9 +224,18 @@ func agentConnectCmd(provider llm.AIProvider, mp market.ProviderAPI) tea.Cmd {
 	}
 }
 
-func startAgentCmd(ag *agent.Agent, messages []llm.Message, ctx context.Context) tea.Cmd {
+// startAgentStreamCmd runs the agentic loop via ag.ChatStream, forwarding each
+// text fragment onto chunkCh as it arrives, and returns the same
+// agentResponseMsg contract as a blocking call once the loop completes.
+func startAgentStreamCmd(ag *agent.Agent, messages []llm.Message, ctx context.Context, chunkCh chan<- string) tea.Cmd {
 	return func() tea.Msg {
-		msg, err := ag.Chat(ctx, messages)
+		onDelta := func(s string) {
+			select {
+			case chunkCh <- s:
+			case <-ctx.Done():
+			}
+		}
+		msg, err := ag.ChatStream(ctx, messages, onDelta)
 		return agentResponseMsg{content: msg.Content, err: err}
 	}
 }
@@ -241,6 +255,18 @@ func listenProgressCmd(ch <-chan agent.ProgressEvent) tea.Cmd {
 			return nil
 		}
 		return agentProgressMsg{kind: ev.Kind}
+	}
+}
+
+// listenStreamCmd blocks on a single read from ch and returns the fragment.
+// It returns nil when the channel is closed, ending the listener chain.
+func listenStreamCmd(ch <-chan string) tea.Cmd {
+	return func() tea.Msg {
+		text, ok := <-ch
+		if !ok {
+			return nil
+		}
+		return agentStreamChunkMsg{text: text}
 	}
 }
 
@@ -298,6 +324,14 @@ func (m *AgentModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		return m, listenProgressCmd(m.progressCh)
+
+	case agentStreamChunkMsg:
+		m.streambuf.WriteString(msg.text)
+		if m.ready {
+			m.viewport.SetContent(m.renderHistory())
+			m.viewport.GotoBottom()
+		}
+		return m, listenStreamCmd(m.streamCh)
 
 	case agentExportMsg:
 		if msg.err != nil {
@@ -659,11 +693,15 @@ func (m *AgentModel) handleAgentResponse(msg agentResponseMsg) (tea.Model, tea.C
 	}
 	m.boxFrame = 0
 
-	// Signal the listener goroutine to stop.
+	// Signal the listener goroutines to stop.
 	if m.progressCh != nil {
 		close(m.progressCh)
 		m.progressCh = nil
 		m.ag.SetProgressCh(nil)
+	}
+	if m.streamCh != nil {
+		close(m.streamCh)
+		m.streamCh = nil
 	}
 
 	if errors.Is(msg.err, context.Canceled) {
@@ -749,6 +787,12 @@ func (m *AgentModel) sendMessage(text string) (tea.Model, tea.Cmd) {
 	m.progressCh = ch
 	m.ag.SetProgressCh(ch)
 
+	// Wire up the stream channel so incremental LLM text is reported back to
+	// the TUI. Buffer is larger than progressCh's since text fragments arrive
+	// far more frequently and in smaller units.
+	chunkCh := make(chan string, 64)
+	m.streamCh = chunkCh
+
 	// Start inference timer and animation.
 	ctx, cancel := context.WithCancel(context.Background())
 	m.inferenceCancel = cancel
@@ -763,7 +807,7 @@ func (m *AgentModel) sendMessage(text string) (tea.Model, tea.Cmd) {
 
 	msgs := make([]llm.Message, len(m.messages))
 	copy(msgs, m.messages)
-	return m, tea.Batch(m.spin.Tick, startAgentCmd(m.ag, msgs, ctx), listenProgressCmd(ch), inferenceTickCmd())
+	return m, tea.Batch(m.spin.Tick, startAgentStreamCmd(m.ag, msgs, ctx, chunkCh), listenProgressCmd(ch), listenStreamCmd(chunkCh), inferenceTickCmd())
 }
 
 // ensureRenderer creates or recreates the TermRenderer when the viewport width or

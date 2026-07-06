@@ -270,3 +270,154 @@ func TestStream_ContextCancellation(t *testing.T) {
 		}
 	}
 }
+
+func weatherTool() llm.Tool {
+	return llm.Tool{
+		Type: "function",
+		Function: llm.ToolFunction{
+			Name:        "get_weather",
+			Description: "Get the current weather for a location.",
+			Parameters: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"location": map[string]any{
+						"type":        "string",
+						"description": "City name",
+					},
+				},
+				"required": []any{"location"},
+			},
+		},
+	}
+}
+
+func TestComplete_ToolCall(t *testing.T) {
+	d := newConnectedDriver(t)
+	model := cheapestModel(t, d)
+	tool := weatherTool()
+
+	msgs := []llm.Message{
+		{Role: llm.RoleUser, Content: "What is the weather in Madrid?"},
+	}
+
+	resp, err := d.Complete(context.Background(), llm.CompletionRequest{
+		Model:    model.ID,
+		Messages: msgs,
+		Tools:    []llm.Tool{tool},
+	})
+	skipIfRateLimited(t, err)
+	if err != nil {
+		t.Fatalf("Complete (first turn): %v", err)
+	}
+	if resp.StopReason != "tool_calls" {
+		t.Skipf("model did not invoke tool (stop_reason=%q); skipping round-trip assertion", resp.StopReason)
+	}
+	if len(resp.Message.ToolCalls) == 0 {
+		t.Fatal("expected at least one ToolCall")
+	}
+
+	tc := resp.Message.ToolCalls[0]
+	if tc.Function.Name != "get_weather" {
+		t.Errorf("expected tool name %q, got %q", "get_weather", tc.Function.Name)
+	}
+
+	msgs = append(msgs, resp.Message)
+	msgs = append(msgs, llm.Message{
+		Role:       llm.RoleTool,
+		Content:    `{"temperature": "22°C", "condition": "sunny"}`,
+		ToolCallID: tc.ID,
+	})
+
+	resp2, err := d.Complete(context.Background(), llm.CompletionRequest{
+		Model:    model.ID,
+		Messages: msgs,
+		Tools:    []llm.Tool{tool},
+	})
+	skipIfRateLimited(t, err)
+	if err != nil {
+		t.Fatalf("Complete (second turn): %v", err)
+	}
+	if resp2.StopReason == "tool_calls" {
+		t.Error("expected final text response in second turn, got another tool call")
+	}
+	if resp2.Message.Content == "" {
+		t.Error("expected non-empty Content in final response")
+	}
+}
+
+func TestStream_ToolCall(t *testing.T) {
+	d := newConnectedDriver(t)
+	model := cheapestModel(t, d)
+	tool := weatherTool()
+
+	msgs := []llm.Message{
+		{Role: llm.RoleUser, Content: "What is the weather in Madrid?"},
+	}
+
+	ch, err := d.Stream(context.Background(), llm.CompletionRequest{
+		Model:    model.ID,
+		Messages: msgs,
+		Tools:    []llm.Tool{tool},
+	})
+	skipIfRateLimited(t, err)
+	if err != nil {
+		t.Fatalf("Stream (first turn): %v", err)
+	}
+
+	var content strings.Builder
+	var final llm.StreamChunk
+	for chunk := range ch {
+		skipIfRateLimited(t, chunk.Err)
+		if chunk.Err != nil {
+			t.Fatalf("stream error: %v", chunk.Err)
+		}
+		content.WriteString(chunk.Content)
+		if chunk.Done {
+			final = chunk
+		}
+	}
+
+	if final.StopReason != "tool_calls" {
+		t.Skipf("model did not invoke tool (stop_reason=%q); skipping round-trip assertion", final.StopReason)
+	}
+	if len(final.ToolCalls) == 0 {
+		t.Fatal("expected at least one ToolCall on the terminal chunk")
+	}
+
+	tc := final.ToolCalls[0]
+	if tc.Function.Name != "get_weather" {
+		t.Errorf("expected tool name %q, got %q", "get_weather", tc.Function.Name)
+	}
+
+	// Reconstruct the assistant message the way runLoopStream would, then
+	// replay it into a second turn — this exercises the
+	// Extra["gemini:content"] round trip for a streamed tool-call turn.
+	assistantMsg := llm.Message{
+		Role:      llm.RoleAssistant,
+		Content:   content.String(),
+		ToolCalls: final.ToolCalls,
+		Extra:     final.Extra,
+	}
+	msgs = append(msgs, assistantMsg)
+	msgs = append(msgs, llm.Message{
+		Role:       llm.RoleTool,
+		Content:    `{"temperature": "22°C", "condition": "sunny"}`,
+		ToolCallID: tc.ID,
+	})
+
+	resp2, err := d.Complete(context.Background(), llm.CompletionRequest{
+		Model:    model.ID,
+		Messages: msgs,
+		Tools:    []llm.Tool{tool},
+	})
+	skipIfRateLimited(t, err)
+	if err != nil {
+		t.Fatalf("Complete (second turn): %v", err)
+	}
+	if resp2.StopReason == "tool_calls" {
+		t.Error("expected final text response in second turn, got another tool call")
+	}
+	if resp2.Message.Content == "" {
+		t.Error("expected non-empty Content in final response")
+	}
+}

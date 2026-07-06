@@ -194,6 +194,7 @@ func (d *Driver) Stream(ctx context.Context, req llm.CompletionRequest) (<-chan 
 		scanner := bufio.NewScanner(resp.Body)
 		scanner.Buffer(make([]byte, 0, 4096), 512*1024)
 
+		var toolCalls []llm.ToolCall
 		for scanner.Scan() {
 			line := scanner.Bytes()
 			if len(line) == 0 {
@@ -206,6 +207,13 @@ func (d *Driver) Stream(ctx context.Context, req llm.CompletionRequest) (<-chan 
 				return
 			}
 
+			// Ollama delivers tool calls as a complete object in a single frame
+			// (no incremental JSON to assemble across frames), which may or may
+			// not be the same frame that carries Done.
+			if len(frame.Message.ToolCalls) > 0 {
+				toolCalls = mapMessage(frame.Message).ToolCalls
+			}
+
 			chunk := llm.StreamChunk{
 				Content: frame.Message.Content,
 				Done:    frame.Done,
@@ -214,6 +222,12 @@ func (d *Driver) Stream(ctx context.Context, req llm.CompletionRequest) (<-chan 
 				chunk.Usage = llm.TokenUsage{
 					PromptTokens:     frame.PromptEvalCount,
 					CompletionTokens: frame.EvalCount,
+				}
+				if len(toolCalls) > 0 {
+					chunk.ToolCalls = toolCalls
+					chunk.StopReason = "tool_calls"
+				} else {
+					chunk.StopReason = "stop"
 				}
 			}
 			ch <- chunk

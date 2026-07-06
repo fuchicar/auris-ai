@@ -16,6 +16,12 @@ import (
 type mockLLM struct {
 	responses []llm.CompletionResponse
 	calls     int
+
+	// streamResponses configures Stream: each call consumes the next slice in
+	// order and replays it verbatim on the returned channel (the last element
+	// of each slice should have Done: true). Mirrors responses/calls above.
+	streamResponses [][]llm.StreamChunk
+	streamCalls     int
 }
 
 func (m *mockLLM) Name() string        { return "mock" }
@@ -30,7 +36,26 @@ func (m *mockLLM) ListModels(ctx context.Context) ([]llm.Model, error) {
 	return nil, nil
 }
 func (m *mockLLM) Stream(ctx context.Context, req llm.CompletionRequest) (<-chan llm.StreamChunk, error) {
-	return nil, llm.ErrNotSupported
+	if m.streamCalls >= len(m.streamResponses) {
+		return nil, errors.New("mock: no more stream responses")
+	}
+	chunks := m.streamResponses[m.streamCalls]
+	m.streamCalls++
+	ch := make(chan llm.StreamChunk, len(chunks))
+	go func() {
+		defer close(ch)
+		for _, c := range chunks {
+			select {
+			case ch <- c:
+			case <-ctx.Done():
+				return
+			}
+			if c.Done {
+				return
+			}
+		}
+	}()
+	return ch, nil
 }
 func (m *mockLLM) Complete(ctx context.Context, req llm.CompletionRequest) (llm.CompletionResponse, error) {
 	if m.calls >= len(m.responses) {

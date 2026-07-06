@@ -72,3 +72,11 @@ func (a *Agent) SetNewsProvider(p *news.Provider) {
 func (a *Agent) Chat(ctx context.Context, messages []llm.Message) (llm.Message, error) {
 	return runLoop(ctx, a, messages)
 }
+
+// ChatStream runs the agentic loop using the LLM's Stream API instead of
+// Complete, invoking onDelta with each text fragment as it arrives (onDelta
+// may be nil). It returns the same contract as Chat: the final assistant
+// message once the ReAct loop reaches a non-tool-call stop, or an error.
+func (a *Agent) ChatStream(ctx context.Context, messages []llm.Message, onDelta func(string)) (llm.Message, error) {
+	return runLoopStream(ctx, a, messages, onDelta)
+}
