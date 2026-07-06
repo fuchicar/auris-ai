@@ -506,6 +506,14 @@ func buildTools() []llm.Tool {
 				"to":               str("End of the comparison period, ISO 8601 or YYYY-MM-DD (optional; default today)"),
 			}, []string{}),
 		),
+		tool("portfolio_calculate_tax_pnl",
+			"Break down a portfolio's realized capital gains/losses into short-term (held <= 365 days) and long-term (held > 365 days) buckets, grouped by symbol with grand totals — tax-report-friendly. Reconstructed entirely from the portfolio's recorded sell transactions (see FEAT-2); needs no market data. Portfolios with no transaction history, or no sell transactions in the requested range, return an empty result rather than an error.",
+			obj(map[string]any{
+				"portfolio_id": str("Portfolio ID (optional; omit to use the current portfolio)"),
+				"from":         str("Start of the tax period, by sale date, ISO 8601 or YYYY-MM-DD (optional; omit for unbounded/all history)"),
+				"to":           str("End of the tax period, by sale date, ISO 8601 or YYYY-MM-DD (optional; omit for unbounded/all history)"),
+			}, []string{}),
+		),
 	}
 }
 
@@ -1599,6 +1607,27 @@ func (a *Agent) dispatchInner(ctx context.Context, call llm.ToolCall, lastKind *
 			result := buildBenchmarkComparison(p.ID, benchmarkSymbol, from, to,
 				periodReturn.ReturnPercent, benchmarkReturnPct, returnMethod,
 				missingHistorical, portfolioReturns, benchmarkDailyReturns)
+			result.ComputedAt = time.Now().UTC().Format(time.RFC3339)
+			return encode(result, nil)
+
+		case "portfolio_calculate_tax_pnl":
+			id, err := resolvePortfolioID()
+			if err != nil {
+				return encode(nil, err)
+			}
+			p, err := portfolio.LoadPortfolio(id)
+			if err != nil {
+				return encode(nil, err)
+			}
+			if p == nil {
+				return `error: portfolio not found`
+			}
+			from := parsePeriodDate("from", time.Time{})
+			to := parsePeriodDate("to", time.Time{})
+			result, err := portfolio.CalculateTaxPnL(p, from, to)
+			if err != nil {
+				return encode(nil, err)
+			}
 			result.ComputedAt = time.Now().UTC().Format(time.RFC3339)
 			return encode(result, nil)
 		}

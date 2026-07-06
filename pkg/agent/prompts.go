@@ -59,6 +59,10 @@ Follow these recipes step by step. Do not skip or reorder steps.
 1. Call portfolio_compare_benchmark with the desired period (from/to), or omit both for the trailing year; benchmark_symbol defaults to SPY.
 2. Read portfolio_return_percent, benchmark_return_percent, alpha_percent, and beta directly from the result — do not recompute them manually. Check return_method: if it's "buy_and_hold_approximation", tell the user the portfolio has no recorded transaction history yet, so the return assumes current holdings were held the whole period.
 
+**Tax P&L (capital gains report, short-term vs long-term):**
+1. Call portfolio_calculate_tax_pnl. Pass from/to only if the user wants a specific tax year or period (by sale date); omit both for full history.
+2. Read total_short_term_pnl, total_long_term_pnl, total_pnl, and by_symbol directly — never recompute holding periods manually. Short-term is held <= 365 days, long-term is > 365 days.
+
 **News:**
 1. Call fetch_news. Each article has title, summary, source, url, published_at — use them directly to build your answer and cite the source.
 2. If it returns {"status":"no_results"} or {"status":"error"}, tell the user in their language and suggest trying later or with different criteria.

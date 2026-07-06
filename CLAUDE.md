@@ -155,8 +155,8 @@ When adding a new `calc*` function, its dispatch `case` in `tools.go` needs no a
 
 Code-derived figures the deck quotes (and where the truth lives):
 
-- **56 tools** and the per-category counts (21 calculation, 15 portfolio, 9 market, 6 technical indicators, 3 time, 1 news, 1 currency) → `buildTools()` in `pkg/agent/tools.go` / `TestBuildTools_Count`. If you change the tool count, also rescale the category bar widths (`.toolcat .bar i`, sized relative to the largest category).
-- **468 test functions / 261 in pkg/agent** → recount with `grep -rn "func Test" --include="*_test.go" | wc -l`.
+- **57 tools** and the per-category counts (21 calculation, 16 portfolio, 9 market, 6 technical indicators, 3 time, 1 news, 1 currency) → `buildTools()` in `pkg/agent/tools.go` / `TestBuildTools_Count`. If you change the tool count, also rescale the category bar widths (`.toolcat .bar i`, sized relative to the largest category).
+- **488 test functions / 266 in pkg/agent** → recount with `grep -rn "func Test" --include="*_test.go" | wc -l`.
 - **4 AI drivers (Anthropic · Gemini · Ollama · MiniMax) and 1 market driver (FMP)** → `pkg/registry/`. A new driver changes slides 5, 6 and possibly 3/15.
 - **~23,500 LOC · 14 packages · Go 1.25 · 24 TUI screens · 2 locales · 6 themes** → recount when they drift meaningfully.
 - **≤ 10 ReAct iterations · 3 TaskTypes** → `maxLoopIterations` in `pkg/agent/agent.go`, `llm.TaskType`.
