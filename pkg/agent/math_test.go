@@ -154,6 +154,41 @@ func TestCalcSharpe_EmptyReturns(t *testing.T) {
 	}
 }
 
+// ---- calcSortino --------------------------------------------------------------
+
+func TestCalcSortino_Normal(t *testing.T) {
+	returns := []float64{0.01, -0.005, 0.02, -0.01, 0.015}
+	r, err := calcSortino(returns, 0.04)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Positive excess returns over a low risk-free rate → positive Sortino.
+	if r.SortinoRatio <= 0 {
+		t.Errorf("expected positive Sortino ratio, got %v", r.SortinoRatio)
+	}
+	if r.AnnualizedDownsideDeviationPercent <= 0 {
+		t.Errorf("expected positive annualised downside deviation, got %v", r.AnnualizedDownsideDeviationPercent)
+	}
+}
+
+func TestCalcSortino_ZeroDownsideDeviation(t *testing.T) {
+	// Every daily return is well above the daily risk-free rate implied by a
+	// 1% annual rate, so no observation falls below the MAR → downside
+	// deviation is zero and the ratio is undefined.
+	returns := []float64{0.05, 0.06, 0.055}
+	_, err := calcSortino(returns, 0.01)
+	if err == nil {
+		t.Error("expected error for zero downside deviation")
+	}
+}
+
+func TestCalcSortino_EmptyReturns(t *testing.T) {
+	_, err := calcSortino([]float64{}, 0.04)
+	if err == nil {
+		t.Error("expected error for empty returns")
+	}
+}
+
 // ---- calcMaxDrawdown ---------------------------------------------------------
 
 func TestCalcMaxDrawdown_Normal(t *testing.T) {
@@ -307,6 +342,97 @@ func TestCalcBeta_ZeroBenchmarkVariance(t *testing.T) {
 	_, err := calcBeta([]float64{0.01, 0.02, 0.03}, constant)
 	if err == nil {
 		t.Error("expected error for zero benchmark variance")
+	}
+}
+
+// ---- calcTreynor --------------------------------------------------------------
+
+func TestCalcTreynor_Normal(t *testing.T) {
+	returns := []float64{0.01, -0.005, 0.02, -0.01, 0.015}
+	r, err := calcTreynor(returns, 0.04, 1.2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Beta != 1.2 {
+		t.Errorf("Beta: want echoed input 1.2, got %v", r.Beta)
+	}
+	if r.AnnualizedReturnPercent == 0 {
+		t.Error("expected non-zero annualised return")
+	}
+}
+
+func TestCalcTreynor_NegativeBeta(t *testing.T) {
+	// A negative beta (inverse-correlated asset) must not be rejected — it
+	// simply flips the sign of the ratio relative to the same returns with a
+	// positive beta.
+	returns := []float64{0.01, -0.005, 0.02, -0.01, 0.015}
+	positive, err := calcTreynor(returns, 0.04, 1.5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	negative, err := calcTreynor(returns, 0.04, -1.5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !approxEqual(positive.TreynorRatioPercent, -negative.TreynorRatioPercent, 1e-9) {
+		t.Errorf("expected sign flip: positive=%v negative=%v", positive.TreynorRatioPercent, negative.TreynorRatioPercent)
+	}
+}
+
+func TestCalcTreynor_ZeroBeta(t *testing.T) {
+	returns := []float64{0.01, -0.005, 0.02, -0.01, 0.015}
+	_, err := calcTreynor(returns, 0.04, 0)
+	if err == nil {
+		t.Error("expected error for zero beta")
+	}
+}
+
+func TestCalcTreynor_EmptyReturns(t *testing.T) {
+	_, err := calcTreynor([]float64{}, 0.04, 1.0)
+	if err == nil {
+		t.Error("expected error for empty returns")
+	}
+}
+
+// ---- calcInformationRatio ------------------------------------------------------
+
+func TestCalcInformationRatio_Normal(t *testing.T) {
+	asset := []float64{0.02, 0.01, 0.03, 0.015, 0.025}
+	benchmark := []float64{0.01, 0.005, 0.015, 0.01, 0.012}
+	r, err := calcInformationRatio(asset, benchmark)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Asset consistently outperforms benchmark → positive information ratio.
+	if r.InformationRatio <= 0 {
+		t.Errorf("expected positive information ratio, got %v", r.InformationRatio)
+	}
+	if r.AnnualizedTrackingErrorPercent <= 0 {
+		t.Errorf("expected positive tracking error, got %v", r.AnnualizedTrackingErrorPercent)
+	}
+}
+
+func TestCalcInformationRatio_ZeroTrackingError(t *testing.T) {
+	// asset_returns identical to benchmark_returns → the difference series is
+	// all zero → tracking error is zero → undefined.
+	returns := []float64{0.01, 0.02, -0.01, 0.015}
+	_, err := calcInformationRatio(returns, returns)
+	if err == nil {
+		t.Error("expected error for zero tracking error")
+	}
+}
+
+func TestCalcInformationRatio_UnequalLength(t *testing.T) {
+	_, err := calcInformationRatio([]float64{0.01, 0.02}, []float64{0.01})
+	if err == nil {
+		t.Error("expected error for unequal length series")
+	}
+}
+
+func TestCalcInformationRatio_TooFewObservations(t *testing.T) {
+	_, err := calcInformationRatio([]float64{0.01}, []float64{0.02})
+	if err == nil {
+		t.Error("expected error for fewer than 2 observations")
 	}
 }
 

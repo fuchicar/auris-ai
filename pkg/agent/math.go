@@ -134,6 +134,65 @@ func calcSharpe(returns []float64, riskFreeAnnual float64) (sharpeResult, error)
 	}, nil
 }
 
+// --- Sortino -------------------------------------------------------------------
+
+type sortinoResult struct {
+	SortinoRatio                       float64 `json:"sortino_ratio"`
+	AnnualizedReturnPercent            float64 `json:"annualized_return_percent"`
+	AnnualizedDownsideDeviationPercent float64 `json:"annualized_downside_deviation_percent"`
+	Summary                            string  `json:"summary"`
+}
+
+// calcSortino computes the annualised Sortino ratio, a Sharpe variant that
+// only penalises downside volatility (returns below a minimum acceptable
+// return), leaving upside volatility unpenalised.
+// returns: daily returns in decimal (e.g. 0.01 = 1 %).
+// riskFreeAnnual: annual risk-free rate in decimal (e.g. 0.04 = 4 %), used
+// both as the excess-return benchmark (like calcSharpe) and as the minimum
+// acceptable return (MAR) below which a daily return counts as "downside".
+func calcSortino(returns []float64, riskFreeAnnual float64) (sortinoResult, error) {
+	if len(returns) == 0 {
+		return sortinoResult{}, errors.New("returns must not be empty")
+	}
+	if err := validateReturnSlice("returns", returns); err != nil {
+		return sortinoResult{}, err
+	}
+	if err := validateRate("risk_free_rate_annual", riskFreeAnnual); err != nil {
+		return sortinoResult{}, err
+	}
+	dailyRF := math.Pow(1+riskFreeAnnual, 1.0/252) - 1
+	m := meanFloat(returns)
+	dd := downsideDeviation(returns, dailyRF)
+	if dd == 0 {
+		return sortinoResult{}, errors.New("downside deviation is zero; Sortino ratio is undefined")
+	}
+	sortino := (m - dailyRF) / dd * math.Sqrt(252)
+	annReturn := (math.Pow(1+m, 252) - 1) * 100
+	annDD := dd * math.Sqrt(252) * 100
+	return sortinoResult{
+		SortinoRatio:                       round2(sortino),
+		AnnualizedReturnPercent:            round2(annReturn),
+		AnnualizedDownsideDeviationPercent: round2(annDD),
+		Summary:                            fmt.Sprintf("Sortino ratio: %.2f (ann. gross return: %.2f%% [before subtracting risk-free rate], ann. downside deviation: %.2f%%)", sortino, annReturn, annDD),
+	}, nil
+}
+
+// downsideDeviation returns the semi-deviation of xs below target, using the
+// full-population definition (Sortino & Price, 1994): the denominator is the
+// total observation count N, not just the count of sub-target observations,
+// and there is no Bessel correction (N-1) because target is an externally
+// supplied constant, not estimated from the sample — unlike sampleStddev's
+// mean, which is.
+func downsideDeviation(xs []float64, target float64) float64 {
+	sumSq := 0.0
+	for _, x := range xs {
+		if d := x - target; d < 0 {
+			sumSq += d * d
+		}
+	}
+	return math.Sqrt(sumSq / float64(len(xs)))
+}
+
 // --- Max Drawdown --------------------------------------------------------------
 
 type maxDrawdownResult struct {
@@ -397,6 +456,109 @@ func calcBeta(assetReturns, benchmarkReturns []float64) (betaResult, error) {
 		Correlation:    round4(corr),
 		Interpretation: interp,
 		Summary:        fmt.Sprintf("Beta: %.4f (%s), correlation with benchmark: %.4f", beta, interp, corr),
+	}, nil
+}
+
+// --- Treynor -------------------------------------------------------------------
+
+type treynorResult struct {
+	TreynorRatioPercent     float64 `json:"treynor_ratio_percent"`
+	AnnualizedReturnPercent float64 `json:"annualized_return_percent"`
+	Beta                    float64 `json:"beta"`
+	Summary                 string  `json:"summary"`
+}
+
+// calcTreynor computes the Treynor ratio: annualised excess return per unit
+// of systematic risk (beta), rather than per unit of total volatility like
+// calcSharpe/calcSortino. Unlike those two, the Treynor ratio is not
+// dimensionless — beta has no units, so the % units of the excess return
+// don't cancel out — hence it's reported as a percentage.
+// returns: daily returns of the asset in decimal (e.g. 0.01 = 1 %).
+// riskFreeAnnual: annual risk-free rate in decimal (e.g. 0.04 = 4 %).
+// beta: asset beta relative to its benchmark (e.g. from calculate_beta); can
+// legitimately be negative (inverse correlation) or above 2 (highly
+// levered/aggressive), so it's only checked for being finite and non-zero,
+// never range-bound.
+func calcTreynor(returns []float64, riskFreeAnnual, beta float64) (treynorResult, error) {
+	if len(returns) == 0 {
+		return treynorResult{}, errors.New("returns must not be empty")
+	}
+	if err := validateReturnSlice("returns", returns); err != nil {
+		return treynorResult{}, err
+	}
+	if err := validateRate("risk_free_rate_annual", riskFreeAnnual); err != nil {
+		return treynorResult{}, err
+	}
+	if err := validateFinite("beta", beta); err != nil {
+		return treynorResult{}, err
+	}
+	if beta == 0 {
+		return treynorResult{}, errors.New("beta is zero; Treynor ratio is undefined")
+	}
+	m := meanFloat(returns)
+	annReturn := math.Pow(1+m, 252) - 1
+	excess := annReturn - riskFreeAnnual
+	treynor := excess / beta * 100
+	return treynorResult{
+		TreynorRatioPercent:     round2(treynor),
+		AnnualizedReturnPercent: round2(annReturn * 100),
+		Beta:                    round4(beta),
+		Summary:                 fmt.Sprintf("Treynor ratio: %.2f%% (ann. return: %.2f%%, risk-free: %.2f%%, beta: %.4f)", treynor, annReturn*100, riskFreeAnnual*100, beta),
+	}, nil
+}
+
+// --- Information Ratio ----------------------------------------------------------
+
+type informationRatioResult struct {
+	InformationRatio               float64 `json:"information_ratio"`
+	AnnualizedActiveReturnPercent  float64 `json:"annualized_active_return_percent"`
+	AnnualizedTrackingErrorPercent float64 `json:"annualized_tracking_error_percent"`
+	Summary                        string  `json:"summary"`
+}
+
+// calcInformationRatio computes the information ratio: annualised active
+// return (asset minus benchmark, period by period) divided by the annualised
+// tracking error (the standard deviation of that active-return series). It
+// measures the quality/consistency of active management versus a benchmark.
+//
+// Unlike calcSharpe/calcSortino, the active-return series is annualised
+// arithmetically (×252) rather than via compounding (math.Pow): a spread of
+// daily excess returns isn't an actual investable return series, so
+// compounding it has no clean economic meaning. This also keeps the
+// displayed figures numerically consistent with the ratio itself, since
+// (meanDiff·252)/(stddev(diff)·√252) reduces to the same √252 shortcut used
+// for the ratio.
+func calcInformationRatio(assetReturns, benchmarkReturns []float64) (informationRatioResult, error) {
+	n := len(assetReturns)
+	if n != len(benchmarkReturns) {
+		return informationRatioResult{}, errors.New("asset_returns and benchmark_returns must have the same length")
+	}
+	if n < 2 {
+		return informationRatioResult{}, errors.New("at least 2 return observations required")
+	}
+	if err := validateReturnSlice("asset_returns", assetReturns); err != nil {
+		return informationRatioResult{}, err
+	}
+	if err := validateReturnSlice("benchmark_returns", benchmarkReturns); err != nil {
+		return informationRatioResult{}, err
+	}
+	diff := make([]float64, n)
+	for i := range assetReturns {
+		diff[i] = assetReturns[i] - benchmarkReturns[i]
+	}
+	m := meanFloat(diff)
+	te := sampleStddev(diff)
+	if te == 0 {
+		return informationRatioResult{}, errors.New("tracking error is zero; information ratio is undefined")
+	}
+	ir := m / te * math.Sqrt(252)
+	annActive := m * 252 * 100
+	annTE := te * math.Sqrt(252) * 100
+	return informationRatioResult{
+		InformationRatio:               round2(ir),
+		AnnualizedActiveReturnPercent:  round2(annActive),
+		AnnualizedTrackingErrorPercent: round2(annTE),
+		Summary:                        fmt.Sprintf("Information ratio: %.2f (ann. active return: %.2f%%, ann. tracking error: %.2f%%)", ir, annActive, annTE),
 	}, nil
 }
 

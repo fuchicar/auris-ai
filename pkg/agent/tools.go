@@ -156,6 +156,13 @@ func buildTools() []llm.Tool {
 				"risk_free_rate_annual": numProp("Annual risk-free rate in decimal form (e.g. 0.04 = 4%)"),
 			}, []string{"returns", "risk_free_rate_annual"}),
 		),
+		tool("calculate_sortino",
+			"Calculate the annualised Sortino ratio, a Sharpe variant that only penalises downside deviation (returns below the risk-free rate), from daily returns and an annual risk-free rate.",
+			obj(map[string]any{
+				"returns":               arrNum("Daily returns in decimal form (e.g. 0.01 = 1%)"),
+				"risk_free_rate_annual": numProp("Annual risk-free rate in decimal form (e.g. 0.04 = 4%), also used as the minimum acceptable return (MAR)"),
+			}, []string{"returns", "risk_free_rate_annual"}),
+		),
 		tool("calculate_max_drawdown",
 			"Calculate the maximum peak-to-trough drawdown from a chronological series of prices.",
 			obj(map[string]any{
@@ -173,6 +180,21 @@ func buildTools() []llm.Tool {
 		),
 		tool("calculate_beta",
 			"Calculate asset beta and correlation relative to a benchmark using daily return series of equal length.",
+			obj(map[string]any{
+				"asset_returns":     arrNum("Daily returns of the asset in decimal form"),
+				"benchmark_returns": arrNum("Daily returns of the benchmark in decimal form (same length as asset_returns)"),
+			}, []string{"asset_returns", "benchmark_returns"}),
+		),
+		tool("calculate_treynor",
+			"Calculate the Treynor ratio: annualised excess return per unit of systematic risk (beta), from daily returns, an annual risk-free rate, and a previously computed beta (e.g. from calculate_beta).",
+			obj(map[string]any{
+				"returns":               arrNum("Daily returns of the asset in decimal form (e.g. 0.01 = 1%)"),
+				"risk_free_rate_annual": numProp("Annual risk-free rate in decimal form (e.g. 0.04 = 4%)"),
+				"beta":                  numProp("Asset beta relative to its benchmark (e.g. from calculate_beta); can be negative or greater than 2"),
+			}, []string{"returns", "risk_free_rate_annual", "beta"}),
+		),
+		tool("calculate_information_ratio",
+			"Calculate the information ratio: annualised active return over tracking error, using daily return series of an asset and its benchmark of equal length.",
 			obj(map[string]any{
 				"asset_returns":     arrNum("Daily returns of the asset in decimal form"),
 				"benchmark_returns": arrNum("Daily returns of the benchmark in decimal form (same length as asset_returns)"),
@@ -671,6 +693,12 @@ func (a *Agent) dispatchInner(ctx context.Context, call llm.ToolCall, lastKind *
 			return `error: returns must be an array of numbers`
 		}
 		return encode(calcSharpe(returns, numVal("risk_free_rate_annual")))
+	case "calculate_sortino":
+		returns, ok := arrNumVal("returns")
+		if !ok {
+			return `error: returns must be an array of numbers`
+		}
+		return encode(calcSortino(returns, numVal("risk_free_rate_annual")))
 	case "calculate_max_drawdown":
 		prices, ok := arrNumVal("prices")
 		if !ok {
@@ -686,6 +714,19 @@ func (a *Agent) dispatchInner(ctx context.Context, call llm.ToolCall, lastKind *
 			return `error: asset_returns and benchmark_returns must be arrays of numbers`
 		}
 		return encode(calcBeta(ar, br))
+	case "calculate_treynor":
+		returns, ok := arrNumVal("returns")
+		if !ok {
+			return `error: returns must be an array of numbers`
+		}
+		return encode(calcTreynor(returns, numVal("risk_free_rate_annual"), numVal("beta")))
+	case "calculate_information_ratio":
+		ar, ok1 := arrNumVal("asset_returns")
+		br, ok2 := arrNumVal("benchmark_returns")
+		if !ok1 || !ok2 {
+			return `error: asset_returns and benchmark_returns must be arrays of numbers`
+		}
+		return encode(calcInformationRatio(ar, br))
 	case "calculate_var":
 		returns, ok := arrNumVal("returns")
 		if !ok {

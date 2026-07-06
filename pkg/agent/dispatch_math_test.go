@@ -85,12 +85,37 @@ func TestDispatch_MathTools_OK(t *testing.T) {
 			wantKey: "pnl_absolute",
 		},
 		{
+			tool: "calculate_sortino",
+			args: map[string]any{
+				"returns":               []any{0.01, -0.005, 0.02, -0.01, 0.015},
+				"risk_free_rate_annual": 0.04,
+			},
+			wantKey: "sortino_ratio",
+		},
+		{
 			tool: "calculate_beta",
 			args: map[string]any{
 				"asset_returns":     []any{0.01, -0.02, 0.015, -0.005, 0.02},
 				"benchmark_returns": []any{0.01, -0.02, 0.015, -0.005, 0.02},
 			},
 			wantKey: "beta",
+		},
+		{
+			tool: "calculate_treynor",
+			args: map[string]any{
+				"returns":               []any{0.01, -0.005, 0.02, -0.01, 0.015},
+				"risk_free_rate_annual": 0.04,
+				"beta":                  1.2,
+			},
+			wantKey: "treynor_ratio_percent",
+		},
+		{
+			tool: "calculate_information_ratio",
+			args: map[string]any{
+				"asset_returns":     []any{0.02, 0.01, 0.03, 0.015, 0.025},
+				"benchmark_returns": []any{0.01, 0.005, 0.015, 0.01, 0.012},
+			},
+			wantKey: "information_ratio",
 		},
 		{
 			tool: "calculate_var",
@@ -197,9 +222,24 @@ func TestDispatch_MathTools_Error(t *testing.T) {
 			"entry_price": 100.0, "current_price": 110.0,
 			"quantity": 10.0, "position_type": "buy",
 		}},
+		{"calculate_sortino", map[string]any{
+			// All returns comfortably above the risk-free rate → zero
+			// downside deviation → undefined ratio.
+			"returns":               []any{0.05, 0.06, 0.055},
+			"risk_free_rate_annual": 0.01,
+		}},
 		{"calculate_beta", map[string]any{
 			"asset_returns":     []any{0.01, -0.02},
 			"benchmark_returns": []any{0.01},
+		}},
+		{"calculate_treynor", map[string]any{
+			"returns":               []any{0.01, -0.005, 0.02, -0.01, 0.015},
+			"risk_free_rate_annual": 0.04,
+			"beta":                  0.0,
+		}},
+		{"calculate_information_ratio", map[string]any{
+			"asset_returns":     []any{0.01, -0.02, 0.015},
+			"benchmark_returns": []any{0.01, -0.02},
 		}},
 		{"calculate_var", map[string]any{
 			"returns":          []any{0.01, -0.01},
@@ -258,7 +298,10 @@ func TestDispatch_MathTools_BadArrayArg(t *testing.T) {
 		{"calculate_volatility", map[string]any{"prices": "not-an-array"}},
 		{"calculate_sharpe", map[string]any{"returns": "bad", "risk_free_rate_annual": 0.04}},
 		{"calculate_max_drawdown", map[string]any{"prices": 42.0}},
+		{"calculate_sortino", map[string]any{"returns": "bad", "risk_free_rate_annual": 0.04}},
 		{"calculate_beta", map[string]any{"asset_returns": "bad", "benchmark_returns": []any{0.01}}},
+		{"calculate_treynor", map[string]any{"returns": "bad", "risk_free_rate_annual": 0.04, "beta": 1.2}},
+		{"calculate_information_ratio", map[string]any{"asset_returns": "bad", "benchmark_returns": []any{0.01}}},
 		{"calculate_var", map[string]any{
 			"returns": "bad", "confidence_level": 0.95,
 			"portfolio_value": 1000.0, "method": "parametric",
