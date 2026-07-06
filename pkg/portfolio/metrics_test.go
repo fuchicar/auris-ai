@@ -441,3 +441,167 @@ func TestSuggestRebalance_SellsSortedBeforeBuys(t *testing.T) {
 		t.Errorf("expected sell before buy, got %s then %s", r.Operations[0].Action, r.Operations[1].Action)
 	}
 }
+
+// --- HoldingsAsOf / CashAsOf -------------------------------------------------
+
+func TestHoldingsAsOf_ReplaysBuysAndSells(t *testing.T) {
+	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	p := &Portfolio{ID: "test", Transactions: []Transaction{
+		{Type: TransactionBuy, Symbol: "AAPL", Quantity: 10, Date: base},
+		{Type: TransactionBuy, Symbol: "AAPL", Quantity: 5, Date: base.AddDate(0, 0, 10)},
+		{Type: TransactionSell, Symbol: "AAPL", Quantity: 3, Date: base.AddDate(0, 0, 20)},
+	}}
+	// Before any transaction: nothing held.
+	if qty := HoldingsAsOf(p, base.AddDate(0, 0, -1)); qty["AAPL"] != 0 {
+		t.Errorf("before first buy: want 0, got %v", qty["AAPL"])
+	}
+	// Between the two buys: only the first lot counted.
+	if qty := HoldingsAsOf(p, base.AddDate(0, 0, 5)); qty["AAPL"] != 10 {
+		t.Errorf("between buys: want 10, got %v", qty["AAPL"])
+	}
+	// After all transactions: 10 + 5 - 3 = 12.
+	if qty := HoldingsAsOf(p, base.AddDate(0, 0, 30)); qty["AAPL"] != 12 {
+		t.Errorf("after all txs: want 12, got %v", qty["AAPL"])
+	}
+}
+
+func TestHoldingsAsOf_NoTransactions_EmptyMap(t *testing.T) {
+	p := &Portfolio{ID: "test"}
+	qty := HoldingsAsOf(p, time.Now())
+	if len(qty) != 0 {
+		t.Errorf("want empty map, got %v", qty)
+	}
+}
+
+func TestCashAsOf_UndoesLaterTransactions(t *testing.T) {
+	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	p := &Portfolio{ID: "test", Cash: 200, Transactions: []Transaction{
+		{Type: TransactionDeposit, CashDelta: 1000, Date: base},
+		{Type: TransactionBuy, Symbol: "AAPL", CashDelta: -500, Date: base.AddDate(0, 0, 10)},
+		{Type: TransactionWithdrawal, CashDelta: -300, Date: base.AddDate(0, 0, 20)},
+	}}
+	// Cash right after the deposit, before the buy and withdrawal: 1000.
+	if c := CashAsOf(p, base.AddDate(0, 0, 5)); c != 1000 {
+		t.Errorf("after deposit only: want 1000, got %v", c)
+	}
+	// Cash after the buy, before the withdrawal: 1000 - 500 = 500.
+	if c := CashAsOf(p, base.AddDate(0, 0, 15)); c != 500 {
+		t.Errorf("after buy: want 500, got %v", c)
+	}
+	// Cash now (after everything): matches p.Cash.
+	if c := CashAsOf(p, base.AddDate(0, 0, 30)); c != 200 {
+		t.Errorf("after all txs: want 200, got %v", c)
+	}
+}
+
+// --- ComputePeriodReturn ------------------------------------------------------
+
+func TestComputePeriodReturn_NoExternalFlows_SimpleReturn(t *testing.T) {
+	from := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	to := from.AddDate(1, 0, 0)
+	p := &Portfolio{ID: "test"}
+	r, err := ComputePeriodReturn(p, from, to, 1000, 1100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !approxEqualP(r.ReturnPercent, 10.0, 0.001) {
+		t.Errorf("ReturnPercent: want 10, got %v", r.ReturnPercent)
+	}
+	if r.NetExternalFlow != 0 {
+		t.Errorf("NetExternalFlow: want 0, got %v", r.NetExternalFlow)
+	}
+}
+
+func TestComputePeriodReturn_DepositAtStart_ExcludedFromGain(t *testing.T) {
+	from := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	to := from.AddDate(0, 0, 100)
+	p := &Portfolio{ID: "test", Transactions: []Transaction{
+		// Deposited right at the start: fully time-weighted into the denominator.
+		{Type: TransactionDeposit, CashDelta: 500, Date: from},
+	}}
+	// Start 1000, deposit 500 immediately, end 1500 with zero investment gain.
+	r, err := ComputePeriodReturn(p, from, to, 1000, 1500)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !approxEqualP(r.ReturnPercent, 0.0, 0.01) {
+		t.Errorf("ReturnPercent: want ~0 (deposit fully explains the gain), got %v", r.ReturnPercent)
+	}
+	if r.NetExternalFlow != 500 {
+		t.Errorf("NetExternalFlow: want 500, got %v", r.NetExternalFlow)
+	}
+}
+
+func TestComputePeriodReturn_DepositAtEnd_WeightedNearZero(t *testing.T) {
+	from := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	to := from.AddDate(0, 0, 100)
+	p := &Portfolio{ID: "test", Transactions: []Transaction{
+		// Deposited on the very last day: barely time-weighted, so it should
+		// only mildly dilute the denominator (weight ≈ 0), unlike the
+		// day-one deposit case above.
+		{Type: TransactionDeposit, CashDelta: 500, Date: to},
+	}}
+	r, err := ComputePeriodReturn(p, from, to, 1000, 1500)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// (1500 - 1000 - 500) / (1000 + ~0) ≈ 0%, since the deposit itself
+	// accounts for the entire gain and it's barely weighted into the
+	// denominator either way — but unlike the day-one case, a genuine
+	// investment gain here would NOT be diluted by a near-zero-weighted flow.
+	if !approxEqualP(r.ReturnPercent, 0.0, 0.5) {
+		t.Errorf("ReturnPercent: want ~0, got %v", r.ReturnPercent)
+	}
+}
+
+func TestComputePeriodReturn_DividendsAndTradesExcludedFromFlows(t *testing.T) {
+	from := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	to := from.AddDate(0, 0, 100)
+	p := &Portfolio{ID: "test", Transactions: []Transaction{
+		{Type: TransactionDividend, CashDelta: 50, Date: from.AddDate(0, 0, 10)},
+		{Type: TransactionBuy, Symbol: "AAPL", CashDelta: -200, Date: from.AddDate(0, 0, 20)},
+		{Type: TransactionSell, Symbol: "AAPL", CashDelta: 250, Date: from.AddDate(0, 0, 30)},
+	}}
+	r, err := ComputePeriodReturn(p, from, to, 1000, 1100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.NetExternalFlow != 0 {
+		t.Errorf("NetExternalFlow: dividends/buys/sells must not count as external flows, got %v", r.NetExternalFlow)
+	}
+	if !approxEqualP(r.ReturnPercent, 10.0, 0.001) {
+		t.Errorf("ReturnPercent: want 10 (unaffected by internal flows), got %v", r.ReturnPercent)
+	}
+}
+
+func TestComputePeriodReturn_InvalidRange(t *testing.T) {
+	from := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	p := &Portfolio{ID: "test"}
+	if _, err := ComputePeriodReturn(p, from, from, 1000, 1100); !errors.Is(err, ErrPeriodInvalidRange) {
+		t.Errorf("want ErrPeriodInvalidRange, got %v", err)
+	}
+	if _, err := ComputePeriodReturn(p, from, from.AddDate(0, 0, -1), 1000, 1100); !errors.Is(err, ErrPeriodInvalidRange) {
+		t.Errorf("want ErrPeriodInvalidRange, got %v", err)
+	}
+}
+
+func TestComputePeriodReturn_ZeroDenominator(t *testing.T) {
+	from := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	to := from.AddDate(0, 0, 100)
+	p := &Portfolio{ID: "test", Transactions: []Transaction{
+		// A large withdrawal right at the start makes the time-weighted
+		// denominator zero/negative.
+		{Type: TransactionWithdrawal, CashDelta: -1000, Date: from},
+	}}
+	if _, err := ComputePeriodReturn(p, from, to, 1000, 100); !errors.Is(err, ErrPeriodZeroDenominator) {
+		t.Errorf("want ErrPeriodZeroDenominator, got %v", err)
+	}
+}
+
+func TestComputePeriodReturn_NilPortfolio(t *testing.T) {
+	from := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	to := from.AddDate(0, 0, 1)
+	if _, err := ComputePeriodReturn(nil, from, to, 1000, 1100); err == nil {
+		t.Error("want error for nil portfolio")
+	}
+}

@@ -240,7 +240,7 @@
         </div>
         <div class="card"><span class="ico ok">✓</span>
           <h3>Ni un número inventado</h3>
-          <p>VaR, Sharpe, DCF, Monte Carlo… 52 herramientas deterministas y testeadas ejecutan cada cálculo. La aritmética jamás sale del modelo.</p>
+          <p>VaR, Sharpe, DCF, Monte Carlo… 53 herramientas deterministas y testeadas ejecutan cada cálculo. La aritmética jamás sale del modelo.</p>
         </div>
         <div class="card"><span class="ico ok">✓</span>
           <h3>Local-first</h3>
@@ -297,7 +297,7 @@
           <div class="arrow">↓</div>
           <div class="box">pkg/tui <small>Bubble Tea · 24 pantallas · setup cifrado + chat + carteras</small></div>
           <div class="arrow">↓</div>
-          <div class="box" style="border-color:var(--accent2);background:rgba(124,58,237,.13)">pkg/agent <small>bucle ReAct · 52 tools · motor de cálculo · validación</small></div>
+          <div class="box" style="border-color:var(--accent2);background:rgba(124,58,237,.13)">pkg/agent <small>bucle ReAct · 53 tools · motor de cálculo · validación</small></div>
           <div class="arrow">↓&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;↓</div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:.8rem">
             <div class="box">pkg/llm <small>interfaz AIProvider</small></div>
@@ -369,7 +369,7 @@
         <div style="display:grid;grid-template-columns:1fr auto 1.3fr auto 1fr;gap:.7rem;align-items:center">
           <div class="box">pregunta<small>+ perfil financiero del usuario</small></div>
           <div class="arrow">→</div>
-          <div class="box" style="border-color:var(--accent2);background:rgba(124,58,237,.13)">LLM · Complete()<small>con las 52 tools declaradas</small></div>
+          <div class="box" style="border-color:var(--accent2);background:rgba(124,58,237,.13)">LLM · Complete()<small>con las 53 tools declaradas</small></div>
           <div class="arrow">→</div>
           <div class="box" style="border-color:var(--ok)"><span class="ok">respuesta final</span><small>stop_reason ≠ tool_calls</small></div>
         </div>
@@ -392,15 +392,15 @@
     </div>
   </section>
 
-  <!-- 8 ─ 52 herramientas ─────────────────────────────────────────────────── -->
+  <!-- 8 ─ 53 herramientas ─────────────────────────────────────────────────── -->
   <section class="slide" data-title="herramientas">
     <div class="eyebrow">07 · capacidades</div>
-    <h2>52 herramientas al servicio del modelo</h2>
+    <h2>53 herramientas al servicio del modelo</h2>
     <hr class="rule">
     <div class="body">
       <div style="display:grid;grid-template-columns:1fr 2.4fr;gap:2rem;align-items:center">
         <div class="tile" style="text-align:center">
-          <div class="v" style="font-size:4.4rem">52</div>
+          <div class="v" style="font-size:4.4rem">53</div>
           <div class="l">herramientas tipadas con JSON-Schema, todas despachadas por el agente y cubiertas por tests</div>
         </div>
         <div style="display:flex;flex-direction:column;gap:.85rem">
@@ -409,8 +409,8 @@
             <div class="bar"><i style="width:100%"></i></div>
           </div>
           <div class="toolcat">
-            <div class="row"><span>Gestión de carteras <span class="n">14</span></span><span class="ex">create · add_lot · sell · record_dividend · suggest_rebalance…</span></div>
-            <div class="bar"><i style="width:78%"></i></div>
+            <div class="row"><span>Gestión de carteras <span class="n">15</span></span><span class="ex">create · add_lot · sell · record_dividend · suggest_rebalance · compare_benchmark…</span></div>
+            <div class="bar"><i style="width:83%"></i></div>
           </div>
           <div class="toolcat">
             <div class="row"><span>Datos de mercado <span class="n">9</span></span><span class="ex">search · quote · candles · fundamentals · corporate_actions…</span></div>
@@ -490,7 +490,7 @@
           <p>Defines una asignación objetivo; Auris detecta la desviación y propone las <span class="bright">operaciones concretas</span> para volver al plan, respetando un umbral de tolerancia.</p>
         </div>
       </div>
-      <p class="mut" style="margin-top:1.5rem">Todo es accesible por chat: <span class="acc">«vende 10 AAPL»</span>, <span class="acc">«registra el dividendo de MSFT»</span>, <span class="acc">«¿me desvié de mi 60/40?»</span> — el agente opera la cartera con sus 14 tools de portfolio.</p>
+      <p class="mut" style="margin-top:1.5rem">Todo es accesible por chat: <span class="acc">«vende 10 AAPL»</span>, <span class="acc">«registra el dividendo de MSFT»</span>, <span class="acc">«¿me desvié de mi 60/40?»</span> — el agente opera la cartera con sus 15 tools de portfolio.</p>
     </div>
   </section>
 
@@ -533,8 +533,8 @@
     <hr class="rule">
     <div class="body">
       <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:1rem">
-        <div class="tile"><div class="v">433</div><div class="l">funciones de test en el repositorio</div></div>
-        <div class="tile"><div class="v">236</div><div class="l">tests solo en pkg/agent: el motor de cálculo es la pieza más blindada</div></div>
+        <div class="tile"><div class="v">457</div><div class="l">funciones de test en el repositorio</div></div>
+        <div class="tile"><div class="v">250</div><div class="l">tests solo en pkg/agent: el motor de cálculo es la pieza más blindada</div></div>
         <div class="tile"><div class="v">2</div><div class="l">idiomas completos (es/en) con detección automática del locale</div></div>
         <div class="tile"><div class="v">6</div><div class="l">temas visuales con previsualización en vivo</div></div>
       </div>
@@ -606,7 +606,7 @@
     <div class="body" style="align-items:center;text-align:center">
       <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:1rem;width:100%;max-width:62rem;margin-bottom:2.6rem">
         <div class="tile"><div class="v" style="font-size:1.15rem">Datos reales</div><div class="l">el LLM consulta, nunca recuerda</div></div>
-        <div class="tile"><div class="v" style="font-size:1.15rem">Cálculo fiable</div><div class="l">52 tools deterministas y validadas</div></div>
+        <div class="tile"><div class="v" style="font-size:1.15rem">Cálculo fiable</div><div class="l">53 tools deterministas y validadas</div></div>
         <div class="tile"><div class="v" style="font-size:1.15rem">Privacidad</div><div class="l">cifrado fuerte y modo 100 % local</div></div>
         <div class="tile"><div class="v" style="font-size:1.15rem">Extensible</div><div class="l">nuevos proveedores sin tocar el núcleo</div></div>
       </div>

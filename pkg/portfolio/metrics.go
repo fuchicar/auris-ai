@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"math"
 	"sort"
+	"time"
 )
 
 // Quote is the minimum market data slice needed to compute a portfolio's
@@ -449,5 +450,108 @@ func SuggestRebalance(p *Portfolio, quotes map[string]Quote, maxDriftPercent flo
 		Operations:      ops,
 		MissingQuotes:   missing,
 		Summary:         summary,
+	}, nil
+}
+
+// HoldingsAsOf reconstructs each symbol's held quantity as of a past date by
+// replaying Transactions with Date <= at (buys add, sells subtract). Only
+// meaningful for portfolios with transaction history (see FEAT-2): a
+// portfolio created before that field existed has no Transactions to replay,
+// so this returns an empty map — callers must check len(p.Transactions) > 0
+// before trusting the result and fall back to treating current holdings as
+// unchanged over the period otherwise (a buy-and-hold approximation).
+func HoldingsAsOf(p *Portfolio, at time.Time) map[string]float64 {
+	qty := make(map[string]float64)
+	for _, tx := range p.Transactions {
+		if tx.Date.After(at) {
+			continue
+		}
+		switch tx.Type {
+		case TransactionBuy:
+			qty[tx.Symbol] += tx.Quantity
+		case TransactionSell:
+			qty[tx.Symbol] -= tx.Quantity
+		}
+	}
+	return qty
+}
+
+// CashAsOf reconstructs the cash balance as of a past date by undoing every
+// transaction recorded after that date from the current balance. Same
+// transaction-history caveat as HoldingsAsOf applies.
+func CashAsOf(p *Portfolio, at time.Time) float64 {
+	cash := p.Cash
+	for _, tx := range p.Transactions {
+		if tx.Date.After(at) {
+			cash -= tx.CashDelta
+		}
+	}
+	return cash
+}
+
+// ErrPeriodInvalidRange is returned by ComputePeriodReturn when to is not
+// strictly after from.
+var ErrPeriodInvalidRange = errors.New("portfolio: to must be after from")
+
+// ErrPeriodZeroDenominator is returned by ComputePeriodReturn when the
+// Modified Dietz denominator (start value adjusted for time-weighted external
+// flows) is zero or negative, making the period return undefined.
+var ErrPeriodZeroDenominator = errors.New("portfolio: modified Dietz denominator is zero or negative; cannot compute period return")
+
+// PeriodReturnResult is the outcome of ComputePeriodReturn.
+type PeriodReturnResult struct {
+	ReturnPercent   float64 `json:"return_percent"`
+	StartValue      float64 `json:"start_value"`
+	EndValue        float64 `json:"end_value"`
+	NetExternalFlow float64 `json:"net_external_flow"` // sum of deposit/withdrawal/adjustment cash deltas within (from, to]
+}
+
+// ComputePeriodReturn computes a portfolio's real return over (from, to]
+// using the Modified Dietz method: external cash flows (deposits,
+// withdrawals, and corrective portfolio_set_cash adjustments — never buys,
+// sells, or dividends, which are internal to the portfolio's own
+// performance) are weighted by how much of the period remained when they
+// occurred, so money added on day one counts almost fully toward the
+// denominator while money added on the last day barely does.
+//
+// startValue and endValue are the portfolio's total value (holdings + cash)
+// at the start and end of the period; the caller computes these (start
+// typically via HoldingsAsOf/CashAsOf plus historical prices, end via
+// ComputeMetrics plus current quotes), since pricing requires a market
+// provider this package does not depend on.
+func ComputePeriodReturn(p *Portfolio, from, to time.Time, startValue, endValue float64) (PeriodReturnResult, error) {
+	if p == nil {
+		return PeriodReturnResult{}, errors.New("portfolio: nil portfolio")
+	}
+	if !to.After(from) {
+		return PeriodReturnResult{}, ErrPeriodInvalidRange
+	}
+	totalDays := to.Sub(from).Hours() / 24
+	netFlow := 0.0
+	weightedFlow := 0.0
+	for _, tx := range p.Transactions {
+		if tx.Type != TransactionDeposit && tx.Type != TransactionWithdrawal && tx.Type != TransactionAdjustment {
+			continue
+		}
+		if tx.Date.Before(from) || tx.Date.After(to) {
+			continue
+		}
+		netFlow += tx.CashDelta
+		weight := 0.0
+		if totalDays > 0 {
+			weight = to.Sub(tx.Date).Hours() / 24 / totalDays
+		}
+		weightedFlow += tx.CashDelta * weight
+	}
+	denominator := startValue + weightedFlow
+	if denominator <= 0 {
+		return PeriodReturnResult{}, ErrPeriodZeroDenominator
+	}
+	ret := (endValue - startValue - netFlow) / denominator * 100
+	return PeriodReturnResult{
+		ReturnPercent:   round4(ret),
+		StartValue:      round2(startValue),
+		EndValue:        round2(endValue),
+		NetExternalFlow: round2(netFlow),
 	}, nil
 }

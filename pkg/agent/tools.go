@@ -3,7 +3,9 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -473,7 +475,78 @@ func buildTools() []llm.Tool {
 				},
 			}, []string{}),
 		),
+		tool("portfolio_compare_benchmark",
+			"Compare a portfolio's real return over a period against a benchmark index (default SPY): portfolio return, benchmark return, simple alpha (portfolio − benchmark), and the portfolio's beta/correlation against the benchmark's real daily return series. Portfolio return uses the Modified Dietz method over the portfolio's recorded transactions (external cash flows time-weighted) when transaction history exists; otherwise falls back to a buy-and-hold approximation over current holdings (see return_method in the result). Beta uses a synthetic daily return series built from currently-held symbols weighted by their current share of portfolio value — an approximation that assumes today's composition was held for the whole period, noted in the result.",
+			obj(map[string]any{
+				"portfolio_id":     str("Portfolio ID (optional; omit to use the current portfolio)"),
+				"benchmark_symbol": str("Benchmark ticker symbol (optional; default SPY)"),
+				"from":             str("Start of the comparison period, ISO 8601 or YYYY-MM-DD (optional; default 1 year before 'to')"),
+				"to":               str("End of the comparison period, ISO 8601 or YYYY-MM-DD (optional; default today)"),
+			}, []string{}),
+		),
 	}
+}
+
+// alignedDailyReturns intersects the calendar days present in every symbol's
+// candle series and the benchmark's, then returns day-over-day simple returns
+// computed only across those common days for each. This keeps the resulting
+// series the same length (a requirement of calcBeta) even when individual
+// symbols have slightly different trading calendars. Returns nil, nil when
+// fewer than 2 common days are available.
+func alignedDailyReturns(seriesBySymbol map[string][]market.Candle, benchmark []market.Candle) (map[string][]float64, []float64) {
+	closesBySymbol := make(map[string]map[string]float64, len(seriesBySymbol))
+	for sym, candles := range seriesBySymbol {
+		closes := make(map[string]float64, len(candles))
+		for _, c := range candles {
+			closes[c.Time.Format("2006-01-02")] = c.Close
+		}
+		closesBySymbol[sym] = closes
+	}
+	benchByDate := make(map[string]float64, len(benchmark))
+	for _, c := range benchmark {
+		benchByDate[c.Time.Format("2006-01-02")] = c.Close
+	}
+
+	var commonDates []string
+	for date := range benchByDate {
+		ok := true
+		for _, closes := range closesBySymbol {
+			if _, has := closes[date]; !has {
+				ok = false
+				break
+			}
+		}
+		if ok {
+			commonDates = append(commonDates, date)
+		}
+	}
+	sort.Strings(commonDates)
+	if len(commonDates) < 2 {
+		return nil, nil
+	}
+
+	benchReturns := make([]float64, 0, len(commonDates)-1)
+	symReturns := make(map[string][]float64, len(closesBySymbol))
+	for sym := range closesBySymbol {
+		symReturns[sym] = make([]float64, 0, len(commonDates)-1)
+	}
+	for i := 1; i < len(commonDates); i++ {
+		prevDate, curDate := commonDates[i-1], commonDates[i]
+		benchRet := 0.0
+		if prevB := benchByDate[prevDate]; prevB > 0 {
+			benchRet = (benchByDate[curDate] - prevB) / prevB
+		}
+		benchReturns = append(benchReturns, benchRet)
+		for sym, closes := range closesBySymbol {
+			prev, cur := closes[prevDate], closes[curDate]
+			ret := 0.0
+			if prev > 0 {
+				ret = (cur - prev) / prev
+			}
+			symReturns[sym] = append(symReturns[sym], ret)
+		}
+	}
+	return symReturns, benchReturns
 }
 
 // dispatch executes a single tool call and returns the result as a JSON string,
@@ -789,6 +862,23 @@ func (a *Agent) dispatchInner(ctx context.Context, call llm.ToolCall, lastKind *
 				return t
 			}
 			return time.Now()
+		}
+		// parsePeriodDate parses ISO 8601 or YYYY-MM-DD; falls back to def
+		// (unlike parseLotDate, which always defaults to now) so callers can
+		// derive one bound from the other (e.g. "from" defaults relative to
+		// "to").
+		parsePeriodDate := func(key string, def time.Time) time.Time {
+			s := str(key)
+			if s == "" {
+				return def
+			}
+			if t, err := time.Parse(time.RFC3339, s); err == nil {
+				return t
+			}
+			if t, err := time.Parse("2006-01-02", s); err == nil {
+				return t
+			}
+			return def
 		}
 
 		switch call.Function.Name {
@@ -1329,6 +1419,146 @@ func (a *Agent) dispatchInner(ctx context.Context, call llm.ToolCall, lastKind *
 			if a.market == nil {
 				result.Summary = result.Summary + " [WARNING: no market provider configured — rebalance suggestions may be incomplete]"
 			}
+			return encode(result, nil)
+
+		case "portfolio_compare_benchmark":
+			id, err := resolvePortfolioID()
+			if err != nil {
+				return encode(nil, err)
+			}
+			p, err := portfolio.LoadPortfolio(id)
+			if err != nil {
+				return encode(nil, err)
+			}
+			if p == nil {
+				return `error: portfolio not found`
+			}
+			if a.market == nil {
+				return `error: no market data provider configured`
+			}
+
+			to := parsePeriodDate("to", time.Now().UTC())
+			from := parsePeriodDate("from", to.AddDate(-1, 0, 0))
+			if !to.After(from) {
+				return `error: to must be after from`
+			}
+			benchmarkSymbol := str("benchmark_symbol")
+			if benchmarkSymbol == "" {
+				benchmarkSymbol = "SPY"
+			}
+
+			benchCandles, err := a.market.GetCandles(ctx, benchmarkSymbol, from, to, market.Timeframe1d)
+			if err != nil || len(benchCandles) < 2 {
+				return fmt.Sprintf("error: could not fetch benchmark data for %s: %v", benchmarkSymbol, err)
+			}
+			benchmarkReturnPct := (benchCandles[len(benchCandles)-1].Close - benchCandles[0].Close) / benchCandles[0].Close * 100
+
+			// Reconstruct holdings/cash at the start of the period to value the
+			// portfolio then. Falls back to today's holdings if there is no
+			// transaction history to replay (portfolios created before FEAT-2).
+			returnMethod := "modified_dietz"
+			var qtyAtFrom map[string]float64
+			var cashAtFrom float64
+			if len(p.Transactions) > 0 {
+				qtyAtFrom = portfolio.HoldingsAsOf(p, from)
+				cashAtFrom = portfolio.CashAsOf(p, from)
+			} else {
+				returnMethod = "buy_and_hold_approximation"
+				qtyAtFrom = make(map[string]float64, len(p.Instruments))
+				for _, ins := range p.Instruments {
+					if ins.Type == portfolio.InstrumentHolding {
+						qtyAtFrom[ins.Symbol] = ins.TotalQuantity()
+					}
+				}
+				cashAtFrom = p.Cash
+			}
+
+			startValue := cashAtFrom
+			var missingHistorical []string
+			const historicalWindow = 5 * 24 * time.Hour
+			for sym, qty := range qtyAtFrom {
+				if qty <= 1e-9 {
+					continue
+				}
+				candles, cErr := a.market.GetCandles(ctx, sym, from.Add(-historicalWindow), from.Add(historicalWindow), market.Timeframe1d)
+				if cErr != nil || len(candles) == 0 {
+					missingHistorical = append(missingHistorical, sym)
+					continue
+				}
+				best := candles[0]
+				bestDiff := best.Time.Sub(from).Abs()
+				for _, c := range candles[1:] {
+					if d := c.Time.Sub(from).Abs(); d < bestDiff {
+						bestDiff, best = d, c
+					}
+				}
+				startValue += qty * best.Close
+			}
+			sort.Strings(missingHistorical)
+
+			// Current (end-of-period) value: same auto-fetch pattern as
+			// portfolio_calculate_metrics, without fundamentals since only
+			// price is needed here.
+			currentQuotes := make(map[string]portfolio.Quote, len(p.Instruments))
+			for _, ins := range p.Instruments {
+				if ins.Type != portfolio.InstrumentHolding {
+					continue
+				}
+				q, qErr := a.market.GetQuote(ctx, ins.Symbol)
+				if qErr != nil || q.Last <= 0 {
+					continue
+				}
+				currentQuotes[ins.Symbol] = portfolio.Quote{Last: q.Last}
+			}
+			m, mErr := portfolio.ComputeMetrics(p, currentQuotes)
+			if mErr != nil && !errors.Is(mErr, portfolio.ErrNoHoldings) {
+				return encode(nil, mErr)
+			}
+			endValue := m.CurrentValue + p.Cash
+
+			periodReturn, prErr := portfolio.ComputePeriodReturn(p, from, to, startValue, endValue)
+			if prErr != nil {
+				return encode(nil, prErr)
+			}
+
+			// Beta vs benchmark: synthetic daily return series built from each
+			// currently-held symbol's real candles, weighted by its current
+			// share of total portfolio value. This approximates "beta if
+			// today's composition had been held for the whole period" — an
+			// explicit, labelled simplification (see buildBenchmarkComparison)
+			// since reconstructing the exact historical daily composition
+			// would need a GetCandles call per symbol ever held, not just per
+			// current holding.
+			candlesBySymbol := make(map[string][]market.Candle, len(m.WeightBySymbol))
+			weightBySymbol := make(map[string]float64, len(m.WeightBySymbol))
+			for _, w := range m.WeightBySymbol {
+				candles, cErr := a.market.GetCandles(ctx, w.Symbol, from, to, market.Timeframe1d)
+				if cErr != nil || len(candles) < 2 {
+					continue
+				}
+				candlesBySymbol[w.Symbol] = candles
+				if m.TotalValue > 0 {
+					weightBySymbol[w.Symbol] = w.Value / m.TotalValue
+				}
+			}
+			var portfolioReturns, benchmarkDailyReturns []float64
+			if len(candlesBySymbol) > 0 {
+				if symReturns, benchReturns := alignedDailyReturns(candlesBySymbol, benchCandles); symReturns != nil {
+					portfolioReturns = make([]float64, len(benchReturns))
+					for sym, rets := range symReturns {
+						w := weightBySymbol[sym]
+						for i, r := range rets {
+							portfolioReturns[i] += w * r
+						}
+					}
+					benchmarkDailyReturns = benchReturns
+				}
+			}
+
+			result := buildBenchmarkComparison(p.ID, benchmarkSymbol, from, to,
+				periodReturn.ReturnPercent, benchmarkReturnPct, returnMethod,
+				missingHistorical, portfolioReturns, benchmarkDailyReturns)
+			result.ComputedAt = time.Now().UTC().Format(time.RFC3339)
 			return encode(result, nil)
 		}
 	}

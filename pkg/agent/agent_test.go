@@ -56,6 +56,12 @@ type mockMarket struct {
 	quoteErrBySymbol map[string]error
 	// fundamentalsBySymbol, when set, takes precedence over `fundamental`.
 	fundamentalsBySymbol map[string]market.Fundamental
+	// candlesBySymbol, when set, takes precedence over candlesErr for that
+	// symbol's GetCandles call regardless of the requested range.
+	candlesBySymbol map[string][]market.Candle
+	// candlesErr is returned by GetCandles for symbols not in candlesBySymbol;
+	// defaults to market.ErrNotSupported (the zero value) like the real FMP-less case.
+	candlesErr error
 }
 
 func (m *mockMarket) Name() string                           { return "mock" }
@@ -77,6 +83,12 @@ func (m *mockMarket) ListInstruments(ctx context.Context, at market.AssetType) (
 	return nil, market.ErrNotSupported
 }
 func (m *mockMarket) GetCandles(ctx context.Context, symbol string, from, to time.Time, tf market.Timeframe) ([]market.Candle, error) {
+	if c, ok := m.candlesBySymbol[symbol]; ok {
+		return c, nil
+	}
+	if m.candlesErr != nil {
+		return nil, m.candlesErr
+	}
 	return nil, market.ErrNotSupported
 }
 func (m *mockMarket) GetTicks(ctx context.Context, symbol string, from, to time.Time) ([]market.Tick, error) {
@@ -128,8 +140,8 @@ func toolCallArgs(t *testing.T, args map[string]any) string {
 
 func TestBuildTools_Count(t *testing.T) {
 	tools := buildTools()
-	if len(tools) != 52 {
-		t.Errorf("expected 52 tools, got %d", len(tools))
+	if len(tools) != 53 {
+		t.Errorf("expected 53 tools, got %d", len(tools))
 	}
 }
 

@@ -55,6 +55,10 @@ Follow these recipes step by step. Do not skip or reorder steps.
 1. Call portfolio_calculate_metrics and read current_value from the result.
 2. Pass that current_value to calculate_stress_test with the shock percentages.
 
+**Portfolio vs benchmark (comparing performance to an index):**
+1. Call portfolio_compare_benchmark with the desired period (from/to), or omit both for the trailing year; benchmark_symbol defaults to SPY.
+2. Read portfolio_return_percent, benchmark_return_percent, alpha_percent, and beta directly from the result — do not recompute them manually. Check return_method: if it's "buy_and_hold_approximation", tell the user the portfolio has no recorded transaction history yet, so the return assumes current holdings were held the whole period.
+
 **News:**
 1. Call fetch_news. Each article has title, summary, source, url, published_at — use them directly to build your answer and cite the source.
 2. If it returns {"status":"no_results"} or {"status":"error"}, tell the user in their language and suggest trying later or with different criteria.
