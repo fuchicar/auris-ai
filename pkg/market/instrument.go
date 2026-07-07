@@ -49,6 +49,11 @@ type Quote struct {
 	Bid  float64
 	Ask  float64
 	Last float64
+	// ChangePercent is the percentage change vs the previous close (e.g.
+	// 1.23 for +1.23%). It is 0 when the underlying driver does not supply
+	// this figure — callers must treat 0 as "unknown", not "unchanged",
+	// unless they've separately confirmed the driver populates it.
+	ChangePercent float64
 }
 
 type OrderBookLevel struct {

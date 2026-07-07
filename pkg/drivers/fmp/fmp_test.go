@@ -3,6 +3,7 @@ package fmp_test
 import (
 	"context"
 	"errors"
+	"math"
 	"os"
 	"strings"
 	"testing"
@@ -374,6 +375,9 @@ func TestGetQuote_AAPL(t *testing.T) {
 	}
 	if q.Time.IsZero() {
 		t.Error("Time should not be zero")
+	}
+	if math.IsNaN(q.ChangePercent) || math.IsInf(q.ChangePercent, 0) {
+		t.Errorf("ChangePercent should be a finite number, got %v", q.ChangePercent)
 	}
 }
 

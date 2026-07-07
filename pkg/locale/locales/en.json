@@ -646,6 +646,9 @@
   "portfolio.view.action.transactions": {
     "other": "View transaction history"
   },
+  "portfolio.view.action.watchlist": {
+    "other": "View watchlist"
+  },
   "portfolio.view.action.add": {
     "other": "Add instrument"
   },
@@ -734,6 +737,34 @@
   },
   "portfolio.transactions.type.adjustment": {
     "other": "Adjustment"
+  },
+
+  "portfolio.watchlist.title": {
+    "other": "Watchlist"
+  },
+  "portfolio.watchlist.empty": {
+    "other": "(No watchlist instruments yet — add one from Instruments)"
+  },
+  "portfolio.watchlist.hint": {
+    "other": "↑↓ navigate · Esc back"
+  },
+  "portfolio.watchlist.col.symbol": {
+    "other": "Symbol"
+  },
+  "portfolio.watchlist.col.name": {
+    "other": "Name"
+  },
+  "portfolio.watchlist.col.price": {
+    "other": "Price"
+  },
+  "portfolio.watchlist.col.change": {
+    "other": "%/day"
+  },
+  "portfolio.watchlist.price_loading": {
+    "other": "Loading prices…"
+  },
+  "portfolio.watchlist.price_unavailable": {
+    "other": "—"
   },
 
   "portfolio.instruments.title": {

@@ -155,9 +155,10 @@ type fmpListEntry struct {
 }
 
 type fmpQuote struct {
-	Symbol    string  `json:"symbol"`
-	Price     float64 `json:"price"`
-	Timestamp int64   `json:"timestamp"`
+	Symbol           string  `json:"symbol"`
+	Price            float64 `json:"price"`
+	Timestamp        int64   `json:"timestamp"`
+	ChangePercentage float64 `json:"changePercentage"`
 }
 
 type fmpDailyCandle struct {
@@ -552,8 +553,9 @@ func (d *Driver) GetQuote(ctx context.Context, symbol string) (market.Quote, err
 	}
 	q := quotes[0]
 	return market.Quote{
-		Time: time.Unix(q.Timestamp, 0).UTC(),
-		Last: q.Price,
+		Time:          time.Unix(q.Timestamp, 0).UTC(),
+		Last:          q.Price,
+		ChangePercent: q.ChangePercentage,
 	}, nil
 }
 

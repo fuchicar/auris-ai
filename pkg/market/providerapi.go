@@ -59,6 +59,7 @@ type ProviderAPI interface {
 	// -------------------------
 
 	// GetQuote devuelve el bid/ask/last en el momento de la consulta.
+	// ChangePercent es 0 si el driver no lo soporta.
 	GetQuote(ctx context.Context, symbol string) (Quote, error)
 
 	// GetOrderBook devuelve el estado actual del libro de órdenes.
