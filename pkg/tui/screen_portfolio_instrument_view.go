@@ -61,6 +61,9 @@ type portfolioInstrumentViewModel struct {
 	price      float64 // live price if available
 	loadingPx  bool
 
+	candles        []market.Candle // recent daily candles for the chart
+	loadingCandles bool
+
 	// sell inputs
 	sellQtyInput   textinput.Model
 	sellPriceInput textinput.Model
@@ -104,6 +107,7 @@ func newPortfolioInstrumentViewModel(
 		styles:         s,
 		spin:           sp,
 		loadingPx:      mp != nil && ins.Type == portfolio.InstrumentHolding,
+		loadingCandles: mp != nil,
 		sellQtyInput:   newInput("10"),
 		sellPriceInput: newInput("150.00"),
 		addQtyInput:    newInput("10"),
@@ -113,10 +117,20 @@ func newPortfolioInstrumentViewModel(
 }
 
 func (m *portfolioInstrumentViewModel) Init() tea.Cmd {
-	if m.loadingPx {
-		return tea.Batch(m.spin.Tick, m.fetchPriceCmd())
+	var cmds []tea.Cmd
+	if m.loadingPx || m.loadingCandles {
+		cmds = append(cmds, m.spin.Tick)
 	}
-	return nil
+	if m.loadingPx {
+		cmds = append(cmds, m.fetchPriceCmd())
+	}
+	if m.loadingCandles {
+		cmds = append(cmds, m.fetchCandlesCmd())
+	}
+	if len(cmds) == 0 {
+		return nil
+	}
+	return tea.Batch(cmds...)
 }
 
 func (m *portfolioInstrumentViewModel) fetchPriceCmd() tea.Cmd {
@@ -136,10 +150,34 @@ func (m *portfolioInstrumentViewModel) fetchPriceCmd() tea.Cmd {
 	}
 }
 
+// instrumentCandlesMsg carries the recent daily candles fetched for the
+// chart shown in the instrument detail view.
+type instrumentCandlesMsg struct {
+	symbol  string
+	candles []market.Candle
+	err     error
+}
+
+func (m *portfolioInstrumentViewModel) fetchCandlesCmd() tea.Cmd {
+	sym := m.instrument.Symbol
+	mp := m.mp
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if !mp.IsConnected() {
+			_ = mp.Connect(ctx)
+		}
+		to := time.Now()
+		from := to.AddDate(0, -3, 0) // ~3 months daily: SMA(20) warm-up + readable candle width
+		candles, err := mp.GetCandles(ctx, sym, from, to, market.Timeframe1d)
+		return instrumentCandlesMsg{symbol: sym, candles: candles, err: err}
+	}
+}
+
 func (m *portfolioInstrumentViewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case spinner.TickMsg:
-		if m.loadingPx {
+		if m.loadingPx || m.loadingCandles {
 			var cmd tea.Cmd
 			m.spin, cmd = m.spin.Update(msg)
 			return m, cmd
@@ -150,6 +188,13 @@ func (m *portfolioInstrumentViewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) 
 		m.loadingPx = false
 		if p, ok := msg.prices[m.instrument.Symbol]; ok {
 			m.price = p
+		}
+		return m, nil
+
+	case instrumentCandlesMsg:
+		m.loadingCandles = false
+		if msg.err == nil && msg.symbol == m.instrument.Symbol {
+			m.candles = msg.candles
 		}
 		return m, nil
 
@@ -481,6 +526,10 @@ func (m *portfolioInstrumentViewModel) View() string {
 	var parts []string
 	parts = append(parts, header, "")
 
+	if chart := m.viewChart(); chart != "" {
+		parts = append(parts, chart, "")
+	}
+
 	if m.instrument.Type == portfolio.InstrumentHolding {
 		parts = append(parts, m.viewLotTable()...)
 		parts = append(parts, "")
@@ -521,6 +570,19 @@ func (m *portfolioInstrumentViewModel) View() string {
 	}
 
 	return lipgloss.JoinVertical(lipgloss.Left, parts...)
+}
+
+// viewChart renders the candlestick+SMA chart, a loading spinner, or "" if
+// there isn't enough data — the chart is a nice-to-have and never blocks the
+// rest of the screen with an error state.
+func (m *portfolioInstrumentViewModel) viewChart() string {
+	if m.loadingCandles {
+		return m.styles.Hint.Render(locale.T("portfolio.instrument.chart.loading") + " " + m.spin.View())
+	}
+	if len(m.candles) == 0 {
+		return ""
+	}
+	return renderCandleChart(m.candles, m.styles)
 }
 
 func (m *portfolioInstrumentViewModel) viewLotTable() []string {

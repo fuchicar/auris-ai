@@ -51,6 +51,8 @@ type Styles struct {
 	Preview    lipgloss.Style // border box used in the theme preview
 	Warning    lipgloss.Style // amber bold text for advisory warnings
 	WarnBox    lipgloss.Style // amber rounded-border box for warning containers
+	Bull       lipgloss.Style // green — bullish candle (close >= open) / sparkline line
+	Bear       lipgloss.Style // red — bearish candle (close < open)
 }
 
 // NewStyles builds a complete [Styles] set for the given [Theme].
@@ -89,6 +91,7 @@ func newDarkStyles() *Styles {
 	hint := lipgloss.Color("#6B7280")
 	url := lipgloss.Color("#60A5FA")
 	warn := lipgloss.Color("#F59E0B")
+	bull := lipgloss.Color("#10B981")
 
 	return &Styles{
 		Theme:      ThemeDark,
@@ -107,6 +110,8 @@ func newDarkStyles() *Styles {
 		Preview:    lipgloss.NewStyle().BorderStyle(lipgloss.RoundedBorder()).BorderForeground(accent).Padding(0, 1).Width(PanelWidth - 4),
 		Warning:    lipgloss.NewStyle().Foreground(warn).Bold(true),
 		WarnBox:    lipgloss.NewStyle().BorderStyle(lipgloss.RoundedBorder()).BorderForeground(warn).Padding(0, 1).Width(PanelWidth - 4),
+		Bull:       lipgloss.NewStyle().Foreground(bull),
+		Bear:       lipgloss.NewStyle().Foreground(errorC),
 	}
 }
 
@@ -117,6 +122,7 @@ func newLightStyles() *Styles {
 	hint := lipgloss.Color("#9CA3AF")
 	url := lipgloss.Color("#2563EB")
 	warn := lipgloss.Color("#D97706")
+	bull := lipgloss.Color("#059669")
 
 	return &Styles{
 		Theme:      ThemeLight,
@@ -135,5 +141,7 @@ func newLightStyles() *Styles {
 		Preview:    lipgloss.NewStyle().BorderStyle(lipgloss.RoundedBorder()).BorderForeground(accent).Padding(0, 1).Width(PanelWidth - 4),
 		Warning:    lipgloss.NewStyle().Foreground(warn).Bold(true),
 		WarnBox:    lipgloss.NewStyle().BorderStyle(lipgloss.RoundedBorder()).BorderForeground(warn).Padding(0, 1).Width(PanelWidth - 4),
+		Bull:       lipgloss.NewStyle().Foreground(bull),
+		Bear:       lipgloss.NewStyle().Foreground(errorC),
 	}
 }

@@ -822,6 +822,9 @@
   "portfolio.instrument.hint": {
     "other": "↑↓ navigate · Enter select · Esc back"
   },
+  "portfolio.instrument.chart.loading": {
+    "other": "Loading chart…"
+  },
   "portfolio.instrument.badge.holding": {
     "other": "POSITION"
   },

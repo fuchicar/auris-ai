@@ -9,6 +9,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"auris/pkg/finance"
 )
 
 // --- ROI -----------------------------------------------------------------------
@@ -1238,27 +1240,12 @@ type smaResult struct {
 // window of length period. The first period-1 entries of the returned series
 // are NaN to reflect the warm-up period.
 func calcSMA(prices []float64, period int) (smaResult, error) {
-	if period <= 0 {
-		return smaResult{}, fmt.Errorf("period must be greater than zero, got %d", period)
-	}
-	if len(prices) < period {
-		return smaResult{}, fmt.Errorf("at least %d prices required for SMA, got %d", period, len(prices))
-	}
 	if err := validatePositiveAll("prices", prices); err != nil {
 		return smaResult{}, err
 	}
-	values := make([]float64, len(prices))
-	for i := range values {
-		values[i] = math.NaN()
-	}
-	var sum float64
-	for i := 0; i < period; i++ {
-		sum += prices[i]
-	}
-	values[period-1] = sum / float64(period)
-	for i := period; i < len(prices); i++ {
-		sum += prices[i] - prices[i-period]
-		values[i] = sum / float64(period)
+	values, err := finance.SMA(prices, period)
+	if err != nil {
+		return smaResult{}, err
 	}
 	last := values[len(values)-1]
 	previous := math.NaN()

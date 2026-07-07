@@ -27,6 +27,12 @@ type portfolioPricesMsg struct {
 	err    error
 }
 
+// portfolioSparklinesMsg carries recent daily closes fetched for all
+// holdings, used to render a per-holding sparkline.
+type portfolioSparklinesMsg struct {
+	data map[string][]float64 // symbol → closes, oldest first
+}
+
 var portfolioViewActions = []string{
 	"portfolio.view.action.agent",
 	"portfolio.view.action.instruments",
@@ -45,10 +51,14 @@ type portfolioViewModel struct {
 	prices        map[string]float64
 	loadingPrices bool
 	priceErr      string
-	infoMsg       string
-	spin          spinner.Model
-	mp            market.ProviderAPI
-	styles        *Styles
+
+	sparklineData     map[string][]float64
+	loadingSparklines bool
+
+	infoMsg string
+	spin    spinner.Model
+	mp      market.ProviderAPI
+	styles  *Styles
 }
 
 func newPortfolioViewModel(p *portfolio.Portfolio, mp market.ProviderAPI, s *Styles) *portfolioViewModel {
@@ -65,19 +75,30 @@ func newPortfolioViewModel(p *portfolio.Portfolio, mp market.ProviderAPI, s *Sty
 	}
 
 	return &portfolioViewModel{
-		portfolio:     p,
-		mp:            mp,
-		styles:        s,
-		spin:          sp,
-		loadingPrices: mp != nil && hasHoldings,
+		portfolio:         p,
+		mp:                mp,
+		styles:            s,
+		spin:              sp,
+		loadingPrices:     mp != nil && hasHoldings,
+		loadingSparklines: mp != nil && hasHoldings,
 	}
 }
 
 func (m *portfolioViewModel) Init() tea.Cmd {
-	if m.loadingPrices {
-		return tea.Batch(m.spin.Tick, m.fetchPricesCmd())
+	var cmds []tea.Cmd
+	if m.loadingPrices || m.loadingSparklines {
+		cmds = append(cmds, m.spin.Tick)
 	}
-	return nil
+	if m.loadingPrices {
+		cmds = append(cmds, m.fetchPricesCmd())
+	}
+	if m.loadingSparklines {
+		cmds = append(cmds, m.fetchSparklinesCmd())
+	}
+	if len(cmds) == 0 {
+		return nil
+	}
+	return tea.Batch(cmds...)
 }
 
 func (m *portfolioViewModel) fetchPricesCmd() tea.Cmd {
@@ -107,10 +128,50 @@ func (m *portfolioViewModel) fetchPricesCmd() tea.Cmd {
 	}
 }
 
+// fetchSparklinesCmd fetches a short window of recent daily closes per
+// distinct held symbol, for the sparkline shown next to each holding.
+// Note: this issues one GetCandles call per symbol, on top of the one
+// GetQuote call fetchPricesCmd already makes — opening this screen with N
+// holdings costs roughly 2N market API calls. The window is kept short (~1
+// month) to keep the added cost small under FMP's free-tier rate limit.
+func (m *portfolioViewModel) fetchSparklinesCmd() tea.Cmd {
+	symbols := make([]string, 0)
+	seen := make(map[string]bool)
+	for _, ins := range m.portfolio.Instruments {
+		if ins.Type == portfolio.InstrumentHolding && !seen[ins.Symbol] {
+			symbols = append(symbols, ins.Symbol)
+			seen[ins.Symbol] = true
+		}
+	}
+	mp := m.mp
+	return func() tea.Msg {
+		data := make(map[string][]float64, len(symbols))
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if !mp.IsConnected() {
+			_ = mp.Connect(ctx)
+		}
+		to := time.Now()
+		from := to.AddDate(0, -1, 0)
+		for _, sym := range symbols {
+			candles, err := mp.GetCandles(ctx, sym, from, to, market.Timeframe1d)
+			if err != nil || len(candles) == 0 {
+				continue
+			}
+			closes := make([]float64, len(candles))
+			for i, c := range candles {
+				closes[i] = c.Close
+			}
+			data[sym] = closes
+		}
+		return portfolioSparklinesMsg{data: data}
+	}
+}
+
 func (m *portfolioViewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case spinner.TickMsg:
-		if m.loadingPrices {
+		if m.loadingPrices || m.loadingSparklines {
 			var cmd tea.Cmd
 			m.spin, cmd = m.spin.Update(msg)
 			return m, cmd
@@ -122,6 +183,11 @@ func (m *portfolioViewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err == nil {
 			m.prices = msg.prices
 		}
+		return m, nil
+
+	case portfolioSparklinesMsg:
+		m.loadingSparklines = false
+		m.sparklineData = msg.data
 		return m, nil
 
 	case tea.KeyMsg:
@@ -293,7 +359,11 @@ func (m *portfolioViewModel) View() string {
 		}
 	}
 
-	parts := []string{summary, ""}
+	parts := []string{summary}
+	if holdingsPanel := m.viewHoldingsSparklines(); holdingsPanel != "" {
+		parts = append(parts, "", holdingsPanel)
+	}
+	parts = append(parts, "")
 	parts = append(parts, rows...)
 	parts = append(parts, "")
 
@@ -307,6 +377,30 @@ func (m *portfolioViewModel) View() string {
 	}
 
 	return lipgloss.JoinVertical(lipgloss.Left, parts...)
+}
+
+// viewHoldingsSparklines renders one row per distinct held symbol with its
+// last price and a recent-price sparkline. Returns "" if there are no
+// holdings to show.
+func (m *portfolioViewModel) viewHoldingsSparklines() string {
+	var lines []string
+	seen := make(map[string]bool)
+	for _, ins := range m.portfolio.Instruments {
+		if ins.Type != portfolio.InstrumentHolding || seen[ins.Symbol] {
+			continue
+		}
+		seen[ins.Symbol] = true
+		priceStr := locale.T("portfolio.view.price_unavailable")
+		if p, ok := m.prices[ins.Symbol]; ok {
+			priceStr = fmt.Sprintf("%.2f", p)
+		}
+		spark := renderSparkline(m.sparklineData[ins.Symbol], m.styles)
+		lines = append(lines, fmt.Sprintf("  %-8s %8s  %s", ins.Symbol, priceStr, spark))
+	}
+	if len(lines) == 0 {
+		return ""
+	}
+	return m.styles.Preview.Render(strings.Join(lines, "\n"))
 }
 
 // formatPnL formats a P&L value with a sign prefix.
