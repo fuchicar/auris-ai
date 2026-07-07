@@ -77,6 +77,13 @@ func buildTools() []llm.Tool {
 				"timeframe": enum("Bar granularity", tfEnum),
 			}, []string{"symbol", "from", "to", "timeframe"}),
 		),
+		tool("market_render_price_chart",
+			"Render a candlestick chart with an SMA(20) overlay for a symbol and display it directly to the user in the chat. Use this when the user asks to see/visualize a price chart. Returns the underlying daily candle data as JSON so you can also describe the trend in words — the chart image itself is shown separately, do not attempt to reproduce it in your reply.",
+			obj(map[string]any{
+				"symbol": str("Ticker symbol, e.g. AAPL"),
+				"days":   intProp("Number of trailing calendar days of daily candles to chart (default 90, minimum 30)"),
+			}, []string{"symbol"}),
+		),
 		tool("market_get_quote",
 			"Get the current bid/ask/last price for a symbol.",
 			obj(map[string]any{
@@ -1661,6 +1668,25 @@ func (a *Agent) dispatchInner(ctx context.Context, call llm.ToolCall, lastKind *
 		}
 		res, err := a.market.GetCandles(ctx, str("symbol"), from, to, market.Timeframe(str("timeframe")))
 		return encode(res, err)
+
+	case "market_render_price_chart":
+		days := intVal("days", 90)
+		if days < 30 {
+			days = 30
+		}
+		to := time.Now()
+		from := to.AddDate(0, 0, -days)
+		candles, err := a.market.GetCandles(ctx, str("symbol"), from, to, market.Timeframe1d)
+		if err != nil {
+			return fmt.Sprintf("error: %s", err)
+		}
+		if a.chartCh != nil {
+			select {
+			case a.chartCh <- ChartEvent{Symbol: str("symbol"), Candles: candles}:
+			case <-ctx.Done():
+			}
+		}
+		return encode(candles, nil)
 
 	case "market_get_quote":
 		res, err := a.market.GetQuote(ctx, str("symbol"))

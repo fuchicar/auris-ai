@@ -499,6 +499,9 @@
   "agent.tool_financial": {
     "other": "Querying financial data..."
   },
+  "agent.chart_too_narrow": {
+    "other": "[chart hidden — widen the terminal to see it]"
+  },
   "agent.tool_calculation": {
     "other": "Calculating..."
   },

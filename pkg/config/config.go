@@ -43,8 +43,9 @@ type AurisConfig struct {
 
 // ChatTurn is a single message in the agent-mode conversation history.
 type ChatTurn struct {
-	Role    string `json:"role"`    // "user" | "assistant"
-	Content string `json:"content"`
+	Role    string   `json:"role"` // "user" | "assistant"
+	Content string   `json:"content"`
+	Charts  []string `json:"charts,omitempty"` // pre-rendered ASCII chart blocks (with ANSI styling) attached to this turn
 }
 
 // FinancialProfile holds the user's financial background collected during the setup

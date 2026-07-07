@@ -499,6 +499,9 @@
   "agent.tool_financial": {
     "other": "Consultando datos financieros..."
   },
+  "agent.chart_too_narrow": {
+    "other": "[gráfico oculto — ensancha la terminal para verlo]"
+  },
   "agent.tool_calculation": {
     "other": "Calculando..."
   },

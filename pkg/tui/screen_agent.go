@@ -16,6 +16,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 
 	"auris/pkg/agent"
 	"auris/pkg/config"
@@ -84,6 +85,10 @@ type agentResponseMsg struct {
 // agentProgressMsg is emitted while the agent executes tools, one per unique ProgressKind.
 type agentProgressMsg struct{ kind agent.ProgressKind }
 
+// agentChartMsg carries a chart already rendered to a string (possibly "" if
+// there wasn't enough candle data) for a market_render_price_chart call.
+type agentChartMsg struct{ chart string }
+
 // agentStreamChunkMsg carries one incremental text fragment from the agent's
 // streaming LLM call.
 type agentStreamChunkMsg struct{ text string }
@@ -98,27 +103,29 @@ type inferenceTickMsg struct{}
 // AgentModel is the chat UI screen. It runs the agentic loop via agent.Agent
 // and persists the conversation as a [config.Session] file after each exchange.
 type AgentModel struct {
-	state     agentState
-	session   *config.Session
-	viewport  viewport.Model
-	input     textinput.Model
-	spin      spinner.Model
-	messages  []llm.Message // multi-turn context sent to the LLM
-	provider  llm.AIProvider
-	mp        market.ProviderAPI
-	ag        *agent.Agent
-	streaming    bool
-	streambuf    strings.Builder
-	modelID      string
-	styles       *Styles
-	err          string
-	ready        bool // true once the viewport has been sized
-	width        int
-	height       int
-	progressCh   chan agent.ProgressEvent
-	streamCh     chan string // delivers incremental LLM text fragments to streambuf
-	toolLogs     []string    // display-only tool activity lines for the current turn
-	toolLogsTurn int         // index into session.History of the user message that owns toolLogs
+	state         agentState
+	session       *config.Session
+	viewport      viewport.Model
+	input         textinput.Model
+	spin          spinner.Model
+	messages      []llm.Message // multi-turn context sent to the LLM
+	provider      llm.AIProvider
+	mp            market.ProviderAPI
+	ag            *agent.Agent
+	streaming     bool
+	streambuf     strings.Builder
+	modelID       string
+	styles        *Styles
+	err           string
+	ready         bool // true once the viewport has been sized
+	width         int
+	height        int
+	progressCh    chan agent.ProgressEvent
+	streamCh      chan string           // delivers incremental LLM text fragments to streambuf
+	chartCh       chan agent.ChartEvent // delivers candle data for market_render_price_chart calls
+	toolLogs      []string              // display-only tool activity lines for the current turn
+	toolLogsTurn  int                   // index into session.History of the user message that owns toolLogs
+	pendingCharts []string              // rendered ASCII chart blocks accumulated during the current turn
 
 	// infoMsg is a transient status line shown after /export (cleared on next send).
 	infoMsg string
@@ -258,6 +265,19 @@ func listenProgressCmd(ch <-chan agent.ProgressEvent) tea.Cmd {
 	}
 }
 
+// listenChartCmd blocks on a single read from ch, renders the candle data via
+// renderCandleChart, and returns the result. It returns nil when the channel
+// is closed, ending the listener chain.
+func listenChartCmd(ch <-chan agent.ChartEvent, s *Styles) tea.Cmd {
+	return func() tea.Msg {
+		ev, ok := <-ch
+		if !ok {
+			return nil
+		}
+		return agentChartMsg{chart: renderCandleChart(ev.Candles, s)}
+	}
+}
+
 // listenStreamCmd blocks on a single read from ch and returns the fragment.
 // It returns nil when the channel is closed, ending the listener chain.
 func listenStreamCmd(ch <-chan string) tea.Cmd {
@@ -324,6 +344,12 @@ func (m *AgentModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		return m, listenProgressCmd(m.progressCh)
+
+	case agentChartMsg:
+		if msg.chart != "" {
+			m.pendingCharts = append(m.pendingCharts, msg.chart)
+		}
+		return m, listenChartCmd(m.chartCh, m.styles)
 
 	case agentStreamChunkMsg:
 		m.streambuf.WriteString(msg.text)
@@ -674,6 +700,9 @@ func exportSessionCmd(session *config.Session, filename string) tea.Cmd {
 				fmt.Fprintf(f, "**You:** %s\n", turn.Content)
 			case "assistant":
 				fmt.Fprintf(f, "**Auris:** %s\n", turn.Content)
+				for _, chart := range turn.Charts {
+					fmt.Fprintf(f, "\n```\n%s\n```\n", ansi.Strip(chart))
+				}
 			}
 		}
 		if err := f.Sync(); err != nil {
@@ -703,6 +732,16 @@ func (m *AgentModel) handleAgentResponse(msg agentResponseMsg) (tea.Model, tea.C
 		close(m.streamCh)
 		m.streamCh = nil
 	}
+	if m.chartCh != nil {
+		close(m.chartCh)
+		m.chartCh = nil
+		m.ag.SetChartCh(nil)
+	}
+	// Capture and clear pendingCharts unconditionally — a chart fetched
+	// earlier in the turn must not leak into a later turn if this one ends
+	// in an error or cancellation instead of a successful response.
+	charts := m.pendingCharts
+	m.pendingCharts = nil
 
 	if errors.Is(msg.err, context.Canceled) {
 		m.err = ""
@@ -724,8 +763,8 @@ func (m *AgentModel) handleAgentResponse(msg agentResponseMsg) (tea.Model, tea.C
 	}
 
 	m.err = ""
-	if msg.content != "" {
-		m.session.History = append(m.session.History, config.ChatTurn{Role: "assistant", Content: msg.content})
+	if msg.content != "" || len(charts) > 0 {
+		m.session.History = append(m.session.History, config.ChatTurn{Role: "assistant", Content: msg.content, Charts: charts})
 		m.messages = append(m.messages, llm.Message{Role: llm.RoleAssistant, Content: msg.content})
 	}
 	m.session.UpdatedAt = time.Now()
@@ -778,14 +817,22 @@ func (m *AgentModel) sendMessage(text string) (tea.Model, tea.Cmd) {
 	m.streaming = true
 	m.streambuf.Reset()
 
-	// Reset tool logs for this new turn.
+	// Reset tool logs and pending charts for this new turn.
 	m.toolLogs = nil
 	m.toolLogsTurn = len(m.session.History) - 1
+	m.pendingCharts = nil
 
 	// Wire up the progress channel so tool activity is reported back to the TUI.
 	ch := make(chan agent.ProgressEvent, 8)
 	m.progressCh = ch
 	m.ag.SetProgressCh(ch)
+
+	// Wire up the chart channel so market_render_price_chart calls are
+	// reported back to the TUI and rendered client-side (never through the
+	// LLM's own phrasing — see FEAT-4 chat-tool session notes).
+	chartCh := make(chan agent.ChartEvent, 8)
+	m.chartCh = chartCh
+	m.ag.SetChartCh(chartCh)
 
 	// Wire up the stream channel so incremental LLM text is reported back to
 	// the TUI. Buffer is larger than progressCh's since text fragments arrive
@@ -807,7 +854,7 @@ func (m *AgentModel) sendMessage(text string) (tea.Model, tea.Cmd) {
 
 	msgs := make([]llm.Message, len(m.messages))
 	copy(msgs, m.messages)
-	return m, tea.Batch(m.spin.Tick, startAgentStreamCmd(m.ag, msgs, ctx, chunkCh), listenProgressCmd(ch), listenStreamCmd(chunkCh), inferenceTickCmd())
+	return m, tea.Batch(m.spin.Tick, startAgentStreamCmd(m.ag, msgs, ctx, chunkCh), listenProgressCmd(ch), listenChartCmd(chartCh, m.styles), listenStreamCmd(chunkCh), inferenceTickCmd())
 }
 
 // ensureRenderer creates or recreates the TermRenderer when the viewport width or
@@ -880,6 +927,18 @@ func (m *AgentModel) renderHistory() string {
 			rendered := m.renderMarkdown(turn.Content)
 			sb.WriteString(RenderAgentBlock(m.styles, rendered, m.width))
 			sb.WriteString("\n\n")
+			// Chart blocks are pre-styled with ANSI by ntcharts/lipgloss and
+			// must never be passed through renderMarkdown/glamour — chroma's
+			// code-block highlighter would tokenize and re-color the raw
+			// escape sequences, corrupting them.
+			for _, chart := range turn.Charts {
+				if m.width > 0 && m.width < chartWidth+4 {
+					sb.WriteString(wrap(m.styles.Hint.Render(locale.T("agent.chart_too_narrow"))))
+				} else {
+					sb.WriteString(chart)
+				}
+				sb.WriteString("\n\n")
+			}
 		}
 	}
 
