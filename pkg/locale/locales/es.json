@@ -649,6 +649,9 @@
   "portfolio.view.action.watchlist": {
     "other": "Ver watchlist"
   },
+  "portfolio.view.action.export": {
+    "other": "Exportar a JSON/CSV"
+  },
   "portfolio.view.action.add": {
     "other": "Añadir instrumento"
   },
@@ -765,6 +768,19 @@
   },
   "portfolio.watchlist.price_unavailable": {
     "other": "—"
+  },
+
+  "portfolio.export.title": {
+    "other": "Exportar Cartera"
+  },
+  "portfolio.export.loading": {
+    "other": "Exportando…"
+  },
+  "portfolio.export.empty": {
+    "other": "Nada que exportar — esta cartera no tiene posiciones ni cash"
+  },
+  "portfolio.export.hint": {
+    "other": "Esc: volver"
   },
 
   "portfolio.instruments.title": {

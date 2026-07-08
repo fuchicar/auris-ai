@@ -649,6 +649,9 @@
   "portfolio.view.action.watchlist": {
     "other": "View watchlist"
   },
+  "portfolio.view.action.export": {
+    "other": "Export to JSON/CSV"
+  },
   "portfolio.view.action.add": {
     "other": "Add instrument"
   },
@@ -765,6 +768,19 @@
   },
   "portfolio.watchlist.price_unavailable": {
     "other": "—"
+  },
+
+  "portfolio.export.title": {
+    "other": "Export Portfolio"
+  },
+  "portfolio.export.loading": {
+    "other": "Exporting…"
+  },
+  "portfolio.export.empty": {
+    "other": "Nothing to export — this portfolio has no holdings or cash"
+  },
+  "portfolio.export.hint": {
+    "other": "Esc: back"
   },
 
   "portfolio.instruments.title": {

@@ -17,7 +17,7 @@ import (
 
 // PortfolioViewResult is emitted when the user chooses an action on the portfolio screen.
 type PortfolioViewResult struct {
-	Action    string               // "agent"|"instruments"|"allocation"|"transactions"|"watchlist"|"add"|"edit"|"deleted"
+	Action    string               // "agent"|"instruments"|"allocation"|"transactions"|"watchlist"|"export"|"add"|"edit"|"deleted"
 	Portfolio *portfolio.Portfolio // always set
 }
 
@@ -39,6 +39,7 @@ var portfolioViewActions = []string{
 	"portfolio.view.action.allocation",
 	"portfolio.view.action.transactions",
 	"portfolio.view.action.watchlist",
+	"portfolio.view.action.export",
 	"portfolio.view.action.add",
 	"portfolio.view.action.edit",
 	"portfolio.view.action.delete",
@@ -260,15 +261,19 @@ func (m *portfolioViewModel) selectAction() (tea.Model, tea.Cmd) {
 		return m, func() tea.Msg {
 			return ScreenDoneMsg{From: ScreenPortfolioView, Result: PortfolioViewResult{Action: "watchlist", Portfolio: p}}
 		}
-	case 5: // add
+	case 5: // export
+		return m, func() tea.Msg {
+			return ScreenDoneMsg{From: ScreenPortfolioView, Result: PortfolioViewResult{Action: "export", Portfolio: p}}
+		}
+	case 6: // add
 		return m, func() tea.Msg {
 			return ScreenDoneMsg{From: ScreenPortfolioView, Result: PortfolioViewResult{Action: "add", Portfolio: p}}
 		}
-	case 6: // edit
+	case 7: // edit
 		return m, func() tea.Msg {
 			return ScreenDoneMsg{From: ScreenPortfolioView, Result: PortfolioViewResult{Action: "edit", Portfolio: p}}
 		}
-	case 7: // delete
+	case 8: // delete
 		m.confirming = true
 	}
 	return m, nil

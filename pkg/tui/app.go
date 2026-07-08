@@ -46,6 +46,7 @@ const (
 	ScreenPortfolioAllocation            // target allocation editor
 	ScreenPortfolioTransactions          // read-only transaction/cash-flow history
 	ScreenPortfolioWatchlist             // read-only watchlist with live price/%change
+	ScreenPortfolioExport                // export positions/lots/metrics to JSON+CSV
 )
 
 // FlowContext distinguishes whether a settings screen was opened during first-
@@ -621,6 +622,11 @@ func (a *AppModel) transition(msg ScreenDoneMsg) (tea.Model, tea.Cmd) {
 				mp := a.buildMarketProvider()
 				a.screen = ScreenPortfolioWatchlist
 				a.current = newPortfolioWatchlistModel(r.Portfolio, mp, a.styles)
+			case "export":
+				a.activePortfolio = r.Portfolio
+				mp := a.buildMarketProvider()
+				a.screen = ScreenPortfolioExport
+				a.current = newPortfolioExportModel(r.Portfolio, mp, a.styles)
 			case "add":
 				a.activePortfolio = r.Portfolio
 				a.instrumentSearchOrigin = ScreenPortfolioView
@@ -725,6 +731,17 @@ func (a *AppModel) transition(msg ScreenDoneMsg) (tea.Model, tea.Cmd) {
 	case ScreenPortfolioWatchlist:
 		switch r := msg.Result.(type) {
 		case PortfolioWatchlistResult:
+			if r.Portfolio != nil {
+				a.activePortfolio = r.Portfolio
+			}
+			mp := a.buildMarketProvider()
+			a.screen = ScreenPortfolioView
+			a.current = newPortfolioViewModel(a.activePortfolio, mp, a.styles)
+		}
+
+	case ScreenPortfolioExport:
+		switch r := msg.Result.(type) {
+		case PortfolioExportResult:
 			if r.Portfolio != nil {
 				a.activePortfolio = r.Portfolio
 			}
