@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/bubbles/spinner"
-	"github.com/charmbracelet/bubbles/textinput"
+	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/glamour"
@@ -38,9 +38,14 @@ const (
 	agentStateError
 )
 
-// agentFixedHeight is the number of terminal lines occupied by chrome
-// (title, two separators, input row, hint). The viewport fills the rest.
-const agentFixedHeight = 5
+// agentChromeHeight is the number of terminal lines occupied by fixed chrome
+// (title, two separators, hint). The input row's height is variable (see
+// maxInputLines) and is added separately. The viewport fills the rest.
+const agentChromeHeight = 4
+
+// maxInputLines caps how many rows the input box can grow to before it
+// starts scrolling internally instead of consuming more of the screen.
+const maxInputLines = 6
 
 // maxPaletteLines is the maximum number of command palette items visible at once.
 const maxPaletteLines = 5
@@ -107,7 +112,7 @@ type AgentModel struct {
 	state         agentState
 	session       *config.Session
 	viewport      viewport.Model
-	input         textinput.Model
+	input         textarea.Model
 	spin          spinner.Model
 	messages      []llm.Message // multi-turn context sent to the LLM
 	provider      llm.AIProvider
@@ -156,9 +161,18 @@ type AgentModel struct {
 // sysMsg overrides the default system prompt when non-nil (e.g. portfolio agent).
 // portfolioID, when non-empty, scopes portfolio management tools to that portfolio.
 func newAgentModel(provider llm.AIProvider, mp market.ProviderAPI, session *config.Session, modelID string, s *Styles, width, height int, profile *config.FinancialProfile, newsFeeds []news.FeedConfig, debugLogger *log.Logger, sysMsg *llm.Message, portfolioID string) *AgentModel {
-	ti := textinput.New()
+	ti := textarea.New()
 	ti.Placeholder = locale.T("agent.placeholder")
-	ti.Prompt = "" // the ">" prefix is rendered manually in View()
+	ti.ShowLineNumbers = false
+	ti.SetPromptFunc(2, func(lineIdx int) string {
+		if lineIdx == 0 {
+			return "> "
+		}
+		return "  "
+	})
+	ti.FocusedStyle.Prompt = s.Cursor
+	ti.BlurredStyle.Prompt = s.Cursor
+	ti.SetWidth(width)
 
 	sp := spinner.New()
 	sp.Spinner = spinner.Dot
@@ -188,8 +202,8 @@ func newAgentModel(provider llm.AIProvider, mp market.ProviderAPI, session *conf
 		messages: messages,
 		provider: provider,
 		mp:       mp,
-		ag:      agent.New(provider, mp, modelID, agent.WithDebugLogger(debugLogger), agent.WithPortfolioID(portfolioID)),
-		modelID: modelID,
+		ag:       agent.New(provider, mp, modelID, agent.WithDebugLogger(debugLogger), agent.WithPortfolioID(portfolioID)),
+		modelID:  modelID,
 		styles:   s,
 		width:    width,
 		height:   height,
@@ -201,7 +215,7 @@ func newAgentModel(provider llm.AIProvider, mp market.ProviderAPI, session *conf
 	// succeeds. BubbleTea only sends WindowSizeMsg once (at startup), so new
 	// screens created later must seed their own dimensions.
 	if width > 0 && height > 0 {
-		vpHeight := height - agentFixedHeight
+		vpHeight := height - agentChromeHeight - m.input.Height()
 		if vpHeight < 1 {
 			vpHeight = 1
 		}
@@ -298,8 +312,9 @@ func (m *AgentModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+		m.input.SetWidth(m.width)
 		if !m.ready {
-			vpHeight := m.height - agentFixedHeight - m.paletteHeight()
+			vpHeight := m.height - agentChromeHeight - m.input.Height() - m.paletteHeight()
 			if vpHeight < 1 {
 				vpHeight = 1
 			}
@@ -325,7 +340,7 @@ func (m *AgentModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.viewport.GotoBottom()
 		}
 		m.input.Focus()
-		return m, textinput.Blink
+		return m, textarea.Blink
 
 	case agentProgressMsg:
 		var text string
@@ -458,11 +473,15 @@ func (m *AgentModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.cmdCursor = 0
 			m.cmdOffset = 0
 			m.input.SetValue("")
-			m.updateViewportHeight()
+			m.updateInputHeight()
 		}
 		return m, nil
 
 	case tea.KeyUp:
+		if msg.Alt {
+			m.input.CursorUp()
+			return m, nil
+		}
 		if m.showCmdPalette && len(m.cmdMatches) > 0 {
 			if m.cmdCursor > 0 {
 				m.cmdCursor--
@@ -475,6 +494,10 @@ func (m *AgentModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, cmd
 
 	case tea.KeyDown:
+		if msg.Alt {
+			m.input.CursorDown()
+			return m, nil
+		}
 		if m.showCmdPalette && len(m.cmdMatches) > 0 {
 			if m.cmdCursor < len(m.cmdMatches)-1 {
 				m.cmdCursor++
@@ -486,21 +509,46 @@ func (m *AgentModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.viewport = vp
 		return m, cmd
 
+	case tea.KeyCtrlJ:
+		m.insertNewline()
+		return m, nil
+
 	case tea.KeyEnter:
+		if msg.Alt {
+			m.insertNewline()
+			return m, nil
+		}
+		// A trailing "\" is a manual escape for terminals that don't report
+		// Alt+Enter/Ctrl+J distinctly: drop the backslash and insert a newline
+		// instead of submitting.
+		if val := m.input.Value(); strings.HasSuffix(val, `\`) {
+			m.input.SetValue(strings.TrimSuffix(val, `\`))
+			m.insertNewline()
+			return m, nil
+		}
 		return m.handleEnter()
 	}
 
 	in, cmd := m.input.Update(msg)
 	m.input = in
+	m.updateInputHeight()
 	m.updatePalette()
 	return m, cmd
+}
+
+// insertNewline inserts a literal newline at the cursor without submitting
+// the message, then resizes the input box to fit. Used by every newline
+// trigger (Ctrl+J, Alt+Enter, the "\"+Enter escape) so they behave identically.
+func (m *AgentModel) insertNewline() {
+	m.input.InsertRune('\n')
+	m.updateInputHeight()
 }
 
 // updatePalette recomputes cmdMatches and showCmdPalette from the current input
 // value, then resizes the viewport to account for the palette height change.
 func (m *AgentModel) updatePalette() {
 	val := m.input.Value()
-	if !strings.HasPrefix(val, "/") || strings.Contains(val[1:], " ") {
+	if !strings.HasPrefix(val, "/") || strings.Contains(val[1:], " ") || strings.Contains(val, "\n") {
 		m.showCmdPalette = false
 		m.cmdMatches = nil
 		m.cmdCursor = 0
@@ -526,13 +574,35 @@ func (m *AgentModel) updatePalette() {
 	m.updateViewportHeight()
 }
 
+// updateInputHeight resizes the input box to fit the number of visual rows
+// its content currently needs (up to maxInputLines), then resizes the
+// viewport to reclaim/yield the difference. LineCount() alone only counts
+// hard line breaks (Ctrl+J/Alt+Enter/"\"+Enter); a single long line that
+// soft-wraps within the box's width must grow it exactly the same way, so
+// the wrapped row count is computed too and the larger of the two wins.
+func (m *AgentModel) updateInputHeight() {
+	lines := m.input.LineCount()
+	if w := m.input.Width(); w > 0 {
+		wrapped := ansi.Wordwrap(m.input.Value(), w, "")
+		if wc := strings.Count(wrapped, "\n") + 1; wc > lines {
+			lines = wc
+		}
+	}
+	if lines > maxInputLines {
+		lines = maxInputLines
+	}
+	m.input.SetHeight(lines)
+	m.updateViewportHeight()
+}
+
 // updateViewportHeight resizes the viewport to fill available space after
-// subtracting the fixed chrome and any visible palette rows.
+// subtracting the fixed chrome, the input box's current height, and any
+// visible palette rows.
 func (m *AgentModel) updateViewportHeight() {
 	if !m.ready {
 		return
 	}
-	vpHeight := m.height - agentFixedHeight - m.paletteHeight()
+	vpHeight := m.height - agentChromeHeight - m.input.Height() - m.paletteHeight()
 	if vpHeight < 1 {
 		vpHeight = 1
 	}
@@ -603,7 +673,7 @@ func (m *AgentModel) handleEnter() (tea.Model, tea.Cmd) {
 		m.cmdMatches = nil
 		m.cmdCursor = 0
 		m.cmdOffset = 0
-		m.updateViewportHeight()
+		m.updateInputHeight()
 		return m, nil
 	}
 
@@ -640,7 +710,7 @@ func (m *AgentModel) emitCommand(name string, args []string) (tea.Model, tea.Cmd
 	m.cmdCursor = 0
 	m.cmdOffset = 0
 	m.input.SetValue("")
-	m.updateViewportHeight()
+	m.updateInputHeight()
 	return m, func() tea.Msg {
 		return ScreenDoneMsg{
 			From:   ScreenAgent,
@@ -657,7 +727,7 @@ func (m *AgentModel) handleExportCmd(args []string) (tea.Model, tea.Cmd) {
 	m.cmdCursor = 0
 	m.cmdOffset = 0
 	m.input.SetValue("")
-	m.updateViewportHeight()
+	m.updateInputHeight()
 	m.err = ""
 	m.infoMsg = ""
 	var filename string
@@ -811,6 +881,7 @@ func requestTitleCmd(provider llm.AIProvider, modelID string, history []config.C
 
 func (m *AgentModel) sendMessage(text string) (tea.Model, tea.Cmd) {
 	m.input.SetValue("")
+	m.updateInputHeight()
 	m.err = ""
 	m.infoMsg = ""
 	m.session.History = append(m.session.History, config.ChatTurn{Role: "user", Content: text})
@@ -980,7 +1051,7 @@ func (m *AgentModel) View() string {
 	}
 
 	sep := strings.Repeat("─", m.width)
-	inputRow := m.styles.Cursor.Render(">") + " " + m.input.View()
+	inputRow := m.input.View()
 
 	// Left side: normal help hint.
 	var leftHint string
