@@ -13,6 +13,7 @@ type VolatilityResult struct {
 	VolatilityAnnualPercent float64 `json:"volatility_annual_percent"`
 	VolatilityDailyPercent  float64 `json:"volatility_daily_percent"`
 	Summary                 string  `json:"summary"`
+	InputsSummary           string  `json:"inputs_summary"`
 	ComputedAt              string  `json:"computed_at"`
 }
 
@@ -44,6 +45,7 @@ type SharpeResult struct {
 	AnnualizedReturnPercent     float64 `json:"annualized_return_percent"`
 	AnnualizedVolatilityPercent float64 `json:"annualized_volatility_percent"`
 	Summary                     string  `json:"summary"`
+	InputsSummary               string  `json:"inputs_summary"`
 	ComputedAt                  string  `json:"computed_at"`
 }
 
@@ -84,6 +86,7 @@ type SortinoResult struct {
 	AnnualizedReturnPercent            float64 `json:"annualized_return_percent"`
 	AnnualizedDownsideDeviationPercent float64 `json:"annualized_downside_deviation_percent"`
 	Summary                            string  `json:"summary"`
+	InputsSummary                      string  `json:"inputs_summary"`
 	ComputedAt                         string  `json:"computed_at"`
 }
 
@@ -145,6 +148,7 @@ type MaxDrawdownResult struct {
 	TroughPrice           float64 `json:"trough_price"`
 	RecoveryNeededPercent float64 `json:"recovery_needed_percent"`
 	Summary               string  `json:"summary"`
+	InputsSummary         string  `json:"inputs_summary"`
 	ComputedAt            string  `json:"computed_at"`
 }
 
@@ -194,6 +198,7 @@ type BetaResult struct {
 	Correlation    float64 `json:"correlation"`
 	Interpretation string  `json:"interpretation"`
 	Summary        string  `json:"summary"`
+	InputsSummary  string  `json:"inputs_summary"`
 	ComputedAt     string  `json:"computed_at"`
 }
 
@@ -253,6 +258,7 @@ type TreynorResult struct {
 	AnnualizedReturnPercent float64 `json:"annualized_return_percent"`
 	Beta                    float64 `json:"beta"`
 	Summary                 string  `json:"summary"`
+	InputsSummary           string  `json:"inputs_summary"`
 	ComputedAt              string  `json:"computed_at"`
 }
 
@@ -302,6 +308,7 @@ type InformationRatioResult struct {
 	AnnualizedActiveReturnPercent  float64 `json:"annualized_active_return_percent"`
 	AnnualizedTrackingErrorPercent float64 `json:"annualized_tracking_error_percent"`
 	Summary                        string  `json:"summary"`
+	InputsSummary                  string  `json:"inputs_summary"`
 	ComputedAt                     string  `json:"computed_at"`
 }
 
@@ -354,12 +361,13 @@ func CalcInformationRatio(assetReturns, benchmarkReturns []float64) (Information
 // --- VaR -----------------------------------------------------------------------
 
 type VarResult struct {
-	VaRAbsolute  float64 `json:"var_absolute"`
-	VaRPercent   float64 `json:"var_percent"`
-	CVaRAbsolute float64 `json:"cvar_absolute"`
-	Method       string  `json:"method"`
-	Summary      string  `json:"summary"`
-	ComputedAt   string  `json:"computed_at"`
+	VaRAbsolute   float64 `json:"var_absolute"`
+	VaRPercent    float64 `json:"var_percent"`
+	CVaRAbsolute  float64 `json:"cvar_absolute"`
+	Method        string  `json:"method"`
+	Summary       string  `json:"summary"`
+	InputsSummary string  `json:"inputs_summary"`
+	ComputedAt    string  `json:"computed_at"`
 }
 
 func CalcVaR(returns []float64, confidenceLevel, portfolioValue float64, method string) (VarResult, error) {

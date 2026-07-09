@@ -9,16 +9,17 @@ import (
 // --- Descriptive statistics ----------------------------------------------------
 
 type StatsResult struct {
-	Mean         float64 `json:"mean"`
-	Median       float64 `json:"median"`
-	StdDev       float64 `json:"std_dev"`
-	Min          float64 `json:"min"`
-	Max          float64 `json:"max"`
-	Percentile25 float64 `json:"percentile_25"`
-	Percentile75 float64 `json:"percentile_75"`
-	Count        int     `json:"count"`
-	Summary      string  `json:"summary"`
-	ComputedAt   string  `json:"computed_at"`
+	Mean          float64 `json:"mean"`
+	Median        float64 `json:"median"`
+	StdDev        float64 `json:"std_dev"`
+	Min           float64 `json:"min"`
+	Max           float64 `json:"max"`
+	Percentile25  float64 `json:"percentile_25"`
+	Percentile75  float64 `json:"percentile_75"`
+	Count         int     `json:"count"`
+	Summary       string  `json:"summary"`
+	InputsSummary string  `json:"inputs_summary"`
+	ComputedAt    string  `json:"computed_at"`
 }
 
 func CalcStats(values []float64, label string) (StatsResult, error) {
