@@ -13,6 +13,7 @@ type VolatilityResult struct {
 	VolatilityAnnualPercent float64 `json:"volatility_annual_percent"`
 	VolatilityDailyPercent  float64 `json:"volatility_daily_percent"`
 	Summary                 string  `json:"summary"`
+	ComputedAt              string  `json:"computed_at"`
 }
 
 func CalcVolatility(prices []float64) (VolatilityResult, error) {
@@ -43,6 +44,7 @@ type SharpeResult struct {
 	AnnualizedReturnPercent     float64 `json:"annualized_return_percent"`
 	AnnualizedVolatilityPercent float64 `json:"annualized_volatility_percent"`
 	Summary                     string  `json:"summary"`
+	ComputedAt                  string  `json:"computed_at"`
 }
 
 // CalcSharpe computes the annualised Sharpe ratio.
@@ -82,6 +84,7 @@ type SortinoResult struct {
 	AnnualizedReturnPercent            float64 `json:"annualized_return_percent"`
 	AnnualizedDownsideDeviationPercent float64 `json:"annualized_downside_deviation_percent"`
 	Summary                            string  `json:"summary"`
+	ComputedAt                         string  `json:"computed_at"`
 }
 
 // CalcSortino computes the annualised Sortino ratio, a Sharpe variant that
@@ -142,6 +145,7 @@ type MaxDrawdownResult struct {
 	TroughPrice           float64 `json:"trough_price"`
 	RecoveryNeededPercent float64 `json:"recovery_needed_percent"`
 	Summary               string  `json:"summary"`
+	ComputedAt            string  `json:"computed_at"`
 }
 
 func CalcMaxDrawdown(prices []float64) (MaxDrawdownResult, error) {
@@ -190,6 +194,7 @@ type BetaResult struct {
 	Correlation    float64 `json:"correlation"`
 	Interpretation string  `json:"interpretation"`
 	Summary        string  `json:"summary"`
+	ComputedAt     string  `json:"computed_at"`
 }
 
 func CalcBeta(assetReturns, benchmarkReturns []float64) (BetaResult, error) {
@@ -248,6 +253,7 @@ type TreynorResult struct {
 	AnnualizedReturnPercent float64 `json:"annualized_return_percent"`
 	Beta                    float64 `json:"beta"`
 	Summary                 string  `json:"summary"`
+	ComputedAt              string  `json:"computed_at"`
 }
 
 // CalcTreynor computes the Treynor ratio: annualised excess return per unit
@@ -296,6 +302,7 @@ type InformationRatioResult struct {
 	AnnualizedActiveReturnPercent  float64 `json:"annualized_active_return_percent"`
 	AnnualizedTrackingErrorPercent float64 `json:"annualized_tracking_error_percent"`
 	Summary                        string  `json:"summary"`
+	ComputedAt                     string  `json:"computed_at"`
 }
 
 // CalcInformationRatio computes the information ratio: annualised active
@@ -352,6 +359,7 @@ type VarResult struct {
 	CVaRAbsolute float64 `json:"cvar_absolute"`
 	Method       string  `json:"method"`
 	Summary      string  `json:"summary"`
+	ComputedAt   string  `json:"computed_at"`
 }
 
 func CalcVaR(returns []float64, confidenceLevel, portfolioValue float64, method string) (VarResult, error) {

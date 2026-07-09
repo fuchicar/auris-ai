@@ -694,109 +694,201 @@ func (a *Agent) dispatchInner(ctx context.Context, call llm.ToolCall, lastKind *
 	// Math tools — no market provider needed.
 	switch call.Function.Name {
 	case "calculate_roi":
-		return encode(finance.CalcROI(numVal("cost_basis"), numVal("current_value")))
+		r, err := finance.CalcROI(numVal("cost_basis"), numVal("current_value"))
+		if err == nil {
+			r.ComputedAt = time.Now().UTC().Format(time.RFC3339)
+		}
+		return encode(r, err)
 	case "calculate_cagr":
-		return encode(finance.CalcCAGR(numVal("initial_value"), numVal("final_value"), numVal("years")))
+		r, err := finance.CalcCAGR(numVal("initial_value"), numVal("final_value"), numVal("years"))
+		if err == nil {
+			r.ComputedAt = time.Now().UTC().Format(time.RFC3339)
+		}
+		return encode(r, err)
 	case "calculate_volatility":
 		prices, ok := arrNumVal("prices")
 		if !ok {
 			return `error: prices must be an array of numbers`
 		}
-		return encode(finance.CalcVolatility(prices))
+		r, err := finance.CalcVolatility(prices)
+		if err == nil {
+			r.ComputedAt = time.Now().UTC().Format(time.RFC3339)
+		}
+		return encode(r, err)
 	case "calculate_sharpe":
 		returns, ok := arrNumVal("returns")
 		if !ok {
 			return `error: returns must be an array of numbers`
 		}
-		return encode(finance.CalcSharpe(returns, numVal("risk_free_rate_annual")))
+		r, err := finance.CalcSharpe(returns, numVal("risk_free_rate_annual"))
+		if err == nil {
+			r.ComputedAt = time.Now().UTC().Format(time.RFC3339)
+		}
+		return encode(r, err)
 	case "calculate_sortino":
 		returns, ok := arrNumVal("returns")
 		if !ok {
 			return `error: returns must be an array of numbers`
 		}
-		return encode(finance.CalcSortino(returns, numVal("risk_free_rate_annual")))
+		r, err := finance.CalcSortino(returns, numVal("risk_free_rate_annual"))
+		if err == nil {
+			r.ComputedAt = time.Now().UTC().Format(time.RFC3339)
+		}
+		return encode(r, err)
 	case "calculate_max_drawdown":
 		prices, ok := arrNumVal("prices")
 		if !ok {
 			return `error: prices must be an array of numbers`
 		}
-		return encode(finance.CalcMaxDrawdown(prices))
+		r, err := finance.CalcMaxDrawdown(prices)
+		if err == nil {
+			r.ComputedAt = time.Now().UTC().Format(time.RFC3339)
+		}
+		return encode(r, err)
 	case "calculate_pnl":
-		return encode(finance.CalcPnL(numVal("entry_price"), numVal("current_price"), numVal("quantity"), str("position_type")))
+		r, err := finance.CalcPnL(numVal("entry_price"), numVal("current_price"), numVal("quantity"), str("position_type"))
+		if err == nil {
+			r.ComputedAt = time.Now().UTC().Format(time.RFC3339)
+		}
+		return encode(r, err)
 	case "calculate_beta":
 		ar, ok1 := arrNumVal("asset_returns")
 		br, ok2 := arrNumVal("benchmark_returns")
 		if !ok1 || !ok2 {
 			return `error: asset_returns and benchmark_returns must be arrays of numbers`
 		}
-		return encode(finance.CalcBeta(ar, br))
+		r, err := finance.CalcBeta(ar, br)
+		if err == nil {
+			r.ComputedAt = time.Now().UTC().Format(time.RFC3339)
+		}
+		return encode(r, err)
 	case "calculate_treynor":
 		returns, ok := arrNumVal("returns")
 		if !ok {
 			return `error: returns must be an array of numbers`
 		}
-		return encode(finance.CalcTreynor(returns, numVal("risk_free_rate_annual"), numVal("beta")))
+		r, err := finance.CalcTreynor(returns, numVal("risk_free_rate_annual"), numVal("beta"))
+		if err == nil {
+			r.ComputedAt = time.Now().UTC().Format(time.RFC3339)
+		}
+		return encode(r, err)
 	case "calculate_information_ratio":
 		ar, ok1 := arrNumVal("asset_returns")
 		br, ok2 := arrNumVal("benchmark_returns")
 		if !ok1 || !ok2 {
 			return `error: asset_returns and benchmark_returns must be arrays of numbers`
 		}
-		return encode(finance.CalcInformationRatio(ar, br))
+		r, err := finance.CalcInformationRatio(ar, br)
+		if err == nil {
+			r.ComputedAt = time.Now().UTC().Format(time.RFC3339)
+		}
+		return encode(r, err)
 	case "calculate_var":
 		returns, ok := arrNumVal("returns")
 		if !ok {
 			return `error: returns must be an array of numbers`
 		}
-		return encode(finance.CalcVaR(returns, numVal("confidence_level"), numVal("portfolio_value"), str("method")))
+		r, err := finance.CalcVaR(returns, numVal("confidence_level"), numVal("portfolio_value"), str("method"))
+		if err == nil {
+			r.ComputedAt = time.Now().UTC().Format(time.RFC3339)
+		}
+		return encode(r, err)
 	case "calculate_monte_carlo_simulation":
-		return encode(finance.CalcMonteCarloSimulation(numVal("last_price"), numVal("drift_annual"), numVal("volatility_annual"),
-			intVal("days", 0), intVal("num_simulations", 0)))
+		r, err := finance.CalcMonteCarloSimulation(numVal("last_price"), numVal("drift_annual"), numVal("volatility_annual"),
+			intVal("days", 0), intVal("num_simulations", 0))
+		if err == nil {
+			r.ComputedAt = time.Now().UTC().Format(time.RFC3339)
+		}
+		return encode(r, err)
 	case "calculate_dcf":
 		fcf, ok := arrNumVal("free_cash_flows")
 		if !ok {
 			return `error: free_cash_flows must be an array of numbers`
 		}
-		return encode(finance.CalcDCF(fcf, numVal("discount_rate"), numVal("terminal_growth_rate"), numVal("shares_outstanding")))
+		r, err := finance.CalcDCF(fcf, numVal("discount_rate"), numVal("terminal_growth_rate"), numVal("shares_outstanding"))
+		if err == nil {
+			r.ComputedAt = time.Now().UTC().Format(time.RFC3339)
+		}
+		return encode(r, err)
 	case "calculate_multiples":
-		return encode(finance.CalcMultiples(numVal("price"), numVal("eps"), numVal("book_value_per_share"),
-			numVal("ebitda"), numVal("enterprise_value"), numVal("revenue")))
+		r, err := finance.CalcMultiples(numVal("price"), numVal("eps"), numVal("book_value_per_share"),
+			numVal("ebitda"), numVal("enterprise_value"), numVal("revenue"))
+		if err == nil {
+			r.ComputedAt = time.Now().UTC().Format(time.RFC3339)
+		}
+		return encode(r, err)
 	case "calculate_pfcf":
-		return encode(finance.CalcPFCF(numVal("price"), numVal("free_cash_flow_per_share"), str("currency")))
+		r, err := finance.CalcPFCF(numVal("price"), numVal("free_cash_flow_per_share"), str("currency"))
+		if err == nil {
+			r.ComputedAt = time.Now().UTC().Format(time.RFC3339)
+		}
+		return encode(r, err)
 	case "calculate_peg":
-		return encode(finance.CalcPEG(numVal("pe_ratio"), numVal("growth_rate_percent")))
+		r, err := finance.CalcPEG(numVal("pe_ratio"), numVal("growth_rate_percent"))
+		if err == nil {
+			r.ComputedAt = time.Now().UTC().Format(time.RFC3339)
+		}
+		return encode(r, err)
 	case "calculate_dividend_yield":
 		quarterly, _ := arrNumVal("quarterly_dividends")
-		return encode(finance.CalcDividendYield(numVal("price"), numVal("annual_dividend_per_share"), quarterly))
+		r, err := finance.CalcDividendYield(numVal("price"), numVal("annual_dividend_per_share"), quarterly)
+		if err == nil {
+			r.ComputedAt = time.Now().UTC().Format(time.RFC3339)
+		}
+		return encode(r, err)
 	case "calculate_dividend_growth":
 		dividends, ok := arrNumVal("dividends")
 		if !ok {
 			return `error: dividends must be an array of numbers`
 		}
-		return encode(finance.CalcDividendGrowth(dividends))
+		r, err := finance.CalcDividendGrowth(dividends)
+		if err == nil {
+			r.ComputedAt = time.Now().UTC().Format(time.RFC3339)
+		}
+		return encode(r, err)
 	case "calculate_stress_test":
 		shocks, ok := arrNumVal("shocks_percent")
 		if !ok {
 			return `error: shocks_percent must be an array of numbers`
 		}
-		return encode(finance.CalcStressTest(numVal("current_value"), shocks, str("label")))
+		r, err := finance.CalcStressTest(numVal("current_value"), shocks, str("label"))
+		if err == nil {
+			r.ComputedAt = time.Now().UTC().Format(time.RFC3339)
+		}
+		return encode(r, err)
 	case "convert_currency":
-		return encode(finance.CalcCurrencyConversion(numVal("amount"), str("from_currency"), str("to_currency"), numVal("exchange_rate")))
+		r, err := finance.CalcCurrencyConversion(numVal("amount"), str("from_currency"), str("to_currency"), numVal("exchange_rate"))
+		if err == nil {
+			r.ComputedAt = time.Now().UTC().Format(time.RFC3339)
+		}
+		return encode(r, err)
 	case "calculate_compound_interest":
-		return encode(finance.CalcCompoundInterest(numVal("principal"), numVal("annual_rate"), numVal("years"), intVal("compounds_per_year", 1)))
+		r, err := finance.CalcCompoundInterest(numVal("principal"), numVal("annual_rate"), numVal("years"), intVal("compounds_per_year", 1))
+		if err == nil {
+			r.ComputedAt = time.Now().UTC().Format(time.RFC3339)
+		}
+		return encode(r, err)
 	case "calculate_stats":
 		vals, ok := arrNumVal("values")
 		if !ok {
 			return `error: values must be an array of numbers`
 		}
-		return encode(finance.CalcStats(vals, str("label")))
+		r, err := finance.CalcStats(vals, str("label"))
+		if err == nil {
+			r.ComputedAt = time.Now().UTC().Format(time.RFC3339)
+		}
+		return encode(r, err)
 
 	case "calculate_sma":
 		prices, ok := arrNumVal("prices")
 		if !ok {
 			return `error: prices must be an array of numbers`
 		}
-		return encode(finance.CalcSMA(prices, intVal("period", 20)))
+		r, err := finance.CalcSMA(prices, intVal("period", 20))
+		if err == nil {
+			r.ComputedAt = time.Now().UTC().Format(time.RFC3339)
+		}
+		return encode(r, err)
 
 	case "calculate_ema":
 		prices, ok := arrNumVal("prices")
@@ -804,24 +896,36 @@ func (a *Agent) dispatchInner(ctx context.Context, call llm.ToolCall, lastKind *
 			return `error: prices must be an array of numbers`
 		}
 		// alpha omitted -> 0, which finance.CalcEMA interprets as "use Wilder default".
-		return encode(finance.CalcEMA(prices, intVal("period", 20), numVal("alpha")))
+		r, err := finance.CalcEMA(prices, intVal("period", 20), numVal("alpha"))
+		if err == nil {
+			r.ComputedAt = time.Now().UTC().Format(time.RFC3339)
+		}
+		return encode(r, err)
 
 	case "calculate_rsi":
 		prices, ok := arrNumVal("prices")
 		if !ok {
 			return `error: prices must be an array of numbers`
 		}
-		return encode(finance.CalcRSI(prices, intVal("period", 14)))
+		r, err := finance.CalcRSI(prices, intVal("period", 14))
+		if err == nil {
+			r.ComputedAt = time.Now().UTC().Format(time.RFC3339)
+		}
+		return encode(r, err)
 
 	case "calculate_macd":
 		prices, ok := arrNumVal("prices")
 		if !ok {
 			return `error: prices must be an array of numbers`
 		}
-		return encode(finance.CalcMACD(prices,
+		r, err := finance.CalcMACD(prices,
 			intVal("fast_period", 12),
 			intVal("slow_period", 26),
-			intVal("signal_period", 9)))
+			intVal("signal_period", 9))
+		if err == nil {
+			r.ComputedAt = time.Now().UTC().Format(time.RFC3339)
+		}
+		return encode(r, err)
 
 	case "calculate_bollinger_bands":
 		prices, ok := arrNumVal("prices")
@@ -832,7 +936,11 @@ func (a *Agent) dispatchInner(ctx context.Context, call llm.ToolCall, lastKind *
 		if numStd <= 0 {
 			numStd = 2.0 // standard default, consistent with EMA's alpha default
 		}
-		return encode(finance.CalcBollingerBands(prices, intVal("period", 20), numStd))
+		r, err := finance.CalcBollingerBands(prices, intVal("period", 20), numStd)
+		if err == nil {
+			r.ComputedAt = time.Now().UTC().Format(time.RFC3339)
+		}
+		return encode(r, err)
 
 	case "calculate_correlation_matrix":
 		raw, ok := args["series"].(map[string]any)
@@ -855,7 +963,11 @@ func (a *Agent) dispatchInner(ctx context.Context, call llm.ToolCall, lastKind *
 			}
 			series[name] = vals
 		}
-		return encode(finance.CalcCorrelationMatrix(series))
+		r, err := finance.CalcCorrelationMatrix(series)
+		if err == nil {
+			r.ComputedAt = time.Now().UTC().Format(time.RFC3339)
+		}
+		return encode(r, err)
 	}
 
 	// News tool — no market provider needed.

@@ -12,13 +12,14 @@ import (
 // Values are aligned to the input: the first len(prices)-period+1 entries of
 // Values are non-nil; the rest are NaN so callers can detect warm-up.
 type SmaResult struct {
-	Period    int        `json:"period"`
-	Values    FloatSlice `json:"values"`
-	Last      float64    `json:"last"`
-	Previous  Float      `json:"previous"` // null during warm-up (< period prices)
-	Trend     string     `json:"trend"`    // "up", "down", or "flat"
-	Summary   string     `json:"summary"`
-	InputSize int        `json:"input_size"`
+	Period     int        `json:"period"`
+	Values     FloatSlice `json:"values"`
+	Last       float64    `json:"last"`
+	Previous   Float      `json:"previous"` // null during warm-up (< period prices)
+	Trend      string     `json:"trend"`    // "up", "down", or "flat"
+	Summary    string     `json:"summary"`
+	InputSize  int        `json:"input_size"`
+	ComputedAt string     `json:"computed_at"`
 }
 
 // CalcSMA computes the simple moving average of closing prices over a sliding
@@ -60,14 +61,15 @@ func CalcSMA(prices []float64, period int) (SmaResult, error) {
 // Values are aligned to the input: the first len(prices) entries are valid
 // because EMA seeds with the first observation, unlike SMA.
 type EmaResult struct {
-	Period    int       `json:"period"`
-	Alpha     float64   `json:"alpha"`
-	Values    []float64 `json:"values"`
-	Last      float64   `json:"last"`
-	Previous  Float     `json:"previous"` // null when only 1 price provided
-	Trend     string    `json:"trend"`
-	Summary   string    `json:"summary"`
-	InputSize int       `json:"input_size"`
+	Period     int       `json:"period"`
+	Alpha      float64   `json:"alpha"`
+	Values     []float64 `json:"values"`
+	Last       float64   `json:"last"`
+	Previous   Float     `json:"previous"` // null when only 1 price provided
+	Trend      string    `json:"trend"`
+	Summary    string    `json:"summary"`
+	InputSize  int       `json:"input_size"`
+	ComputedAt string    `json:"computed_at"`
 }
 
 // CalcEMA computes the exponential moving average of prices using the recursive
@@ -131,6 +133,7 @@ type RsiResult struct {
 	Values         FloatSlice `json:"values"`
 	Summary        string     `json:"summary"`
 	InputSize      int        `json:"input_size"`
+	ComputedAt     string     `json:"computed_at"`
 }
 
 // CalcRSI computes the Relative Strength Index using Wilder's smoothing
@@ -236,6 +239,7 @@ type MacdResult struct {
 	Trend        string    `json:"trend"` // "bullish_cross", "bearish_cross", or "no_cross"
 	Summary      string    `json:"summary"`
 	InputSize    int       `json:"input_size"`
+	ComputedAt   string    `json:"computed_at"`
 }
 
 // CalcMACD computes the Moving Average Convergence Divergence indicator.
@@ -303,19 +307,20 @@ func CalcMACD(prices []float64, fastPeriod, slowPeriod, signalPeriod int) (MacdR
 
 // bollingerResult holds Bollinger Band output for a price series.
 type BollingerResult struct {
-	Period    int        `json:"period"`
-	NumStd    float64    `json:"num_std"`
-	Upper     FloatSlice `json:"upper"`
-	Middle    FloatSlice `json:"middle"`
-	Lower     FloatSlice `json:"lower"`
-	Bandwidth FloatSlice `json:"bandwidth"` // (upper - lower) / middle
-	PercentB  FloatSlice `json:"percent_b"` // (price - lower) / (upper - lower)
-	LastPrice float64    `json:"last_price"`
-	LastUpper float64    `json:"last_upper"`
-	LastLower float64    `json:"last_lower"`
-	LastPctB  float64    `json:"last_percent_b"`
-	Summary   string     `json:"summary"`
-	InputSize int        `json:"input_size"`
+	Period     int        `json:"period"`
+	NumStd     float64    `json:"num_std"`
+	Upper      FloatSlice `json:"upper"`
+	Middle     FloatSlice `json:"middle"`
+	Lower      FloatSlice `json:"lower"`
+	Bandwidth  FloatSlice `json:"bandwidth"` // (upper - lower) / middle
+	PercentB   FloatSlice `json:"percent_b"` // (price - lower) / (upper - lower)
+	LastPrice  float64    `json:"last_price"`
+	LastUpper  float64    `json:"last_upper"`
+	LastLower  float64    `json:"last_lower"`
+	LastPctB   float64    `json:"last_percent_b"`
+	Summary    string     `json:"summary"`
+	InputSize  int        `json:"input_size"`
+	ComputedAt string     `json:"computed_at"`
 }
 
 // CalcBollingerBands computes Bollinger Bands (moving average ± k·σ) for a
@@ -388,10 +393,11 @@ func CalcBollingerBands(prices []float64, period int, numStd float64) (Bollinger
 // named return series, plus the diagonal (always 1) and labels for downstream
 // rendering.
 type CorrelationMatrixResult struct {
-	Labels  []string    `json:"labels"`
-	Matrix  [][]float64 `json:"matrix"`
-	Scale   string      `json:"scale"` // "[-1, 1]"
-	Summary string      `json:"summary"`
+	Labels     []string    `json:"labels"`
+	Matrix     [][]float64 `json:"matrix"`
+	Scale      string      `json:"scale"` // "[-1, 1]"
+	Summary    string      `json:"summary"`
+	ComputedAt string      `json:"computed_at"`
 }
 
 // CalcCorrelationMatrix computes the Pearson correlation between every pair

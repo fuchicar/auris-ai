@@ -18,6 +18,7 @@ type StatsResult struct {
 	Percentile75 float64 `json:"percentile_75"`
 	Count        int     `json:"count"`
 	Summary      string  `json:"summary"`
+	ComputedAt   string  `json:"computed_at"`
 }
 
 func CalcStats(values []float64, label string) (StatsResult, error) {

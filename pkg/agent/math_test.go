@@ -37,6 +37,9 @@ func TestDispatch_CalculateSMA_OK(t *testing.T) {
 	if r.Last != 4 {
 		t.Errorf("SMA last: want 4, got %v", r.Last)
 	}
+	if r.ComputedAt == "" {
+		t.Error("ComputedAt must be populated by the dispatcher")
+	}
 }
 
 func TestDispatch_CalculateEMA_OK(t *testing.T) {
@@ -57,6 +60,9 @@ func TestDispatch_CalculateEMA_OK(t *testing.T) {
 	if !approxEqual(r.Alpha, 0.5, 1e-9) {
 		t.Errorf("Wilder alpha for period=3: want 0.5, got %v", r.Alpha)
 	}
+	if r.ComputedAt == "" {
+		t.Error("ComputedAt must be populated by the dispatcher")
+	}
 }
 
 func TestDispatch_CalculateRSI_OK(t *testing.T) {
@@ -76,6 +82,9 @@ func TestDispatch_CalculateRSI_OK(t *testing.T) {
 	}
 	if r.Value != 100 {
 		t.Errorf("all-gains RSI: want 100, got %v", r.Value)
+	}
+	if r.ComputedAt == "" {
+		t.Error("ComputedAt must be populated by the dispatcher")
 	}
 }
 
@@ -105,6 +114,9 @@ func TestDispatch_CalculateMACD_OK(t *testing.T) {
 	if r.LastMACD <= 0 {
 		t.Errorf("monotonically rising series must yield positive MACD, got %v", r.LastMACD)
 	}
+	if r.ComputedAt == "" {
+		t.Error("ComputedAt must be populated by the dispatcher")
+	}
 }
 
 func TestDispatch_CalculateBollinger_OK(t *testing.T) {
@@ -127,6 +139,9 @@ func TestDispatch_CalculateBollinger_OK(t *testing.T) {
 	}
 	if r.LastPrice != 15 {
 		t.Errorf("LastPrice: want 15, got %v", r.LastPrice)
+	}
+	if r.ComputedAt == "" {
+		t.Error("ComputedAt must be populated by the dispatcher")
 	}
 }
 
@@ -176,6 +191,9 @@ func TestDispatch_CalculateCorrelationMatrix_OK(t *testing.T) {
 	if len(r.Matrix) != 2 {
 		t.Errorf("matrix size: want 2x2, got %d", len(r.Matrix))
 	}
+	if r.ComputedAt == "" {
+		t.Error("ComputedAt must be populated by the dispatcher")
+	}
 }
 
 func TestDispatch_CalculateCorrelationMatrix_BadArgType(t *testing.T) {
@@ -208,6 +226,9 @@ func TestDispatch_CalculatePFCF_OK(t *testing.T) {
 	if !approxEqual(r.PFCF, 12.0, 0.01) {
 		t.Errorf("PFCF: want ~12.0, got %v", r.PFCF)
 	}
+	if r.ComputedAt == "" {
+		t.Error("ComputedAt must be populated by the dispatcher")
+	}
 }
 
 func TestDispatch_CalculatePEG_OK(t *testing.T) {
@@ -227,6 +248,9 @@ func TestDispatch_CalculatePEG_OK(t *testing.T) {
 	if r.Interpretation != "reasonable" {
 		t.Errorf("Interpretation: want reasonable, got %q", r.Interpretation)
 	}
+	if r.ComputedAt == "" {
+		t.Error("ComputedAt must be populated by the dispatcher")
+	}
 }
 
 func TestDispatch_CalculateDividendYield_OK(t *testing.T) {
@@ -245,6 +269,9 @@ func TestDispatch_CalculateDividendYield_OK(t *testing.T) {
 	}
 	if !approxEqual(r.YieldPercent, 2.5, 0.001) {
 		t.Errorf("YieldPercent: want 2.5, got %v", r.YieldPercent)
+	}
+	if r.ComputedAt == "" {
+		t.Error("ComputedAt must be populated by the dispatcher")
 	}
 }
 
@@ -276,6 +303,9 @@ func TestDispatch_CalculateDividendGrowth_OK(t *testing.T) {
 	}
 	if !approxEqual(r.CAGRPercent, 10.0, 0.01) {
 		t.Errorf("CAGRPercent: want ~10.0, got %v", r.CAGRPercent)
+	}
+	if r.ComputedAt == "" {
+		t.Error("ComputedAt must be populated by the dispatcher")
 	}
 }
 
@@ -315,6 +345,9 @@ func TestDispatch_CalculateStressTest_OK(t *testing.T) {
 	if !approxEqual(r.WorstCase.ResultingValue, 6000, 0.01) {
 		t.Errorf("WorstCase.ResultingValue: want 6000, got %v", r.WorstCase.ResultingValue)
 	}
+	if r.ComputedAt == "" {
+		t.Error("ComputedAt must be populated by the dispatcher")
+	}
 }
 
 func TestDispatch_CalculateMonteCarloSimulation_OK(t *testing.T) {
@@ -342,6 +375,9 @@ func TestDispatch_CalculateMonteCarloSimulation_OK(t *testing.T) {
 	}
 	if r.NumSimulations != 5000 {
 		t.Errorf("NumSimulations: want 5000, got %d", r.NumSimulations)
+	}
+	if r.ComputedAt == "" {
+		t.Error("ComputedAt must be populated by the dispatcher")
 	}
 }
 
@@ -397,6 +433,59 @@ func TestDispatch_CalculateSMA_BadPrices(t *testing.T) {
 	}, &lk)
 	if result[:6] != "error:" {
 		t.Errorf("string prices should produce an error, got %s", result)
+	}
+}
+
+// TestDispatch_CalculateComputedAt covers the calculate_*/convert_currency
+// tools that don't otherwise have a dedicated dispatch test in this file
+// (their business logic is already covered directly in pkg/finance), to
+// confirm REF-2: every one of these tools stamps its JSON result with a
+// dispatcher-populated, RFC3339-parseable computed_at.
+func TestDispatch_CalculateComputedAt(t *testing.T) {
+	cases := []struct {
+		name string
+		args map[string]any
+	}{
+		{"calculate_roi", map[string]any{"cost_basis": 100.0, "current_value": 120.0}},
+		{"calculate_cagr", map[string]any{"initial_value": 100.0, "final_value": 150.0, "years": 3.0}},
+		{"calculate_volatility", map[string]any{"prices": []float64{100, 101, 99, 102, 105}}},
+		{"calculate_sharpe", map[string]any{"returns": []float64{0.01, -0.005, 0.02, 0.01, -0.01}, "risk_free_rate_annual": 0.03}},
+		{"calculate_sortino", map[string]any{"returns": []float64{0.01, -0.005, 0.02, 0.01, -0.01}, "risk_free_rate_annual": 0.03}},
+		{"calculate_max_drawdown", map[string]any{"prices": []float64{100, 110, 90, 95}}},
+		{"calculate_pnl", map[string]any{"entry_price": 100.0, "current_price": 110.0, "quantity": 10.0, "position_type": "long"}},
+		{"calculate_beta", map[string]any{"asset_returns": []float64{0.01, 0.02, -0.01, 0.03}, "benchmark_returns": []float64{0.008, 0.015, -0.005, 0.02}}},
+		{"calculate_treynor", map[string]any{"returns": []float64{0.01, -0.005, 0.02, 0.01, -0.01}, "risk_free_rate_annual": 0.03, "beta": 1.1}},
+		{"calculate_information_ratio", map[string]any{"asset_returns": []float64{0.01, 0.02, -0.01, 0.03}, "benchmark_returns": []float64{0.008, 0.015, -0.005, 0.02}}},
+		{"calculate_var", map[string]any{"returns": []float64{0.01, -0.02, 0.015, -0.03, 0.02}, "confidence_level": 0.95, "portfolio_value": 10000.0, "method": "historical"}},
+		{"calculate_dcf", map[string]any{"free_cash_flows": []float64{100, 110, 120}, "discount_rate": 0.1, "terminal_growth_rate": 0.02, "shares_outstanding": 1000.0}},
+		{"calculate_multiples", map[string]any{"price": 50.0, "eps": 5.0, "book_value_per_share": 20.0, "ebitda": 100.0, "enterprise_value": 500.0, "revenue": 300.0}},
+		{"convert_currency", map[string]any{"amount": 100.0, "from_currency": "USD", "to_currency": "EUR", "exchange_rate": 0.9}},
+		{"calculate_compound_interest", map[string]any{"principal": 1000.0, "annual_rate": 0.05, "years": 5.0, "compounds_per_year": 12.0}},
+		{"calculate_stats", map[string]any{"values": []float64{1, 2, 3, 4, 5}}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			a := New(&mockLLM{}, &mockMarket{}, "")
+			var lk ProgressKind
+			args := toolCallArgs(t, tc.args)
+			result := a.dispatch(context.Background(), llm.ToolCall{
+				Function: llm.ToolCallFunction{Name: tc.name, Arguments: args},
+			}, &lk)
+			if result[:6] == "error:" {
+				t.Fatalf("unexpected error: %s", result)
+			}
+			var r map[string]any
+			if err := json.Unmarshal([]byte(result), &r); err != nil {
+				t.Fatalf("invalid JSON: %s — %v", result, err)
+			}
+			computedAt, _ := r["computed_at"].(string)
+			if computedAt == "" {
+				t.Fatal("computed_at must be populated by the dispatcher")
+			}
+			if _, err := time.Parse(time.RFC3339, computedAt); err != nil {
+				t.Errorf("computed_at %q is not RFC3339/ISO 8601: %v", computedAt, err)
+			}
+		})
 	}
 }
 

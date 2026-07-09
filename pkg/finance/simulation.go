@@ -21,6 +21,7 @@ type StressTestResult struct {
 	Scenarios    []stressScenario `json:"scenarios"`
 	WorstCase    stressScenario   `json:"worst_case"`
 	Summary      string           `json:"summary"`
+	ComputedAt   string           `json:"computed_at"`
 }
 
 func CalcStressTest(currentValue float64, shocksPercent []float64, label string) (StressTestResult, error) {
@@ -83,6 +84,7 @@ type MonteCarloResult struct {
 	Days             int     `json:"days"`
 	NumSimulations   int     `json:"num_simulations"`
 	Summary          string  `json:"summary"`
+	ComputedAt       string  `json:"computed_at"`
 }
 
 // CalcMonteCarloSimulation simulates the terminal price distribution under
@@ -152,6 +154,7 @@ type CurrencyResult struct {
 	ConvertedAmount float64 `json:"converted_amount"`
 	RateUsed        float64 `json:"rate_used"`
 	Summary         string  `json:"summary"`
+	ComputedAt      string  `json:"computed_at"`
 }
 
 func CalcCurrencyConversion(amount float64, fromCurrency, toCurrency string, exchangeRate float64) (CurrencyResult, error) {
@@ -176,6 +179,7 @@ type CompoundInterestResult struct {
 	TotalInterest       float64 `json:"total_interest"`
 	EffectiveAnnualRate float64 `json:"effective_annual_rate"`
 	Summary             string  `json:"summary"`
+	ComputedAt          string  `json:"computed_at"`
 }
 
 func CalcCompoundInterest(principal, annualRate, years float64, compoundsPerYear int) (CompoundInterestResult, error) {

@@ -13,6 +13,7 @@ type RoiResult struct {
 	ROIPercent float64 `json:"roi_percent"`
 	ProfitLoss float64 `json:"profit_loss"`
 	Summary    string  `json:"summary"`
+	ComputedAt string  `json:"computed_at"`
 }
 
 func CalcROI(costBasis, currentValue float64) (RoiResult, error) {
@@ -43,6 +44,7 @@ func CalcROI(costBasis, currentValue float64) (RoiResult, error) {
 type CagrResult struct {
 	CAGRPercent float64 `json:"cagr_percent"`
 	Summary     string  `json:"summary"`
+	ComputedAt  string  `json:"computed_at"`
 }
 
 func CalcCAGR(initialValue, finalValue, years float64) (CagrResult, error) {
@@ -69,6 +71,7 @@ type PnlResult struct {
 	PnLPercent    float64 `json:"pnl_percent"`
 	PositionValue float64 `json:"position_value"`
 	Summary       string  `json:"summary"`
+	ComputedAt    string  `json:"computed_at"`
 }
 
 func CalcPnL(entryPrice, currentPrice, quantity float64, positionType string) (PnlResult, error) {
@@ -120,6 +123,7 @@ type DcfResult struct {
 	TerminalValue          float64 `json:"terminal_value"`
 	PVOfCashflows          float64 `json:"pv_of_cashflows"`
 	Summary                string  `json:"summary"`
+	ComputedAt             string  `json:"computed_at"`
 }
 
 func CalcDCF(freeCashFlows []float64, discountRate, terminalGrowthRate, sharesOutstanding float64) (DcfResult, error) {
@@ -187,6 +191,7 @@ type MultiplesResult struct {
 	EVRevenue    *float64 `json:"ev_revenue,omitempty"`
 	PriceToSales *float64 `json:"price_to_sales,omitempty"`
 	Summary      string   `json:"summary"`
+	ComputedAt   string   `json:"computed_at"`
 }
 
 func CalcMultiples(price, eps, bookValuePerShare, ebitda, enterpriseValue, revenue float64) (MultiplesResult, error) {
@@ -240,9 +245,10 @@ func f64ptr(v float64) *float64 { r := Round2(v); return &r }
 // --- Price / Free Cash Flow -----------------------------------------------------
 
 type PfcfResult struct {
-	PFCF     float64 `json:"pfcf"`
-	Currency string  `json:"currency,omitempty"`
-	Summary  string  `json:"summary"`
+	PFCF       float64 `json:"pfcf"`
+	Currency   string  `json:"currency,omitempty"`
+	Summary    string  `json:"summary"`
+	ComputedAt string  `json:"computed_at"`
 }
 
 func CalcPFCF(price, fcfPerShare float64, currency string) (PfcfResult, error) {
@@ -266,6 +272,7 @@ type PegResult struct {
 	PEG            float64 `json:"peg"`
 	Interpretation string  `json:"interpretation"`
 	Summary        string  `json:"summary"`
+	ComputedAt     string  `json:"computed_at"`
 }
 
 func CalcPEG(peRatio, growthRatePercent float64) (PegResult, error) {
@@ -303,6 +310,7 @@ type DividendYieldResult struct {
 	AnnualDividend float64 `json:"annual_dividend"`
 	YieldPercent   float64 `json:"yield_percent"`
 	Summary        string  `json:"summary"`
+	ComputedAt     string  `json:"computed_at"`
 }
 
 func CalcDividendYield(price, annualDividendPerShare float64, quarterlyDividends []float64) (DividendYieldResult, error) {
@@ -343,6 +351,7 @@ func CalcDividendYield(price, annualDividendPerShare float64, quarterlyDividends
 type DividendGrowthResult struct {
 	CAGRPercent float64 `json:"cagr_percent"`
 	Summary     string  `json:"summary"`
+	ComputedAt  string  `json:"computed_at"`
 }
 
 func CalcDividendGrowth(dividends []float64) (DividendGrowthResult, error) {
