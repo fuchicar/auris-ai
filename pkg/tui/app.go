@@ -29,7 +29,9 @@ const (
 	ScreenPassphrase                     // passphrase creation (setup only)
 	ScreenProfile                        // financial profile questionnaire (setup only)
 	ScreenProvider                       // market data provider selection (setup only)
-	ScreenAPIKey                         // API key input and validation (setup only)
+	ScreenAPIKey                         // primary market provider API key input and validation (setup only)
+	ScreenAPIKeySecondary                // optional secondary market provider API key, e.g. EODHD (setup only)
+	ScreenMarketProviderManage           // post-setup: add/remove/reorder market providers (Configuration menu, /marketproviders)
 	ScreenAIProviderSelect               // multi-select which AI providers to configure (setup only)
 	ScreenAIProviderConfig               // configure one AI provider at a time (setup only)
 	ScreenAIDefaultModel                 // select default AI provider and model (setup only)
@@ -120,6 +122,15 @@ type APIKeyResult struct {
 // the user chose to skip AI setup.
 type AIProviderSelectResult struct{ Keys []string }
 
+// MarketProviderManageResult is the payload emitted by the market provider
+// management screen. Order is every registry.AllMarket() key in the user's
+// chosen priority order (persisted as cfg.ProviderOrder); Selected is the
+// subset that should be configured/active.
+type MarketProviderManageResult struct {
+	Order    []string
+	Selected []string
+}
+
 // AIProviderConfigResult is the payload emitted after one AI provider has been
 // configured and its models listed.
 type AIProviderConfigResult struct {
@@ -187,6 +198,13 @@ type AppModel struct {
 	pendingLLMIdx       int                    // index of the provider currently being configured
 	pendingLLMModels    map[string][]llm.Model // models discovered per provider key
 	managingProviders   bool                   // true when in /aiproviders flow (not initial setup)
+
+	// Market provider management state — used only by /marketproviders (post-setup);
+	// the first-run wizard (ScreenProvider/ScreenAPIKey/ScreenAPIKeySecondary) does
+	// not touch these.
+	pendingMarketProviders  []string // provider keys still to be configured
+	pendingMarketIdx        int      // index of the provider currently being configured
+	managingMarketProviders bool     // true when in /marketproviders flow
 
 	// debugLogger, when non-nil, is forwarded to the agent for diagnostic output.
 	debugLogger *log.Logger
@@ -395,20 +413,74 @@ func (a *AppModel) transition(msg ScreenDoneMsg) (tea.Model, tea.Cmd) {
 			a.selectedEntry = r.Entry
 		}
 		a.screen = ScreenAPIKey
-		a.current = newAPIKeyModel(a.selectedEntry, a.styles)
+		a.current = newAPIKeyModel(a.selectedEntry, a.styles, ScreenAPIKey, false)
 
 	case ScreenAPIKey:
-		if r, ok := msg.Result.(APIKeyResult); ok {
-			a.cfg.ActiveProvider = r.Entry.Key
-			a.cfg.Locale = a.detectedLocale
+		r, resultOK := msg.Result.(APIKeyResult)
+		if resultOK {
 			if a.cfg.Providers == nil {
 				a.cfg.Providers = make(map[string]*config.ProviderConfig)
 			}
 			a.cfg.Providers[r.Entry.Key] = &config.ProviderConfig{APIKey: r.APIKey}
-			// Config saved after AI setup completes (or skipped).
+		}
+
+		if a.managingMarketProviders {
+			// /marketproviders flow: advance through the queue of newly-added
+			// providers, same pattern as ScreenAIProviderConfig for /aiproviders.
+			a.pendingMarketIdx++
+			if a.pendingMarketIdx < len(a.pendingMarketProviders) {
+				nextEntry, _ := findMarketEntry(a.pendingMarketProviders[a.pendingMarketIdx])
+				a.current = newAPIKeyModel(nextEntry, a.styles, ScreenAPIKey, false)
+				return a, a.current.Init()
+			}
+			a.managingMarketProviders = false
+			a.saveConfig()
+			return a.returnFromMarketProviderManagement()
+		}
+
+		// Setup flow (unchanged): primary configured. This also seeds the
+		// cascade's initial priority order (cfg.ProviderOrder) so whichever
+		// provider was picked as primary here stays primary until the user
+		// explicitly reorders via /marketproviders.
+		if resultOK {
+			a.cfg.ActiveProvider = r.Entry.Key
+			a.cfg.ProviderOrder = []string{r.Entry.Key}
+			a.cfg.Locale = a.detectedLocale
+		}
+		if next, ok := a.nextUnconfiguredMarketEntry(); ok {
+			// Offer any other registered market provider (e.g. EODHD) as an
+			// optional secondary — extends coverage via the fallback chain
+			// built by buildMarketProvider (FEAT-7). Esc skips it.
+			a.cfg.ProviderOrder = append(a.cfg.ProviderOrder, next.Key)
+			a.screen = ScreenAPIKeySecondary
+			a.current = newAPIKeyModel(next, a.styles, ScreenAPIKeySecondary, true)
+		} else {
+			a.screen = ScreenAIProviderSelect
+			a.current = newAIProviderSelectModel(a.styles, nil, false)
+		}
+
+	case ScreenAPIKeySecondary:
+		if r, ok := msg.Result.(APIKeyResult); ok && r.APIKey != "" {
+			if a.cfg.Providers == nil {
+				a.cfg.Providers = make(map[string]*config.ProviderConfig)
+			}
+			a.cfg.Providers[r.Entry.Key] = &config.ProviderConfig{APIKey: r.APIKey}
 		}
 		a.screen = ScreenAIProviderSelect
 		a.current = newAIProviderSelectModel(a.styles, nil, false)
+
+	case ScreenMarketProviderManage:
+		if r, ok := msg.Result.(MarketProviderManageResult); ok {
+			a.cfg.ProviderOrder = r.Order
+			return a.applyMarketProviderSelection(r.Selected)
+		}
+		// nil result = cancelled via Esc
+		a.managingMarketProviders = false
+		if a.flowContext == FlowAgent && a.cfg.ActiveAIProvider != "" {
+			return a.enterAgentMode()
+		}
+		a.screen = ScreenMenu
+		a.current = newMenuModel(a.styles, a.cfg.ActiveAIProvider != "")
 
 	case ScreenAIProviderSelect:
 		if r, ok := msg.Result.(AIProviderSelectResult); ok {
@@ -821,6 +893,16 @@ func (a *AppModel) handleCommand(cmd CommandResult) (tea.Model, tea.Cmd) {
 		a.flowContext = FlowMenu
 		return a, a.loadModelsCmd()
 
+	case "marketproviders":
+		preSelected := make(map[string]bool, len(a.cfg.Providers))
+		for k := range a.cfg.Providers {
+			preSelected[k] = true
+		}
+		a.flowContext = FlowMenu
+		a.managingMarketProviders = true
+		a.screen = ScreenMarketProviderManage
+		a.current = newMarketProviderManageModel(a.styles, a.marketProviderOrder(), preSelected, true)
+
 	case "aiproviders":
 		preSelected := make(map[string]bool, len(a.cfg.AIProviders))
 		for k := range a.cfg.AIProviders {
@@ -927,6 +1009,17 @@ func (a *AppModel) handleAgentCommand(cmd CommandResult) (tea.Model, tea.Cmd) {
 		a.screen = ScreenAIProviderSelect
 		a.current = newAIProviderSelectModel(a.styles, preSelected, true)
 		return a, a.current.Init()
+
+	case "marketproviders":
+		preSelected := make(map[string]bool, len(a.cfg.Providers))
+		for k := range a.cfg.Providers {
+			preSelected[k] = true
+		}
+		a.flowContext = FlowAgent
+		a.managingMarketProviders = true
+		a.screen = ScreenMarketProviderManage
+		a.current = newMarketProviderManageModel(a.styles, a.marketProviderOrder(), preSelected, true)
+		return a, a.current.Init()
 	}
 
 	return a, nil
@@ -959,18 +1052,7 @@ func (a *AppModel) enterAgentModeWithSession(session *config.Session) (tea.Model
 		apiKey = aiCfg.APIKey
 	}
 	provider := entry.New(baseURL, apiKey)
-
-	var mp market.ProviderAPI
-	if a.cfg.ActiveProvider != "" {
-		if pc, ok := a.cfg.Providers[a.cfg.ActiveProvider]; ok {
-			for _, e := range registry.AllMarket() {
-				if e.Key == a.cfg.ActiveProvider {
-					mp = e.New(pc.APIKey)
-					break
-				}
-			}
-		}
-	}
+	mp := a.buildMarketProvider()
 
 	a.screen = ScreenAgent
 	a.current = newAgentModel(provider, mp, session, a.cfg.DefaultAIModel, a.styles, a.width, a.height, a.cfg.FinancialProfile, a.cfg.NewsFeeds, a.debugLogger, nil, "")
@@ -1120,21 +1202,132 @@ func findLLMEntry(key string) (registry.LLMEntry, bool) {
 	return registry.LLMEntry{}, false
 }
 
-// buildMarketProvider instantiates the configured market data provider, or nil if none.
-func (a *AppModel) buildMarketProvider() market.ProviderAPI {
-	if a.cfg.ActiveProvider == "" {
-		return nil
-	}
-	pc, ok := a.cfg.Providers[a.cfg.ActiveProvider]
-	if !ok {
-		return nil
-	}
+// findMarketEntry looks up a registered market provider by its stable key.
+func findMarketEntry(key string) (registry.MarketEntry, bool) {
 	for _, e := range registry.AllMarket() {
-		if e.Key == a.cfg.ActiveProvider {
-			return e.New(pc.APIKey)
+		if e.Key == key {
+			return e, true
 		}
 	}
-	return nil
+	return registry.MarketEntry{}, false
+}
+
+// nextUnconfiguredMarketEntry returns the first registry.AllMarket() entry not
+// yet present in cfg.Providers, used to offer the optional secondary market
+// provider step during setup (FEAT-7).
+func (a *AppModel) nextUnconfiguredMarketEntry() (registry.MarketEntry, bool) {
+	for _, e := range registry.AllMarket() {
+		if _, ok := a.cfg.Providers[e.Key]; !ok {
+			return e, true
+		}
+	}
+	return registry.MarketEntry{}, false
+}
+
+// marketProviderOrder returns registry.AllMarket() entries ordered by the
+// user's saved cfg.ProviderOrder preference (set at first-run setup and
+// adjustable afterwards via /marketproviders). Any registry key not present
+// in cfg.ProviderOrder — e.g. no preference saved yet, or a newly registered
+// provider — is appended at the end in registry.AllMarket() order.
+func (a *AppModel) marketProviderOrder() []registry.MarketEntry {
+	all := registry.AllMarket()
+	byKey := make(map[string]registry.MarketEntry, len(all))
+	for _, e := range all {
+		byKey[e.Key] = e
+	}
+	ordered := make([]registry.MarketEntry, 0, len(all))
+	seen := make(map[string]bool, len(all))
+	for _, k := range a.cfg.ProviderOrder {
+		if e, ok := byKey[k]; ok && !seen[k] {
+			ordered = append(ordered, e)
+			seen[k] = true
+		}
+	}
+	for _, e := range all {
+		if !seen[e.Key] {
+			ordered = append(ordered, e)
+		}
+	}
+	return ordered
+}
+
+// buildMarketProvider instantiates a market.ProviderAPI covering every market
+// data provider the user configured, in the user's chosen priority order
+// (marketProviderOrder — the first configured entry is primary; any others
+// are cascade fallbacks — see FEAT-7 in TODO.md and agent.NewMarketChain).
+// Returns nil if none are configured.
+func (a *AppModel) buildMarketProvider() market.ProviderAPI {
+	var providers []market.ProviderAPI
+	for _, e := range a.marketProviderOrder() {
+		pc, ok := a.cfg.Providers[e.Key]
+		if !ok {
+			continue
+		}
+		providers = append(providers, e.New(pc.APIKey))
+	}
+	if len(providers) == 0 {
+		return nil
+	}
+	return agent.NewMarketChain(providers...)
+}
+
+// applyMarketProviderSelection processes the diff from /marketproviders:
+// removes providers the user unchecked, then queues newly added providers for
+// API-key configuration (reusing ScreenAPIKey, same widget as the setup
+// wizard's mandatory primary-provider step).
+func (a *AppModel) applyMarketProviderSelection(newKeys []string) (tea.Model, tea.Cmd) {
+	newSet := make(map[string]bool, len(newKeys))
+	for _, k := range newKeys {
+		newSet[k] = true
+	}
+
+	for k := range a.cfg.Providers {
+		if !newSet[k] {
+			delete(a.cfg.Providers, k)
+			if a.cfg.ActiveProvider == k {
+				a.cfg.ActiveProvider = ""
+			}
+		}
+	}
+
+	var toAdd []string
+	for _, k := range newKeys {
+		if _, exists := a.cfg.Providers[k]; !exists {
+			toAdd = append(toAdd, k)
+		}
+	}
+
+	if len(toAdd) > 0 {
+		a.pendingMarketProviders = toAdd
+		a.pendingMarketIdx = 0
+		entry, _ := findMarketEntry(toAdd[0])
+		a.screen = ScreenAPIKey
+		a.current = newAPIKeyModel(entry, a.styles, ScreenAPIKey, false)
+		return a, a.current.Init()
+	}
+
+	a.managingMarketProviders = false
+	if a.cfg.ActiveProvider == "" && len(a.cfg.Providers) > 0 {
+		for _, e := range a.marketProviderOrder() {
+			if _, ok := a.cfg.Providers[e.Key]; ok {
+				a.cfg.ActiveProvider = e.Key
+				break
+			}
+		}
+	}
+	a.saveConfig()
+	return a.returnFromMarketProviderManagement()
+}
+
+// returnFromMarketProviderManagement navigates back to the menu or agent
+// depending on the active flow context after /marketproviders completes.
+func (a *AppModel) returnFromMarketProviderManagement() (tea.Model, tea.Cmd) {
+	if a.flowContext == FlowAgent && a.cfg.ActiveAIProvider != "" {
+		return a.enterAgentMode()
+	}
+	a.screen = ScreenMenu
+	a.current = newMenuModel(a.styles, a.cfg.ActiveAIProvider != "")
+	return a, a.current.Init()
 }
 
 // resolvePortfolioSession returns the active session for a portfolio, creating

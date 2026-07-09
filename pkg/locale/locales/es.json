@@ -316,6 +316,12 @@
   "setup.apikey.hint": {
     "other": "Escriba la clave de API · Enter para validar"
   },
+  "setup.apikey.optional_label": {
+    "other": "Clave API (opcional — amplía la cobertura de datos de mercado)"
+  },
+  "setup.apikey.optional_hint": {
+    "other": "Escriba la clave de API · Enter para validar · Esc para omitir"
+  },
 
   "menu.title": {
     "other": "Menú principal"
@@ -359,6 +365,9 @@
   "menu.hint_submenu": {
     "other": "↑↓ navegar · Enter seleccionar · Esc volver"
   },
+  "menu.manage_market_providers": {
+    "other": "Gestionar proveedores de datos de mercado"
+  },
   "menu.manage_ai_providers": {
     "other": "Gestionar proveedores de IA"
   },
@@ -370,6 +379,13 @@
   },
   "hint.esc_back": {
     "other": "· Esc volver"
+  },
+
+  "setup.market.manage.label": {
+    "other": "Configurar proveedores de datos de mercado"
+  },
+  "setup.market.manage.hint": {
+    "other": "↑↓ navegar · Espacio marcar · +/- reordenar · Enter confirmar"
   },
 
   "setup.ai.select.label": {
@@ -483,6 +499,9 @@
   },
   "agent.cmd.model": {
     "other": "Cambiar modelo por defecto"
+  },
+  "agent.cmd.marketproviders": {
+    "other": "Añadir, quitar o reordenar proveedores de datos de mercado"
   },
   "agent.cmd.aiproviders": {
     "other": "Añadir o quitar proveedores de IA"

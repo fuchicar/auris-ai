@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"auris/pkg/finance"
 	"auris/pkg/llm"
 	"auris/pkg/market"
 	"auris/pkg/news"
@@ -90,14 +91,14 @@ func buildTools() []llm.Tool {
 				"symbol": str("Ticker symbol, e.g. AAPL"),
 			}, []string{"symbol"}),
 		),
-		tool("market_get_order_book",
+		tool(market.ToolGetOrderBook,
 			"Get the current order book depth for a symbol.",
 			obj(map[string]any{
 				"symbol": str("Ticker symbol"),
 				"depth":  intProp("Number of price levels per side (default 10)"),
 			}, []string{"symbol"}),
 		),
-		tool("market_get_ticks",
+		tool(market.ToolGetTicks,
 			"Get tick-by-tick trade data for a symbol in a time range.",
 			obj(map[string]any{
 				"symbol": str("Ticker symbol"),
@@ -154,6 +155,7 @@ func buildTools() []llm.Tool {
 			"Calculate annualised volatility (std dev of log returns × √252) from a chronological series of closing prices.",
 			obj(map[string]any{
 				"prices": arrNum("Chronological closing prices (minimum 2 values)"),
+				"label":  str("Optional name for the series, e.g. \"AAPL\", echoed back in inputs_summary"),
 			}, []string{"prices"}),
 		),
 		tool("calculate_sharpe",
@@ -161,6 +163,7 @@ func buildTools() []llm.Tool {
 			obj(map[string]any{
 				"returns":               arrNum("Daily returns in decimal form (e.g. 0.01 = 1%)"),
 				"risk_free_rate_annual": numProp("Annual risk-free rate in decimal form (e.g. 0.04 = 4%)"),
+				"label":                 str("Optional name for the returns series, e.g. \"AAPL\", echoed back in inputs_summary"),
 			}, []string{"returns", "risk_free_rate_annual"}),
 		),
 		tool("calculate_sortino",
@@ -168,12 +171,14 @@ func buildTools() []llm.Tool {
 			obj(map[string]any{
 				"returns":               arrNum("Daily returns in decimal form (e.g. 0.01 = 1%)"),
 				"risk_free_rate_annual": numProp("Annual risk-free rate in decimal form (e.g. 0.04 = 4%), also used as the minimum acceptable return (MAR)"),
+				"label":                 str("Optional name for the returns series, e.g. \"AAPL\", echoed back in inputs_summary"),
 			}, []string{"returns", "risk_free_rate_annual"}),
 		),
 		tool("calculate_max_drawdown",
 			"Calculate the maximum peak-to-trough drawdown from a chronological series of prices.",
 			obj(map[string]any{
 				"prices": arrNum("Chronological prices (minimum 2 values)"),
+				"label":  str("Optional name for the series, e.g. \"AAPL\", echoed back in inputs_summary"),
 			}, []string{"prices"}),
 		),
 		tool("calculate_pnl",
@@ -190,6 +195,8 @@ func buildTools() []llm.Tool {
 			obj(map[string]any{
 				"asset_returns":     arrNum("Daily returns of the asset in decimal form"),
 				"benchmark_returns": arrNum("Daily returns of the benchmark in decimal form (same length as asset_returns)"),
+				"asset_label":       str("Optional name for the asset, e.g. \"AAPL\", echoed back in inputs_summary"),
+				"benchmark_label":   str("Optional name for the benchmark, e.g. \"SPY\", echoed back in inputs_summary"),
 			}, []string{"asset_returns", "benchmark_returns"}),
 		),
 		tool("calculate_treynor",
@@ -198,6 +205,7 @@ func buildTools() []llm.Tool {
 				"returns":               arrNum("Daily returns of the asset in decimal form (e.g. 0.01 = 1%)"),
 				"risk_free_rate_annual": numProp("Annual risk-free rate in decimal form (e.g. 0.04 = 4%)"),
 				"beta":                  numProp("Asset beta relative to its benchmark (e.g. from calculate_beta); can be negative or greater than 2"),
+				"label":                 str("Optional name for the returns series, e.g. \"AAPL\", echoed back in inputs_summary"),
 			}, []string{"returns", "risk_free_rate_annual", "beta"}),
 		),
 		tool("calculate_information_ratio",
@@ -205,6 +213,8 @@ func buildTools() []llm.Tool {
 			obj(map[string]any{
 				"asset_returns":     arrNum("Daily returns of the asset in decimal form"),
 				"benchmark_returns": arrNum("Daily returns of the benchmark in decimal form (same length as asset_returns)"),
+				"asset_label":       str("Optional name for the asset, e.g. \"AAPL\", echoed back in inputs_summary"),
+				"benchmark_label":   str("Optional name for the benchmark, e.g. \"SPY\", echoed back in inputs_summary"),
 			}, []string{"asset_returns", "benchmark_returns"}),
 		),
 		tool("calculate_var",
@@ -214,6 +224,7 @@ func buildTools() []llm.Tool {
 				"confidence_level": numEnum("Confidence level for VaR", []any{0.90, 0.95, 0.99}),
 				"portfolio_value":  numProp("Current portfolio value in currency units"),
 				"method":           enum("Calculation method", []any{"parametric", "historical"}),
+				"label":            str("Optional name for the returns series, e.g. \"AAPL\" or \"portfolio\", echoed back in inputs_summary"),
 			}, []string{"returns", "confidence_level", "portfolio_value", "method"}),
 		),
 		tool("calculate_monte_carlo_simulation",
@@ -233,6 +244,7 @@ func buildTools() []llm.Tool {
 				"discount_rate":        numProp("Weighted average cost of capital in decimal (e.g. 0.10 = 10%)"),
 				"terminal_growth_rate": numProp("Perpetual growth rate in decimal; must be less than discount_rate"),
 				"shares_outstanding":   numProp("Number of shares outstanding (use 0 to skip per-share calculation)"),
+				"label":                str("Optional name for the company/asset, e.g. \"AAPL\", echoed back in inputs_summary"),
 			}, []string{"free_cash_flows", "discount_rate", "terminal_growth_rate", "shares_outstanding"}),
 		),
 		tool("calculate_multiples",
@@ -267,12 +279,14 @@ func buildTools() []llm.Tool {
 				"price":                     numProp("Current share price (must be > 0)"),
 				"annual_dividend_per_share": numProp("Annual dividend per share (optional if quarterly_dividends is provided)"),
 				"quarterly_dividends":       arrNum("Last 4 quarterly dividends per share, used to derive TTM yield (optional)"),
+				"label":                     str("Optional name for the company/asset, e.g. \"AAPL\", echoed back in inputs_summary"),
 			}, []string{"price"}),
 		),
 		tool("calculate_dividend_growth",
 			"Calculate the compound annual growth rate (CAGR) of a chronological dividend-per-share series.",
 			obj(map[string]any{
 				"dividends": arrNum("Chronological dividends per share (minimum 2 values, first must be > 0)"),
+				"label":     str("Optional name for the company/asset, e.g. \"AAPL\", echoed back in inputs_summary"),
 			}, []string{"dividends"}),
 		),
 		tool("calculate_stress_test",
@@ -318,6 +332,7 @@ func buildTools() []llm.Tool {
 			obj(map[string]any{
 				"prices": arrNum("Chronological closing prices (length >= period)"),
 				"period": intProp("Window length, e.g. 20"),
+				"label":  str("Optional name for the series, e.g. \"AAPL\", echoed back in inputs_summary"),
 			}, []string{"prices", "period"}),
 		),
 		tool("calculate_ema",
@@ -326,6 +341,7 @@ func buildTools() []llm.Tool {
 				"prices": arrNum("Chronological closing prices"),
 				"period": intProp("Lookback window, e.g. 20"),
 				"alpha":  numProp("Smoothing factor in (0, 1). Omit for Wilder default."),
+				"label":  str("Optional name for the series, e.g. \"AAPL\", echoed back in inputs_summary"),
 			}, []string{"prices", "period"}),
 		),
 		tool("calculate_rsi",
@@ -333,6 +349,7 @@ func buildTools() []llm.Tool {
 			obj(map[string]any{
 				"prices": arrNum("Chronological closing prices (length >= period+2)"),
 				"period": intProp("Lookback window (default 14)"),
+				"label":  str("Optional name for the series, e.g. \"AAPL\", echoed back in inputs_summary"),
 			}, []string{"prices"}),
 		),
 		tool("calculate_macd",
@@ -342,6 +359,7 @@ func buildTools() []llm.Tool {
 				"fast_period":   intProp("Fast EMA window (default 12)"),
 				"slow_period":   intProp("Slow EMA window (default 26)"),
 				"signal_period": intProp("Signal EMA window (default 9)"),
+				"label":         str("Optional name for the series, e.g. \"AAPL\", echoed back in inputs_summary"),
 			}, []string{"prices"}),
 		),
 		tool("calculate_bollinger_bands",
@@ -350,6 +368,7 @@ func buildTools() []llm.Tool {
 				"prices":  arrNum("Chronological closing prices (length >= period)"),
 				"period":  intProp("SMA window (default 20)"),
 				"num_std": numProp("Standard deviation multiplier (default 2)"),
+				"label":   str("Optional name for the series, e.g. \"AAPL\", echoed back in inputs_summary"),
 			}, []string{"prices"}),
 		),
 		tool("calculate_correlation_matrix",
@@ -524,10 +543,29 @@ func buildTools() []llm.Tool {
 	}
 }
 
+// filterTools drops tools whose Function.Name is in unsupported, preserving
+// order. unsupported may be nil (no-op) -- see market.CapabilityReporter.
+func filterTools(tools []llm.Tool, unsupported []string) []llm.Tool {
+	if len(unsupported) == 0 {
+		return tools
+	}
+	skip := make(map[string]bool, len(unsupported))
+	for _, name := range unsupported {
+		skip[name] = true
+	}
+	filtered := make([]llm.Tool, 0, len(tools))
+	for _, t := range tools {
+		if !skip[t.Function.Name] {
+			filtered = append(filtered, t)
+		}
+	}
+	return filtered
+}
+
 // alignedDailyReturns intersects the calendar days present in every symbol's
 // candle series and the benchmark's, then returns day-over-day simple returns
 // computed only across those common days for each. This keeps the resulting
-// series the same length (a requirement of calcBeta) even when individual
+// series the same length (a requirement of finance.CalcBeta) even when individual
 // symbols have slightly different trading calendars. Returns nil, nil when
 // fewer than 2 common days are available.
 func alignedDailyReturns(seriesBySymbol map[string][]market.Candle, benchmark []market.Candle) (map[string][]float64, []float64) {
@@ -689,138 +727,312 @@ func (a *Agent) dispatchInner(ctx context.Context, call llm.ToolCall, lastKind *
 		b, _ := json.Marshal(v)
 		return string(b)
 	}
+	seriesSummary := func(n int, kind, label string) string {
+		if label == "" {
+			return fmt.Sprintf("%d %s", n, kind)
+		}
+		return fmt.Sprintf("%d %s of %s", n, kind, label)
+	}
+	pairedSeriesSummary := func(n int, kind, assetLabel, benchmarkLabel string) string {
+		base := fmt.Sprintf("%d %s", n, kind)
+		switch {
+		case assetLabel != "" && benchmarkLabel != "":
+			return fmt.Sprintf("%s (asset: %s, benchmark: %s)", base, assetLabel, benchmarkLabel)
+		case assetLabel != "":
+			return fmt.Sprintf("%s (asset: %s)", base, assetLabel)
+		case benchmarkLabel != "":
+			return fmt.Sprintf("%s (benchmark: %s)", base, benchmarkLabel)
+		default:
+			return base
+		}
+	}
 
 	// Math tools — no market provider needed.
 	switch call.Function.Name {
 	case "calculate_roi":
-		return encode(calcROI(numVal("cost_basis"), numVal("current_value")))
+		costBasis, currentValue := numVal("cost_basis"), numVal("current_value")
+		r, err := finance.CalcROI(costBasis, currentValue)
+		if err == nil {
+			r.InputsSummary = fmt.Sprintf("cost_basis=%.2f, current_value=%.2f", costBasis, currentValue)
+			r.ComputedAt = time.Now().UTC().Format(time.RFC3339)
+		}
+		return encode(r, err)
 	case "calculate_cagr":
-		return encode(calcCAGR(numVal("initial_value"), numVal("final_value"), numVal("years")))
+		initialValue, finalValue, years := numVal("initial_value"), numVal("final_value"), numVal("years")
+		r, err := finance.CalcCAGR(initialValue, finalValue, years)
+		if err == nil {
+			r.InputsSummary = fmt.Sprintf("initial_value=%.2f, final_value=%.2f, years=%.2f", initialValue, finalValue, years)
+			r.ComputedAt = time.Now().UTC().Format(time.RFC3339)
+		}
+		return encode(r, err)
 	case "calculate_volatility":
 		prices, ok := arrNumVal("prices")
 		if !ok {
 			return `error: prices must be an array of numbers`
 		}
-		return encode(calcVolatility(prices))
+		r, err := finance.CalcVolatility(prices)
+		if err == nil {
+			r.InputsSummary = seriesSummary(len(prices), "prices", str("label"))
+			r.ComputedAt = time.Now().UTC().Format(time.RFC3339)
+		}
+		return encode(r, err)
 	case "calculate_sharpe":
 		returns, ok := arrNumVal("returns")
 		if !ok {
 			return `error: returns must be an array of numbers`
 		}
-		return encode(calcSharpe(returns, numVal("risk_free_rate_annual")))
+		r, err := finance.CalcSharpe(returns, numVal("risk_free_rate_annual"))
+		if err == nil {
+			r.InputsSummary = seriesSummary(len(returns), "daily returns", str("label"))
+			r.ComputedAt = time.Now().UTC().Format(time.RFC3339)
+		}
+		return encode(r, err)
 	case "calculate_sortino":
 		returns, ok := arrNumVal("returns")
 		if !ok {
 			return `error: returns must be an array of numbers`
 		}
-		return encode(calcSortino(returns, numVal("risk_free_rate_annual")))
+		r, err := finance.CalcSortino(returns, numVal("risk_free_rate_annual"))
+		if err == nil {
+			r.InputsSummary = seriesSummary(len(returns), "daily returns", str("label"))
+			r.ComputedAt = time.Now().UTC().Format(time.RFC3339)
+		}
+		return encode(r, err)
 	case "calculate_max_drawdown":
 		prices, ok := arrNumVal("prices")
 		if !ok {
 			return `error: prices must be an array of numbers`
 		}
-		return encode(calcMaxDrawdown(prices))
+		r, err := finance.CalcMaxDrawdown(prices)
+		if err == nil {
+			r.InputsSummary = seriesSummary(len(prices), "prices", str("label"))
+			r.ComputedAt = time.Now().UTC().Format(time.RFC3339)
+		}
+		return encode(r, err)
 	case "calculate_pnl":
-		return encode(calcPnL(numVal("entry_price"), numVal("current_price"), numVal("quantity"), str("position_type")))
+		entryPrice, currentPrice, quantity, positionType := numVal("entry_price"), numVal("current_price"), numVal("quantity"), str("position_type")
+		r, err := finance.CalcPnL(entryPrice, currentPrice, quantity, positionType)
+		if err == nil {
+			r.InputsSummary = fmt.Sprintf("entry_price=%.2f, current_price=%.2f, quantity=%.2f, position_type=%s", entryPrice, currentPrice, quantity, positionType)
+			r.ComputedAt = time.Now().UTC().Format(time.RFC3339)
+		}
+		return encode(r, err)
 	case "calculate_beta":
 		ar, ok1 := arrNumVal("asset_returns")
 		br, ok2 := arrNumVal("benchmark_returns")
 		if !ok1 || !ok2 {
 			return `error: asset_returns and benchmark_returns must be arrays of numbers`
 		}
-		return encode(calcBeta(ar, br))
+		r, err := finance.CalcBeta(ar, br)
+		if err == nil {
+			r.InputsSummary = pairedSeriesSummary(len(ar), "daily returns", str("asset_label"), str("benchmark_label"))
+			r.ComputedAt = time.Now().UTC().Format(time.RFC3339)
+		}
+		return encode(r, err)
 	case "calculate_treynor":
 		returns, ok := arrNumVal("returns")
 		if !ok {
 			return `error: returns must be an array of numbers`
 		}
-		return encode(calcTreynor(returns, numVal("risk_free_rate_annual"), numVal("beta")))
+		r, err := finance.CalcTreynor(returns, numVal("risk_free_rate_annual"), numVal("beta"))
+		if err == nil {
+			r.InputsSummary = seriesSummary(len(returns), "daily returns", str("label"))
+			r.ComputedAt = time.Now().UTC().Format(time.RFC3339)
+		}
+		return encode(r, err)
 	case "calculate_information_ratio":
 		ar, ok1 := arrNumVal("asset_returns")
 		br, ok2 := arrNumVal("benchmark_returns")
 		if !ok1 || !ok2 {
 			return `error: asset_returns and benchmark_returns must be arrays of numbers`
 		}
-		return encode(calcInformationRatio(ar, br))
+		r, err := finance.CalcInformationRatio(ar, br)
+		if err == nil {
+			r.InputsSummary = pairedSeriesSummary(len(ar), "daily returns", str("asset_label"), str("benchmark_label"))
+			r.ComputedAt = time.Now().UTC().Format(time.RFC3339)
+		}
+		return encode(r, err)
 	case "calculate_var":
 		returns, ok := arrNumVal("returns")
 		if !ok {
 			return `error: returns must be an array of numbers`
 		}
-		return encode(calcVaR(returns, numVal("confidence_level"), numVal("portfolio_value"), str("method")))
+		r, err := finance.CalcVaR(returns, numVal("confidence_level"), numVal("portfolio_value"), str("method"))
+		if err == nil {
+			r.InputsSummary = seriesSummary(len(returns), "daily returns", str("label"))
+			r.ComputedAt = time.Now().UTC().Format(time.RFC3339)
+		}
+		return encode(r, err)
 	case "calculate_monte_carlo_simulation":
-		return encode(calcMonteCarloSimulation(numVal("last_price"), numVal("drift_annual"), numVal("volatility_annual"),
-			intVal("days", 0), intVal("num_simulations", 0)))
+		lastPrice, driftAnnual, volAnnual := numVal("last_price"), numVal("drift_annual"), numVal("volatility_annual")
+		days, numSims := intVal("days", 0), intVal("num_simulations", 0)
+		r, err := finance.CalcMonteCarloSimulation(lastPrice, driftAnnual, volAnnual, days, numSims)
+		if err == nil {
+			r.InputsSummary = fmt.Sprintf("last_price=%.2f, drift_annual=%.4f, volatility_annual=%.4f, days=%d, num_simulations=%d",
+				lastPrice, driftAnnual, volAnnual, days, numSims)
+			r.ComputedAt = time.Now().UTC().Format(time.RFC3339)
+		}
+		return encode(r, err)
 	case "calculate_dcf":
 		fcf, ok := arrNumVal("free_cash_flows")
 		if !ok {
 			return `error: free_cash_flows must be an array of numbers`
 		}
-		return encode(calcDCF(fcf, numVal("discount_rate"), numVal("terminal_growth_rate"), numVal("shares_outstanding")))
+		r, err := finance.CalcDCF(fcf, numVal("discount_rate"), numVal("terminal_growth_rate"), numVal("shares_outstanding"))
+		if err == nil {
+			r.InputsSummary = seriesSummary(len(fcf), "free cash flow periods", str("label"))
+			r.ComputedAt = time.Now().UTC().Format(time.RFC3339)
+		}
+		return encode(r, err)
 	case "calculate_multiples":
-		return encode(calcMultiples(numVal("price"), numVal("eps"), numVal("book_value_per_share"),
-			numVal("ebitda"), numVal("enterprise_value"), numVal("revenue")))
+		price, eps, bvps, ebitda, ev, revenue := numVal("price"), numVal("eps"), numVal("book_value_per_share"),
+			numVal("ebitda"), numVal("enterprise_value"), numVal("revenue")
+		r, err := finance.CalcMultiples(price, eps, bvps, ebitda, ev, revenue)
+		if err == nil {
+			r.InputsSummary = fmt.Sprintf("price=%.2f, eps=%.2f, book_value_per_share=%.2f, ebitda=%.2f, enterprise_value=%.2f, revenue=%.2f",
+				price, eps, bvps, ebitda, ev, revenue)
+			r.ComputedAt = time.Now().UTC().Format(time.RFC3339)
+		}
+		return encode(r, err)
 	case "calculate_pfcf":
-		return encode(calcPFCF(numVal("price"), numVal("free_cash_flow_per_share"), str("currency")))
+		price, fcfPerShare, currency := numVal("price"), numVal("free_cash_flow_per_share"), str("currency")
+		r, err := finance.CalcPFCF(price, fcfPerShare, currency)
+		if err == nil {
+			r.InputsSummary = fmt.Sprintf("price=%.2f, free_cash_flow_per_share=%.2f, currency=%s", price, fcfPerShare, currency)
+			r.ComputedAt = time.Now().UTC().Format(time.RFC3339)
+		}
+		return encode(r, err)
 	case "calculate_peg":
-		return encode(calcPEG(numVal("pe_ratio"), numVal("growth_rate_percent")))
+		peRatio, growthRate := numVal("pe_ratio"), numVal("growth_rate_percent")
+		r, err := finance.CalcPEG(peRatio, growthRate)
+		if err == nil {
+			r.InputsSummary = fmt.Sprintf("pe_ratio=%.2f, growth_rate_percent=%.2f", peRatio, growthRate)
+			r.ComputedAt = time.Now().UTC().Format(time.RFC3339)
+		}
+		return encode(r, err)
 	case "calculate_dividend_yield":
+		price, annualDPS := numVal("price"), numVal("annual_dividend_per_share")
 		quarterly, _ := arrNumVal("quarterly_dividends")
-		return encode(calcDividendYield(numVal("price"), numVal("annual_dividend_per_share"), quarterly))
+		label := str("label")
+		r, err := finance.CalcDividendYield(price, annualDPS, quarterly)
+		if err == nil {
+			if len(quarterly) > 0 {
+				r.InputsSummary = seriesSummary(len(quarterly), "quarterly dividends", label)
+			} else if label == "" {
+				r.InputsSummary = fmt.Sprintf("price=%.2f, annual_dividend_per_share=%.4f", price, annualDPS)
+			} else {
+				r.InputsSummary = fmt.Sprintf("price=%.2f, annual_dividend_per_share=%.4f of %s", price, annualDPS, label)
+			}
+			r.ComputedAt = time.Now().UTC().Format(time.RFC3339)
+		}
+		return encode(r, err)
 	case "calculate_dividend_growth":
 		dividends, ok := arrNumVal("dividends")
 		if !ok {
 			return `error: dividends must be an array of numbers`
 		}
-		return encode(calcDividendGrowth(dividends))
+		r, err := finance.CalcDividendGrowth(dividends)
+		if err == nil {
+			r.InputsSummary = seriesSummary(len(dividends), "dividend periods", str("label"))
+			r.ComputedAt = time.Now().UTC().Format(time.RFC3339)
+		}
+		return encode(r, err)
 	case "calculate_stress_test":
 		shocks, ok := arrNumVal("shocks_percent")
 		if !ok {
 			return `error: shocks_percent must be an array of numbers`
 		}
-		return encode(calcStressTest(numVal("current_value"), shocks, str("label")))
+		label := str("label")
+		r, err := finance.CalcStressTest(numVal("current_value"), shocks, label)
+		if err == nil {
+			subject := label
+			if subject == "" {
+				subject = "the given value"
+			}
+			r.InputsSummary = fmt.Sprintf("%d shock scenarios on %s", len(shocks), subject)
+			r.ComputedAt = time.Now().UTC().Format(time.RFC3339)
+		}
+		return encode(r, err)
 	case "convert_currency":
-		return encode(calcCurrencyConversion(numVal("amount"), str("from_currency"), str("to_currency"), numVal("exchange_rate")))
+		amount, from, to, rate := numVal("amount"), str("from_currency"), str("to_currency"), numVal("exchange_rate")
+		r, err := finance.CalcCurrencyConversion(amount, from, to, rate)
+		if err == nil {
+			r.InputsSummary = fmt.Sprintf("amount=%.2f %s->%s", amount, from, to)
+			r.ComputedAt = time.Now().UTC().Format(time.RFC3339)
+		}
+		return encode(r, err)
 	case "calculate_compound_interest":
-		return encode(calcCompoundInterest(numVal("principal"), numVal("annual_rate"), numVal("years"), intVal("compounds_per_year", 1)))
+		principal, annualRate, years, compounds := numVal("principal"), numVal("annual_rate"), numVal("years"), intVal("compounds_per_year", 1)
+		r, err := finance.CalcCompoundInterest(principal, annualRate, years, compounds)
+		if err == nil {
+			r.InputsSummary = fmt.Sprintf("principal=%.2f, annual_rate=%.4f, years=%.2f, compounds_per_year=%d", principal, annualRate, years, compounds)
+			r.ComputedAt = time.Now().UTC().Format(time.RFC3339)
+		}
+		return encode(r, err)
 	case "calculate_stats":
 		vals, ok := arrNumVal("values")
 		if !ok {
 			return `error: values must be an array of numbers`
 		}
-		return encode(calcStats(vals, str("label")))
+		label := str("label")
+		r, err := finance.CalcStats(vals, label)
+		if err == nil {
+			r.InputsSummary = fmt.Sprintf("%d values of %s", r.Count, label)
+			r.ComputedAt = time.Now().UTC().Format(time.RFC3339)
+		}
+		return encode(r, err)
 
 	case "calculate_sma":
 		prices, ok := arrNumVal("prices")
 		if !ok {
 			return `error: prices must be an array of numbers`
 		}
-		return encode(calcSMA(prices, intVal("period", 20)))
+		r, err := finance.CalcSMA(prices, intVal("period", 20))
+		if err == nil {
+			r.InputsSummary = seriesSummary(r.InputSize, "prices", str("label"))
+			r.ComputedAt = time.Now().UTC().Format(time.RFC3339)
+		}
+		return encode(r, err)
 
 	case "calculate_ema":
 		prices, ok := arrNumVal("prices")
 		if !ok {
 			return `error: prices must be an array of numbers`
 		}
-		// alpha omitted -> 0, which calcEMA interprets as "use Wilder default".
-		return encode(calcEMA(prices, intVal("period", 20), numVal("alpha")))
+		// alpha omitted -> 0, which finance.CalcEMA interprets as "use Wilder default".
+		r, err := finance.CalcEMA(prices, intVal("period", 20), numVal("alpha"))
+		if err == nil {
+			r.InputsSummary = seriesSummary(r.InputSize, "prices", str("label"))
+			r.ComputedAt = time.Now().UTC().Format(time.RFC3339)
+		}
+		return encode(r, err)
 
 	case "calculate_rsi":
 		prices, ok := arrNumVal("prices")
 		if !ok {
 			return `error: prices must be an array of numbers`
 		}
-		return encode(calcRSI(prices, intVal("period", 14)))
+		r, err := finance.CalcRSI(prices, intVal("period", 14))
+		if err == nil {
+			r.InputsSummary = seriesSummary(r.InputSize, "prices", str("label"))
+			r.ComputedAt = time.Now().UTC().Format(time.RFC3339)
+		}
+		return encode(r, err)
 
 	case "calculate_macd":
 		prices, ok := arrNumVal("prices")
 		if !ok {
 			return `error: prices must be an array of numbers`
 		}
-		return encode(calcMACD(prices,
+		r, err := finance.CalcMACD(prices,
 			intVal("fast_period", 12),
 			intVal("slow_period", 26),
-			intVal("signal_period", 9)))
+			intVal("signal_period", 9))
+		if err == nil {
+			r.InputsSummary = seriesSummary(r.InputSize, "prices", str("label"))
+			r.ComputedAt = time.Now().UTC().Format(time.RFC3339)
+		}
+		return encode(r, err)
 
 	case "calculate_bollinger_bands":
 		prices, ok := arrNumVal("prices")
@@ -831,7 +1043,12 @@ func (a *Agent) dispatchInner(ctx context.Context, call llm.ToolCall, lastKind *
 		if numStd <= 0 {
 			numStd = 2.0 // standard default, consistent with EMA's alpha default
 		}
-		return encode(calcBollingerBands(prices, intVal("period", 20), numStd))
+		r, err := finance.CalcBollingerBands(prices, intVal("period", 20), numStd)
+		if err == nil {
+			r.InputsSummary = seriesSummary(r.InputSize, "prices", str("label"))
+			r.ComputedAt = time.Now().UTC().Format(time.RFC3339)
+		}
+		return encode(r, err)
 
 	case "calculate_correlation_matrix":
 		raw, ok := args["series"].(map[string]any)
@@ -854,7 +1071,12 @@ func (a *Agent) dispatchInner(ctx context.Context, call llm.ToolCall, lastKind *
 			}
 			series[name] = vals
 		}
-		return encode(calcCorrelationMatrix(series))
+		r, err := finance.CalcCorrelationMatrix(series)
+		if err == nil {
+			r.InputsSummary = fmt.Sprintf("%d series: %s", len(r.Labels), strings.Join(r.Labels, ", "))
+			r.ComputedAt = time.Now().UTC().Format(time.RFC3339)
+		}
+		return encode(r, err)
 	}
 
 	// News tool — no market provider needed.
@@ -1058,10 +1280,10 @@ func (a *Agent) dispatchInner(ctx context.Context, call llm.ToolCall, lastKind *
 			symbol := str("symbol")
 			qty := numVal("quantity")
 			price := numVal("price")
-			if validatePositive("quantity", qty) != nil {
+			if finance.ValidatePositive("quantity", qty) != nil {
 				return `error: quantity must be positive`
 			}
-			if validatePositive("price", price) != nil {
+			if finance.ValidatePositive("price", price) != nil {
 				return `error: price must be positive`
 			}
 			for i, ins := range p.Instruments {
@@ -1103,10 +1325,10 @@ func (a *Agent) dispatchInner(ctx context.Context, call llm.ToolCall, lastKind *
 			symbol := str("symbol")
 			qty := numVal("quantity")
 			sellPrice := numVal("sell_price")
-			if validatePositive("quantity", qty) != nil {
+			if finance.ValidatePositive("quantity", qty) != nil {
 				return `error: quantity must be positive`
 			}
-			if validatePositive("sell_price", sellPrice) != nil {
+			if finance.ValidatePositive("sell_price", sellPrice) != nil {
 				return `error: sell_price must be positive`
 			}
 			for i, ins := range p.Instruments {
@@ -1184,7 +1406,7 @@ func (a *Agent) dispatchInner(ctx context.Context, call llm.ToolCall, lastKind *
 				return `error: portfolio not found`
 			}
 			cash, ok := args["cash"].(float64)
-			if !ok || validateNonNegative("cash", cash) != nil {
+			if !ok || finance.ValidateNonNegative("cash", cash) != nil {
 				return `error: cash must be a non-negative number`
 			}
 			delta := cash - p.Cash
@@ -1197,7 +1419,7 @@ func (a *Agent) dispatchInner(ctx context.Context, call llm.ToolCall, lastKind *
 			}
 			return encode(map[string]any{
 				"portfolio_id": p.ID,
-				"cash":         round2(p.Cash),
+				"cash":         finance.Round2(p.Cash),
 				"summary":      fmt.Sprintf("cash balance set to %.2f", cash),
 			}, nil)
 
@@ -1214,7 +1436,7 @@ func (a *Agent) dispatchInner(ctx context.Context, call llm.ToolCall, lastKind *
 				return `error: portfolio not found`
 			}
 			amount := numVal("amount")
-			if validatePositive("amount", amount) != nil {
+			if finance.ValidatePositive("amount", amount) != nil {
 				return `error: amount must be positive`
 			}
 			tx := p.RecordTransaction(portfolio.Transaction{
@@ -1227,7 +1449,7 @@ func (a *Agent) dispatchInner(ctx context.Context, call llm.ToolCall, lastKind *
 			return encode(map[string]any{
 				"portfolio_id":   p.ID,
 				"transaction_id": tx.ID,
-				"cash":           round2(p.Cash),
+				"cash":           finance.Round2(p.Cash),
 			}, nil)
 
 		case "portfolio_withdraw_cash":
@@ -1243,7 +1465,7 @@ func (a *Agent) dispatchInner(ctx context.Context, call llm.ToolCall, lastKind *
 				return `error: portfolio not found`
 			}
 			amount := numVal("amount")
-			if validatePositive("amount", amount) != nil {
+			if finance.ValidatePositive("amount", amount) != nil {
 				return `error: amount must be positive`
 			}
 			tx := p.RecordTransaction(portfolio.Transaction{
@@ -1256,7 +1478,7 @@ func (a *Agent) dispatchInner(ctx context.Context, call llm.ToolCall, lastKind *
 			return encode(map[string]any{
 				"portfolio_id":   p.ID,
 				"transaction_id": tx.ID,
-				"cash":           round2(p.Cash),
+				"cash":           finance.Round2(p.Cash),
 			}, nil)
 
 		case "portfolio_record_dividend":
@@ -1273,7 +1495,7 @@ func (a *Agent) dispatchInner(ctx context.Context, call llm.ToolCall, lastKind *
 			}
 			symbol := str("symbol")
 			amount := numVal("amount")
-			if validatePositive("amount", amount) != nil {
+			if finance.ValidatePositive("amount", amount) != nil {
 				return `error: amount must be positive`
 			}
 			found := false
@@ -1297,7 +1519,7 @@ func (a *Agent) dispatchInner(ctx context.Context, call llm.ToolCall, lastKind *
 				"portfolio_id":   p.ID,
 				"transaction_id": tx.ID,
 				"symbol":         symbol,
-				"cash":           round2(p.Cash),
+				"cash":           finance.Round2(p.Cash),
 			}, nil)
 
 		case "portfolio_set_target_allocation":
@@ -1320,7 +1542,7 @@ func (a *Agent) dispatchInner(ctx context.Context, call llm.ToolCall, lastKind *
 			sum := 0.0
 			for symbol, v := range raw {
 				w, ok := v.(float64)
-				if !ok || validateNonNegative("weight", w) != nil {
+				if !ok || finance.ValidateNonNegative("weight", w) != nil {
 					return fmt.Sprintf("error: target_allocation[%q] must be a non-negative number", symbol)
 				}
 				alloc[symbol] = w
@@ -1337,7 +1559,7 @@ func (a *Agent) dispatchInner(ctx context.Context, call llm.ToolCall, lastKind *
 			return encode(map[string]any{
 				"portfolio_id":      p.ID,
 				"target_allocation": alloc,
-				"sum":               round4(sum),
+				"sum":               finance.Round4(sum),
 				"summary":           summary,
 			}, nil)
 
@@ -1364,7 +1586,7 @@ func (a *Agent) dispatchInner(ctx context.Context, call llm.ToolCall, lastKind *
 						continue
 					}
 					last, ok := entry["last"].(float64)
-					if !ok || validatePositive("last", last) != nil {
+					if !ok || finance.ValidatePositive("last", last) != nil {
 						continue
 					}
 					pq := portfolio.Quote{Last: last}
@@ -1434,7 +1656,7 @@ func (a *Agent) dispatchInner(ctx context.Context, call llm.ToolCall, lastKind *
 			quotes := make(map[string]portfolio.Quote, len(p.Instruments)+len(p.TargetAllocation))
 			if raw, ok := args["quotes"].(map[string]any); ok {
 				for symbol, v := range raw {
-					if last, ok := v.(float64); ok && validatePositive("last", last) == nil {
+					if last, ok := v.(float64); ok && finance.ValidatePositive("last", last) == nil {
 						quotes[symbol] = portfolio.Quote{Last: last}
 					}
 				}
@@ -1464,7 +1686,7 @@ func (a *Agent) dispatchInner(ctx context.Context, call llm.ToolCall, lastKind *
 				}
 			}
 			maxDrift := numVal("max_drift_percent")
-			if err := validateNonNegative("max_drift_percent", maxDrift); err != nil {
+			if err := finance.ValidateNonNegative("max_drift_percent", maxDrift); err != nil {
 				return fmt.Sprintf("error: %s", err)
 			}
 			result, err := portfolio.SuggestRebalance(p, quotes, maxDrift)

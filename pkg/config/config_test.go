@@ -121,6 +121,52 @@ func TestRoundtrip_MultipleProviders(t *testing.T) {
 	}
 }
 
+func TestRoundtrip_ProviderOrder(t *testing.T) {
+	withTempConfig(t)
+
+	original := &AurisConfig{
+		ActiveProvider: "eodhd",
+		Providers: map[string]*ProviderConfig{
+			"eodhd": {APIKey: "eodhd-key"},
+		},
+		ProviderOrder: []string{"eodhd", "fmp"},
+	}
+	if err := Save(original, "passphrase"); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	loaded, err := Load("passphrase")
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	want := []string{"eodhd", "fmp"}
+	if len(loaded.ProviderOrder) != len(want) {
+		t.Fatalf("ProviderOrder: got %v, want %v", loaded.ProviderOrder, want)
+	}
+	for i, k := range want {
+		if loaded.ProviderOrder[i] != k {
+			t.Errorf("ProviderOrder[%d]: got %q, want %q", i, loaded.ProviderOrder[i], k)
+		}
+	}
+}
+
+func TestRoundtrip_ProviderOrderEmpty(t *testing.T) {
+	withTempConfig(t)
+
+	original := &AurisConfig{Providers: map[string]*ProviderConfig{}}
+	if err := Save(original, "passphrase"); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	loaded, err := Load("passphrase")
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if len(loaded.ProviderOrder) != 0 {
+		t.Errorf("ProviderOrder: got %v, want empty", loaded.ProviderOrder)
+	}
+}
+
 func TestRoundtrip_EmptyAPIKey(t *testing.T) {
 	withTempConfig(t)
 

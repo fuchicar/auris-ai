@@ -1,4 +1,4 @@
-package fmp_test
+package eodhd_test
 
 import (
 	"context"
@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"auris/pkg/drivers/fmp"
+	"auris/pkg/drivers/eodhd"
 	"auris/pkg/market"
 )
 
@@ -21,25 +21,25 @@ import (
 // Si el fichero no existe o está vacío, omite el test.
 func readAPIKey(t *testing.T) string {
 	t.Helper()
-	data, err := os.ReadFile("test_data/fmp_api_key")
+	data, err := os.ReadFile("test_data/eodhd_api_key")
 	if errors.Is(err, os.ErrNotExist) {
-		t.Skip("test_data/fmp_api_key not found; skipping integration test")
+		t.Skip("test_data/eodhd_api_key not found; skipping integration test")
 	}
 	if err != nil {
 		t.Fatalf("read api key: %v", err)
 	}
 	key := strings.TrimSpace(string(data))
 	if key == "" {
-		t.Skip("test_data/fmp_api_key is empty; skipping integration test")
+		t.Skip("test_data/eodhd_api_key is empty; skipping integration test")
 	}
 	return key
 }
 
 // newConnectedDriver crea un Driver conectado y registra Disconnect en el cleanup.
-func newConnectedDriver(t *testing.T) *fmp.Driver {
+func newConnectedDriver(t *testing.T) *eodhd.Driver {
 	t.Helper()
 	key := readAPIKey(t)
-	d := fmp.New(key)
+	d := eodhd.New(key)
 	ctx := context.Background()
 	if err := d.Connect(ctx); err != nil {
 		t.Fatalf("Connect: %v", err)
@@ -58,19 +58,19 @@ func bg() context.Context { return context.Background() }
 
 // TestInterfaceCompliance verifica en tiempo de compilación que *Driver implementa ProviderAPI.
 func TestInterfaceCompliance(t *testing.T) {
-	var _ market.ProviderAPI = (*fmp.Driver)(nil)
-	var _ market.CapabilityReporter = (*fmp.Driver)(nil)
+	var _ market.ProviderAPI = (*eodhd.Driver)(nil)
+	var _ market.CapabilityReporter = (*eodhd.Driver)(nil)
 }
 
 func TestDescription_NonEmpty(t *testing.T) {
-	d := fmp.New("dummy")
+	d := eodhd.New("dummy")
 	if d.Description() == "" {
 		t.Error("Description() returned empty string")
 	}
 }
 
 func TestUnsupportedTools(t *testing.T) {
-	d := fmp.New("dummy")
+	d := eodhd.New("dummy")
 	got := d.UnsupportedTools()
 	want := []string{market.ToolGetOrderBook, market.ToolGetTicks}
 	if len(got) != len(want) {
@@ -81,6 +81,13 @@ func TestUnsupportedTools(t *testing.T) {
 			t.Errorf("expected %v, got %v", want, got)
 			break
 		}
+	}
+}
+
+func TestName_NonEmpty(t *testing.T) {
+	d := eodhd.New("dummy")
+	if d.Name() == "" {
+		t.Error("Name() returned empty string")
 	}
 }
 
@@ -97,7 +104,7 @@ func TestConnect_ValidKey(t *testing.T) {
 
 func TestConnect_InvalidKey(t *testing.T) {
 	readAPIKey(t) // asegura que hay acceso a internet
-	d := fmp.New("invalid_key_xxxx")
+	d := eodhd.New("invalid_key_xxxx")
 	err := d.Connect(bg())
 	if err == nil {
 		t.Fatal("expected error with invalid key, got nil")
@@ -135,8 +142,7 @@ func TestPing_Connected(t *testing.T) {
 }
 
 func TestPing_NotConnected(t *testing.T) {
-	readAPIKey(t)
-	d := fmp.New(readAPIKey(t))
+	d := eodhd.New(readAPIKey(t)) // nunca llamamos a Connect
 	err := d.Ping(bg())
 	if err == nil {
 		t.Fatal("expected error when not connected")
@@ -150,13 +156,9 @@ func TestPing_NotConnected(t *testing.T) {
 // Descubrimiento de instrumentos
 // ─────────────────────────────────────────────────────────────────────────────
 
-func TestSearchInstrument(t *testing.T) {
+func TestSearchInstrument_US(t *testing.T) {
 	d := newConnectedDriver(t)
-	// Buscamos por ticker, que FMP soporta mejor en el plan gratuito.
 	results, err := d.SearchInstrument(bg(), "AAPL")
-	if errors.Is(err, market.ErrSubscriptionRequired) {
-		t.Skip("SearchInstrument requires a higher subscription plan")
-	}
 	if err != nil {
 		t.Fatalf("SearchInstrument: %v", err)
 	}
@@ -173,14 +175,36 @@ func TestSearchInstrument(t *testing.T) {
 	}
 }
 
+// TestSearchInstrument_BME es el caso de uso central de este driver: cobertura
+// de la bolsa de Madrid, que FMP no ofrece en el free tier.
+func TestSearchInstrument_BME(t *testing.T) {
+	d := newConnectedDriver(t)
+	results, err := d.SearchInstrument(bg(), "BKT")
+	if err != nil {
+		t.Fatalf("SearchInstrument: %v", err)
+	}
+	found := false
+	for _, r := range results {
+		if r.Symbol == "BKT.MC" {
+			found = true
+			if r.Currency != "EUR" {
+				t.Errorf("Currency: got %q, want EUR", r.Currency)
+			}
+		}
+	}
+	if !found {
+		t.Error("expected BKT.MC (Bankinter, Madrid) in search results")
+	}
+}
+
 func TestGetInstrument_AAPL(t *testing.T) {
 	d := newConnectedDriver(t)
-	inst, err := d.GetInstrument(bg(), "AAPL")
+	inst, err := d.GetInstrument(bg(), "AAPL.US")
 	if err != nil {
-		t.Fatalf("GetInstrument AAPL: %v", err)
+		t.Fatalf("GetInstrument AAPL.US: %v", err)
 	}
-	if inst.Symbol != "AAPL" {
-		t.Errorf("Symbol: got %q, want %q", inst.Symbol, "AAPL")
+	if inst.Symbol != "AAPL.US" {
+		t.Errorf("Symbol: got %q, want %q", inst.Symbol, "AAPL.US")
 	}
 	if inst.Currency != "USD" {
 		t.Errorf("Currency: got %q, want %q", inst.Currency, "USD")
@@ -190,9 +214,23 @@ func TestGetInstrument_AAPL(t *testing.T) {
 	}
 }
 
+func TestGetInstrument_BME(t *testing.T) {
+	d := newConnectedDriver(t)
+	inst, err := d.GetInstrument(bg(), "BKT.MC")
+	if err != nil {
+		t.Fatalf("GetInstrument BKT.MC: %v", err)
+	}
+	if inst.Symbol != "BKT.MC" {
+		t.Errorf("Symbol: got %q, want %q", inst.Symbol, "BKT.MC")
+	}
+	if inst.Currency != "EUR" {
+		t.Errorf("Currency: got %q, want EUR", inst.Currency)
+	}
+}
+
 func TestGetInstrument_NotFound(t *testing.T) {
 	d := newConnectedDriver(t)
-	_, err := d.GetInstrument(bg(), "ZZZZNOTREAL999")
+	_, err := d.GetInstrument(bg(), "ZZZZNOTREAL999.US")
 	if err == nil {
 		t.Fatal("expected error for unknown symbol")
 	}
@@ -204,9 +242,6 @@ func TestGetInstrument_NotFound(t *testing.T) {
 func TestListInstruments_Stock(t *testing.T) {
 	d := newConnectedDriver(t)
 	list, err := d.ListInstruments(bg(), market.AssetTypeStock)
-	if errors.Is(err, market.ErrSubscriptionRequired) {
-		t.Skip("stock-list requires a higher subscription plan")
-	}
 	if err != nil {
 		t.Fatalf("ListInstruments stock: %v", err)
 	}
@@ -216,26 +251,6 @@ func TestListInstruments_Stock(t *testing.T) {
 	for _, inst := range list {
 		if inst.Type != market.AssetTypeStock {
 			t.Errorf("got type %q, want AssetTypeStock (symbol=%s)", inst.Type, inst.Symbol)
-			break
-		}
-	}
-}
-
-func TestListInstruments_ETF(t *testing.T) {
-	d := newConnectedDriver(t)
-	list, err := d.ListInstruments(bg(), market.AssetTypeETF)
-	if errors.Is(err, market.ErrSubscriptionRequired) {
-		t.Skip("stock-list requires a higher subscription plan")
-	}
-	if err != nil {
-		t.Fatalf("ListInstruments ETF: %v", err)
-	}
-	if len(list) == 0 {
-		t.Fatal("expected at least one ETF")
-	}
-	for _, inst := range list {
-		if inst.Type != market.AssetTypeETF {
-			t.Errorf("got type %q, want AssetTypeETF (symbol=%s)", inst.Type, inst.Symbol)
 			break
 		}
 	}
@@ -256,14 +271,11 @@ func TestListInstruments_Future(t *testing.T) {
 // Datos históricos
 // ─────────────────────────────────────────────────────────────────────────────
 
-func TestGetCandles_Daily(t *testing.T) {
+func TestGetCandles_Daily_AAPL(t *testing.T) {
 	d := newConnectedDriver(t)
 	to := time.Now().UTC()
 	from := to.AddDate(0, 0, -30)
-	candles, err := d.GetCandles(bg(), "AAPL", from, to, market.Timeframe1d)
-	if errors.Is(err, market.ErrSubscriptionRequired) {
-		t.Skip("historical-price-eod requires a higher subscription plan")
-	}
+	candles, err := d.GetCandles(bg(), "AAPL.US", from, to, market.Timeframe1d)
 	if err != nil {
 		t.Fatalf("GetCandles daily: %v", err)
 	}
@@ -274,60 +286,42 @@ func TestGetCandles_Daily(t *testing.T) {
 	assertCandlesNonZero(t, candles)
 }
 
-func TestGetCandles_1m(t *testing.T) {
+// TestGetCandles_Daily_BME prueba el caso de uso central: velas diarias de
+// un valor del BME que FMP no cubre.
+func TestGetCandles_Daily_BME(t *testing.T) {
+	d := newConnectedDriver(t)
+	to := time.Now().UTC()
+	from := to.AddDate(0, 0, -30)
+	candles, err := d.GetCandles(bg(), "BKT.MC", from, to, market.Timeframe1d)
+	if err != nil {
+		t.Fatalf("GetCandles daily BKT.MC: %v", err)
+	}
+	if len(candles) == 0 {
+		t.Fatal("expected at least one daily candle for BKT.MC")
+	}
+	assertAscendingTime(t, candles)
+	assertCandlesNonZero(t, candles)
+}
+
+// TestGetCandles_Intraday_RequiresSubscription documenta la restricción real
+// del tier gratuito de EODHD: /api/intraday devuelve HTTP 403 para cualquier
+// intervalo, verificado en vivo.
+func TestGetCandles_Intraday_RequiresSubscription(t *testing.T) {
 	d := newConnectedDriver(t)
 	to := time.Now().UTC()
 	from := to.AddDate(0, 0, -2)
-	candles, err := d.GetCandles(bg(), "AAPL", from, to, market.Timeframe1m)
-	if errors.Is(err, market.ErrSubscriptionRequired) {
-		t.Skip("intraday candles require a higher subscription plan")
+	_, err := d.GetCandles(bg(), "AAPL.US", from, to, market.Timeframe1h)
+	if err == nil {
+		t.Fatal("expected error: free tier does not allow intraday data")
 	}
-	if err != nil {
-		t.Fatalf("GetCandles 1m: %v", err)
+	if !errors.Is(err, market.ErrSubscriptionRequired) {
+		t.Errorf("expected ErrSubscriptionRequired, got: %v", err)
 	}
-	if len(candles) == 0 {
-		t.Fatal("expected at least one 1m candle")
-	}
-	assertAscendingTime(t, candles)
-}
-
-func TestGetCandles_5m(t *testing.T) {
-	d := newConnectedDriver(t)
-	to := time.Now().UTC()
-	from := to.AddDate(0, 0, -2)
-	candles, err := d.GetCandles(bg(), "AAPL", from, to, market.Timeframe5m)
-	if errors.Is(err, market.ErrSubscriptionRequired) {
-		t.Skip("intraday candles require a higher subscription plan")
-	}
-	if err != nil {
-		t.Fatalf("GetCandles 5m: %v", err)
-	}
-	if len(candles) == 0 {
-		t.Fatal("expected at least one 5m candle")
-	}
-	assertAscendingTime(t, candles)
-}
-
-func TestGetCandles_1h(t *testing.T) {
-	d := newConnectedDriver(t)
-	to := time.Now().UTC()
-	from := to.AddDate(0, 0, -5)
-	candles, err := d.GetCandles(bg(), "AAPL", from, to, market.Timeframe1h)
-	if errors.Is(err, market.ErrSubscriptionRequired) {
-		t.Skip("intraday candles require a higher subscription plan")
-	}
-	if err != nil {
-		t.Fatalf("GetCandles 1h: %v", err)
-	}
-	if len(candles) == 0 {
-		t.Fatal("expected at least one 1h candle")
-	}
-	assertAscendingTime(t, candles)
 }
 
 func TestGetTicks_ErrNotSupported(t *testing.T) {
 	d := newConnectedDriver(t)
-	_, err := d.GetTicks(bg(), "AAPL", time.Now().AddDate(0, 0, -1), time.Now())
+	_, err := d.GetTicks(bg(), "AAPL.US", time.Now().AddDate(0, 0, -1), time.Now())
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -338,10 +332,9 @@ func TestGetTicks_ErrNotSupported(t *testing.T) {
 
 func TestGetCorporateActions_AAPL(t *testing.T) {
 	d := newConnectedDriver(t)
-	// AAPL tiene dividendos históricamente
 	from := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
 	to := time.Now().UTC()
-	actions, err := d.GetCorporateActions(bg(), "AAPL", from, to)
+	actions, err := d.GetCorporateActions(bg(), "AAPL.US", from, to)
 	if err != nil {
 		t.Fatalf("GetCorporateActions: %v", err)
 	}
@@ -362,10 +355,9 @@ func TestGetCorporateActions_AAPL(t *testing.T) {
 
 func TestGetCorporateActions_DateFilter(t *testing.T) {
 	d := newConnectedDriver(t)
-	// Rango muy reciente y estrecho: improbable que haya eventos
 	from := time.Now().UTC().AddDate(0, 0, -3)
 	to := time.Now().UTC().AddDate(0, 0, -1)
-	actions, err := d.GetCorporateActions(bg(), "AAPL", from, to)
+	actions, err := d.GetCorporateActions(bg(), "AAPL.US", from, to)
 	if err != nil {
 		t.Fatalf("GetCorporateActions date filter: %v", err)
 	}
@@ -382,9 +374,9 @@ func TestGetCorporateActions_DateFilter(t *testing.T) {
 
 func TestGetQuote_AAPL(t *testing.T) {
 	d := newConnectedDriver(t)
-	q, err := d.GetQuote(bg(), "AAPL")
+	q, err := d.GetQuote(bg(), "AAPL.US")
 	if err != nil {
-		t.Fatalf("GetQuote AAPL: %v", err)
+		t.Fatalf("GetQuote AAPL.US: %v", err)
 	}
 	if q.Last <= 0 {
 		t.Errorf("Last price should be > 0, got %f", q.Last)
@@ -397,21 +389,34 @@ func TestGetQuote_AAPL(t *testing.T) {
 	}
 }
 
+func TestGetQuote_BME(t *testing.T) {
+	d := newConnectedDriver(t)
+	q, err := d.GetQuote(bg(), "BKT.MC")
+	if err != nil {
+		t.Fatalf("GetQuote BKT.MC: %v", err)
+	}
+	if q.Last <= 0 {
+		t.Errorf("Last price should be > 0, got %f", q.Last)
+	}
+}
+
+// TestGetQuote_NotFound cubre el caso "NA": /api/real-time devuelve HTTP 200
+// con campos "NA" para un símbolo inexistente en vez de HTTP 404 — el driver
+// debe detectarlo y traducirlo a ErrNotFound explícitamente.
 func TestGetQuote_NotFound(t *testing.T) {
 	d := newConnectedDriver(t)
-	_, err := d.GetQuote(bg(), "ZZZZNOTREAL999")
+	_, err := d.GetQuote(bg(), "ZZZZNOTREAL999.US")
 	if err == nil {
 		t.Fatal("expected error for unknown symbol")
 	}
-	// FMP puede devolver 402 (premium check) o 404 dependiendo del plan.
-	if !errors.Is(err, market.ErrNotFound) && !errors.Is(err, market.ErrSubscriptionRequired) {
-		t.Errorf("expected ErrNotFound or ErrSubscriptionRequired, got: %v", err)
+	if !errors.Is(err, market.ErrNotFound) {
+		t.Errorf("expected ErrNotFound, got: %v", err)
 	}
 }
 
 func TestGetOrderBook_ErrNotSupported(t *testing.T) {
 	d := newConnectedDriver(t)
-	_, err := d.GetOrderBook(bg(), "AAPL", 10)
+	_, err := d.GetOrderBook(bg(), "AAPL.US", 10)
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -426,8 +431,7 @@ func TestGetOrderBook_ErrNotSupported(t *testing.T) {
 
 func TestSubscribeQuotes(t *testing.T) {
 	key := readAPIKey(t)
-	// Polling rápido para que el test no tarde demasiado
-	d := fmp.New(key, fmp.WithPollInterval(2*time.Second))
+	d := eodhd.New(key, eodhd.WithPollInterval(2*time.Second))
 	if err := d.Connect(bg()); err != nil {
 		t.Fatalf("Connect: %v", err)
 	}
@@ -436,12 +440,11 @@ func TestSubscribeQuotes(t *testing.T) {
 	ctx, cancel := context.WithTimeout(bg(), 12*time.Second)
 	defer cancel()
 
-	ch, err := d.SubscribeQuotes(ctx, "AAPL")
+	ch, err := d.SubscribeQuotes(ctx, "AAPL.US")
 	if err != nil {
 		t.Fatalf("SubscribeQuotes: %v", err)
 	}
 
-	// Esperar al menos una quote
 	select {
 	case q, ok := <-ch:
 		if !ok {
@@ -454,15 +457,13 @@ func TestSubscribeQuotes(t *testing.T) {
 		t.Fatal("timeout waiting for first quote")
 	}
 
-	// Cancelar y verificar que el canal se cierra
 	cancel()
-	// Drenar hasta que se cierre
 	timeout := time.After(5 * time.Second)
 	for {
 		select {
 		case _, ok := <-ch:
 			if !ok {
-				return // canal cerrado correctamente
+				return
 			}
 		case <-timeout:
 			t.Error("channel was not closed after context cancellation")
@@ -473,7 +474,7 @@ func TestSubscribeQuotes(t *testing.T) {
 
 func TestSubscribeTrades_ErrNotSupported(t *testing.T) {
 	d := newConnectedDriver(t)
-	_, err := d.SubscribeTrades(bg(), "AAPL")
+	_, err := d.SubscribeTrades(bg(), "AAPL.US")
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -484,7 +485,7 @@ func TestSubscribeTrades_ErrNotSupported(t *testing.T) {
 
 func TestSubscribeOrderBook_ErrNotSupported(t *testing.T) {
 	d := newConnectedDriver(t)
-	_, err := d.SubscribeOrderBook(bg(), "AAPL", 10)
+	_, err := d.SubscribeOrderBook(bg(), "AAPL.US", 10)
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -497,29 +498,16 @@ func TestSubscribeOrderBook_ErrNotSupported(t *testing.T) {
 // Fundamentales
 // ─────────────────────────────────────────────────────────────────────────────
 
-func TestGetFundamentals_AAPL(t *testing.T) {
+// TestGetFundamentals_RequiresSubscription documenta la restricción real del
+// tier gratuito: /api/fundamentals devuelve HTTP 403, verificado en vivo.
+func TestGetFundamentals_RequiresSubscription(t *testing.T) {
 	d := newConnectedDriver(t)
-	f, err := d.GetFundamentals(bg(), "AAPL")
-	if errors.Is(err, market.ErrSubscriptionRequired) {
-		t.Skip("key-metrics-ttm requires a higher subscription plan")
-	}
-	if err != nil {
-		t.Fatalf("GetFundamentals AAPL: %v", err)
-	}
-	if f.MarketCap <= 0 {
-		t.Errorf("MarketCap should be > 0, got %f", f.MarketCap)
-	}
-}
-
-func TestGetFundamentals_NotFound(t *testing.T) {
-	d := newConnectedDriver(t)
-	_, err := d.GetFundamentals(bg(), "ZZZZNOTREAL999")
+	_, err := d.GetFundamentals(bg(), "AAPL.US")
 	if err == nil {
-		t.Fatal("expected error for unknown symbol")
+		t.Fatal("expected error: free tier does not allow fundamentals data")
 	}
-	// FMP puede devolver 402 (premium check) o 404 dependiendo del plan.
-	if !errors.Is(err, market.ErrNotFound) && !errors.Is(err, market.ErrSubscriptionRequired) {
-		t.Errorf("expected ErrNotFound or ErrSubscriptionRequired, got: %v", err)
+	if !errors.Is(err, market.ErrSubscriptionRequired) {
+		t.Errorf("expected ErrSubscriptionRequired, got: %v", err)
 	}
 }
 
@@ -536,19 +524,19 @@ func TestErrNotSupported_Wrapping(t *testing.T) {
 		fn   func() error
 	}{
 		{"GetTicks", func() error {
-			_, err := d.GetTicks(bg(), "AAPL", now.AddDate(0, 0, -1), now)
+			_, err := d.GetTicks(bg(), "AAPL.US", now.AddDate(0, 0, -1), now)
 			return err
 		}},
 		{"GetOrderBook", func() error {
-			_, err := d.GetOrderBook(bg(), "AAPL", 10)
+			_, err := d.GetOrderBook(bg(), "AAPL.US", 10)
 			return err
 		}},
 		{"SubscribeTrades", func() error {
-			_, err := d.SubscribeTrades(bg(), "AAPL")
+			_, err := d.SubscribeTrades(bg(), "AAPL.US")
 			return err
 		}},
 		{"SubscribeOrderBook", func() error {
-			_, err := d.SubscribeOrderBook(bg(), "AAPL", 10)
+			_, err := d.SubscribeOrderBook(bg(), "AAPL.US", 10)
 			return err
 		}},
 	}
@@ -566,9 +554,8 @@ func TestErrNotSupported_Wrapping(t *testing.T) {
 }
 
 func TestErrNotConnected_Wrapping(t *testing.T) {
-	readAPIKey(t)
-	d := fmp.New(readAPIKey(t)) // nunca llamamos a Connect
-	_, err := d.GetQuote(bg(), "AAPL")
+	d := eodhd.New(readAPIKey(t)) // nunca llamamos a Connect
+	_, err := d.GetQuote(bg(), "AAPL.US")
 	if err == nil {
 		t.Fatal("expected error when not connected")
 	}
@@ -596,7 +583,7 @@ func assertCandlesNonZero(t *testing.T, candles []market.Candle) {
 	t.Helper()
 	for _, c := range candles {
 		if c.Open > 0 && c.Close > 0 {
-			return // al menos una vela con valores válidos
+			return
 		}
 	}
 	t.Error("no candle with Open > 0 and Close > 0")

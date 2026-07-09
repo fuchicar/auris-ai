@@ -23,6 +23,7 @@ var configMenuItems = []menuItem{
 	{"menu.change_language", "language", nil},
 	{"menu.change_theme", "theme", nil},
 	{"menu.change_model", "model", nil},
+	{"menu.manage_market_providers", "marketproviders", nil},
 	{"menu.manage_ai_providers", "aiproviders", nil},
 	{"menu.back", "back", nil},
 }

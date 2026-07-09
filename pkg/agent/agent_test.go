@@ -150,6 +150,16 @@ func (m *mockMarket) GetFundamentals(ctx context.Context, symbol string) (market
 	return m.fundamental, m.fundErr
 }
 
+// capabilityMockMarket layers market.CapabilityReporter on top of mockMarket,
+// so New() wiring tests can construct a provider that declares unsupported
+// tools without changing mockMarket's default (unknown-capability) shape.
+type capabilityMockMarket struct {
+	mockMarket
+	unsupported []string
+}
+
+func (m *capabilityMockMarket) UnsupportedTools() []string { return m.unsupported }
+
 // ---- helpers ----------------------------------------------------------------
 
 func toolCallArgs(t *testing.T, args map[string]any) string {
@@ -186,6 +196,48 @@ func TestBuildTools_AllHaveType(t *testing.T) {
 		if tool.Type != "function" {
 			t.Errorf("tool %s has type %q, want \"function\"", tool.Function.Name, tool.Type)
 		}
+	}
+}
+
+func TestFilterTools_RemovesUnsupported(t *testing.T) {
+	tools := []llm.Tool{
+		{Function: llm.ToolFunction{Name: "a"}},
+		{Function: llm.ToolFunction{Name: "b"}},
+		{Function: llm.ToolFunction{Name: "c"}},
+	}
+	got := filterTools(tools, []string{"b"})
+	if len(got) != 2 || got[0].Function.Name != "a" || got[1].Function.Name != "c" {
+		t.Errorf("expected [a c], got %v", got)
+	}
+}
+
+func TestFilterTools_NilOrEmptyUnsupportedIsNoOp(t *testing.T) {
+	tools := []llm.Tool{{Function: llm.ToolFunction{Name: "a"}}}
+	if got := filterTools(tools, nil); len(got) != 1 {
+		t.Errorf("expected no-op with nil, got %v", got)
+	}
+	if got := filterTools(tools, []string{}); len(got) != 1 {
+		t.Errorf("expected no-op with empty slice, got %v", got)
+	}
+}
+
+func TestNew_FiltersToolsWhenMarketDeclaresCapabilities(t *testing.T) {
+	mp := &capabilityMockMarket{unsupported: []string{market.ToolGetOrderBook, market.ToolGetTicks}}
+	a := New(&mockLLM{}, mp, "")
+	if len(a.tools) != 56 {
+		t.Errorf("expected 56 tools, got %d", len(a.tools))
+	}
+	for _, tool := range a.tools {
+		if tool.Function.Name == market.ToolGetOrderBook || tool.Function.Name == market.ToolGetTicks {
+			t.Errorf("expected %s to be filtered out, found in tools", tool.Function.Name)
+		}
+	}
+}
+
+func TestNew_NoFilterWhenMarketDoesNotDeclareCapabilities(t *testing.T) {
+	a := New(&mockLLM{}, &mockMarket{}, "")
+	if len(a.tools) != 58 {
+		t.Errorf("expected all 58 tools when capabilities are unknown, got %d", len(a.tools))
 	}
 }
 

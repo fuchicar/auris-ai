@@ -14,8 +14,13 @@ import (
 // AurisConfig is the in-memory representation of the agent configuration.
 // Sensitive fields (e.g. APIKey) are held as plaintext strings.
 type AurisConfig struct {
-	ActiveProvider   string
-	Providers        map[string]*ProviderConfig
+	ActiveProvider string
+	Providers      map[string]*ProviderConfig
+	// ProviderOrder is the user's chosen market-provider priority order (all
+	// registry.AllMarket() keys, active or not — deactivating a provider does
+	// not lose its position). Empty means no preference has been saved yet;
+	// callers fall back to registry.AllMarket()'s natural order.
+	ProviderOrder    []string
 	Locale           string            // BCP-47 tag, e.g. "en" or "es"; empty means auto-detected at runtime
 	Theme            string            // "light" | "dark"
 	FinancialProfile *FinancialProfile // nil until the setup questionnaire is completed
@@ -102,6 +107,7 @@ type diskConfig struct {
 	ActiveProvider   string                   `json:"active_provider"`
 	KDF              diskKDF                  `json:"kdf"`
 	Providers        map[string]*diskProvider `json:"providers,omitempty"`
+	ProviderOrder    []string                 `json:"provider_order,omitempty"`
 	Locale           string                   `json:"locale,omitempty"`
 	Theme            string                   `json:"theme,omitempty"`
 	FinancialProfile *FinancialProfile        `json:"financial_profile,omitempty"`
@@ -179,6 +185,7 @@ func Load(passphrase string) (*AurisConfig, error) {
 	cfg := &AurisConfig{
 		ActiveProvider:   disk.ActiveProvider,
 		Providers:        make(map[string]*ProviderConfig, len(disk.Providers)),
+		ProviderOrder:    disk.ProviderOrder,
 		Locale:           disk.Locale,
 		Theme:            disk.Theme,
 		FinancialProfile: disk.FinancialProfile,
@@ -231,6 +238,7 @@ func Save(cfg *AurisConfig, passphrase string) error {
 
 	disk := diskConfig{
 		ActiveProvider: cfg.ActiveProvider,
+		ProviderOrder:  cfg.ProviderOrder,
 		KDF: diskKDF{
 			Salt:    base64.StdEncoding.EncodeToString(params.Salt),
 			Time:    params.Time,
