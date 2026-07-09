@@ -20,9 +20,13 @@ const apiKeyConnectTimeout = 15 * time.Second
 type connectResultMsg struct{ err error }
 
 // APIKeyModel collects the user's API key for the selected provider, validates
-// it by calling Connect, and emits [ScreenDoneMsg] on success.
+// it by calling Connect, and emits [ScreenDoneMsg] on success. When optional is
+// true, Esc skips configuration entirely (emits an empty APIKey) instead of
+// requiring input — used for secondary market providers in the setup wizard.
 type APIKeyModel struct {
 	entry      registry.MarketEntry
+	from       Screen
+	optional   bool
 	input      textinput.Model
 	spin       spinner.Model
 	connecting bool
@@ -31,7 +35,10 @@ type APIKeyModel struct {
 }
 
 // newAPIKeyModel constructs an [APIKeyModel] for the given provider entry.
-func newAPIKeyModel(entry registry.MarketEntry, s *Styles) *APIKeyModel {
+// from is echoed back in the emitted [ScreenDoneMsg.From] so the same model can
+// serve both the mandatory primary-provider screen and the optional secondary
+// one. When optional is true, Esc skips configuration (empty APIKey result).
+func newAPIKeyModel(entry registry.MarketEntry, s *Styles, from Screen, optional bool) *APIKeyModel {
 	ti := textinput.New()
 	ti.Placeholder = "api key"
 	ti.Focus()
@@ -40,7 +47,7 @@ func newAPIKeyModel(entry registry.MarketEntry, s *Styles) *APIKeyModel {
 	sp.Spinner = spinner.Dot
 	sp.Style = s.Spinner
 
-	return &APIKeyModel{entry: entry, input: ti, spin: sp, styles: s}
+	return &APIKeyModel{entry: entry, from: from, optional: optional, input: ti, spin: sp, styles: s}
 }
 
 // Init implements [tea.Model]; starts cursor blink on the input field.
@@ -59,7 +66,7 @@ func (m *APIKeyModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		apiKey := m.input.Value()
 		return m, func() tea.Msg {
 			return ScreenDoneMsg{
-				From:   ScreenAPIKey,
+				From:   m.from,
 				Result: APIKeyResult{Entry: m.entry, APIKey: apiKey},
 			}
 		}
@@ -72,6 +79,15 @@ func (m *APIKeyModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case tea.KeyMsg:
+		if !m.connecting && m.optional && msg.Type == tea.KeyEsc {
+			from, entry := m.from, m.entry
+			return m, func() tea.Msg {
+				return ScreenDoneMsg{
+					From:   from,
+					Result: APIKeyResult{Entry: entry, APIKey: ""},
+				}
+			}
+		}
 		if !m.connecting && msg.Type == tea.KeyEnter && m.input.Value() != "" {
 			m.connecting = true
 			m.err = ""
@@ -104,10 +120,15 @@ func connectCmd(entry registry.MarketEntry, apiKey string) tea.Cmd {
 
 // View implements [tea.Model].
 func (m *APIKeyModel) View() string {
+	labelKey, hintKey := "setup.apikey.label", "setup.apikey.hint"
+	if m.optional {
+		labelKey, hintKey = "setup.apikey.optional_label", "setup.apikey.optional_hint"
+	}
+
 	providerName := m.styles.Subtitle.Render(m.entry.DisplayName)
 	docsLabel := m.styles.Hint.Render(locale.T("setup.apikey.docs_hint"))
 	docsLink := m.styles.DocsURL.Render(m.entry.DocsURL)
-	inputLabel := m.styles.Unselected.Render(locale.T("setup.apikey.label"))
+	inputLabel := m.styles.Unselected.Render(locale.T(labelKey))
 
 	var status string
 	if m.connecting {
@@ -117,7 +138,7 @@ func (m *APIKeyModel) View() string {
 	} else if m.err != "" {
 		status = m.styles.Error.Render(fmt.Sprintf("✗ %s", m.err))
 	} else {
-		status = m.styles.Hint.Render(locale.T("setup.apikey.hint"))
+		status = m.styles.Hint.Render(locale.T(hintKey))
 	}
 
 	inp := m.styles.Input.Render(m.input.View())

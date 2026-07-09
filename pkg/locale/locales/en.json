@@ -316,6 +316,12 @@
   "setup.apikey.hint": {
     "other": "Enter API key · Enter validate"
   },
+  "setup.apikey.optional_label": {
+    "other": "API key (optional — extends market data coverage)"
+  },
+  "setup.apikey.optional_hint": {
+    "other": "Enter API key · Enter validate · Esc to skip"
+  },
 
   "menu.title": {
     "other": "Main Menu"
@@ -359,6 +365,9 @@
   "menu.hint_submenu": {
     "other": "↑↓ navigate · Enter select · Esc back"
   },
+  "menu.manage_market_providers": {
+    "other": "Manage Market Providers"
+  },
   "menu.manage_ai_providers": {
     "other": "Manage AI Providers"
   },
@@ -370,6 +379,13 @@
   },
   "hint.esc_back": {
     "other": "· Esc back"
+  },
+
+  "setup.market.manage.label": {
+    "other": "Configure market data providers"
+  },
+  "setup.market.manage.hint": {
+    "other": "↑↓ navigate · Space toggle · +/- reorder · Enter confirm"
   },
 
   "setup.ai.select.label": {
@@ -483,6 +499,9 @@
   },
   "agent.cmd.model": {
     "other": "Change default model"
+  },
+  "agent.cmd.marketproviders": {
+    "other": "Add, remove or reorder market data providers"
   },
   "agent.cmd.aiproviders": {
     "other": "Add or remove AI providers"

@@ -60,6 +60,7 @@ var agentCommands = []agentCmd{
 	{"new", "/new", "agent.cmd.new", true},
 	{"session", "/session", "agent.cmd.session", true},
 	{"model", "/model", "agent.cmd.model", true},
+	{"marketproviders", "/marketproviders", "agent.cmd.marketproviders", true},
 	{"aiproviders", "/aiproviders", "agent.cmd.aiproviders", true},
 	{"export", "/export [filename]", "agent.cmd.export", true},
 	{"theme", "/theme [light|dark|greenlight|greendark|boxlight|boxdark]", "agent.cmd.theme", false},

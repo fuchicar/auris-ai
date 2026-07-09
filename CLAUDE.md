@@ -23,6 +23,7 @@ go test ./pkg/drivers/fmp/... -run TestInterfaceCompliance -v
 
 Integration test credentials:
 - FMP market driver: `pkg/drivers/fmp/test_data/fmp_api_key`
+- EODHD market driver: `pkg/drivers/eodhd/test_data/eodhd_api_key`
 - Ollama LLM driver: requires a local Ollama instance running
 - Tests `t.Skip` automatically when credentials are absent.
 
@@ -34,6 +35,7 @@ Auris is a terminal-based financial AI advisor. The two core abstractions are **
 pkg/market/          — ProviderAPI interface + shared market types + sentinel errors
 pkg/llm/             — AIProvider interface + shared LLM types + sentinel errors
 pkg/drivers/fmp/     — Market data: Financial Modeling Prep REST API
+pkg/drivers/eodhd/   — Market data: EOD Historical Data (EODHD) REST API
 pkg/drivers/ollama/  — LLM: Ollama local inference REST API
 pkg/drivers/gemini/  — LLM: Google Gemini via google.golang.org/genai SDK
 pkg/registry/        — Static registration of all market and LLM providers
@@ -70,6 +72,18 @@ Implements `market.ProviderAPI` against `https://financialmodelingprep.com/stabl
 - `key-metrics-ttm` JSON fields: `marketCap` (no TTM suffix), `peRatioTTM`, `netIncomePerShareTTM`.
 - HTTP 402 → `ErrSubscriptionRequired`.
 
+### EODHD driver (`pkg/drivers/eodhd/eodhd.go`)
+
+Implements `market.ProviderAPI` against `https://eodhd.com/api`. Selected as the second market provider (FEAT-7) for its BME (Madrid) coverage, which FMP's free tier lacks. Key notes:
+
+- Auth is API-key via query param `api_token=`; `fmt=json` is also forced on every request (some endpoints default to CSV without it). The symbol/query is part of the URL **path** (e.g. `/eod/AAPL.US`), not a query param — unlike FMP.
+- Symbols carry an explicit exchange suffix (`BKT.MC` for Madrid); a bare symbol (`AAPL`) implicitly resolves to `.US`.
+- HTTP 401 → `ErrUnauthorized`. HTTP 403 → `ErrSubscriptionRequired` (EODHD's free tier returns this for `/fundamentals` and `/intraday` — "Only EOD data allowed for free users" — a plan restriction, not an auth failure). HTTP 404 → `ErrNotFound`. HTTP 429 → `ErrRateLimit`.
+- `GetQuote` (`/real-time/{symbol}`) returns **HTTP 200** with numeric fields as the string `"NA"` for an unknown symbol, instead of HTTP 404 — the driver decodes those fields as `any` and detects `"NA"` explicitly, translating it to `ErrNotFound`.
+- Daily candles (`/eod/{symbol}`, `period=d&order=a`) come back ascending — no reversal needed, unlike FMP. Intraday (`/intraday/{symbol}`) requires `from`/`to` as **unix timestamps**, not ISO dates (passing a date string returns HTTP 422 before the plan-tier 403 even applies); always `ErrSubscriptionRequired` in practice on the free tier.
+- `SearchInstrument`/`GetInstrument` use `/search/{query}` (covers every exchange, including BME); `ListInstruments` uses `/exchange-symbol-list/US`. No hardcoded ticker list is needed — verified live that `/api/exchanges/{MIC}` (e.g. `XMAD`) 404s on the free tier, but `/api/exchange-symbol-list/{code}` (e.g. `MC`) and `/api/search/` both work.
+- `GetTicks`, `GetOrderBook`, `SubscribeTrades`, `SubscribeOrderBook` → `ErrNotSupported` (no tick/order-book data in EODHD's REST API).
+
 ### Ollama driver (`pkg/drivers/ollama/`)
 
 Implements `llm.AIProvider` against the Ollama REST API (default `http://localhost:11434`). Supports `WithAPIKey` for protected remote instances. `Connect` validates by calling `GET /api/tags`.
@@ -80,7 +94,7 @@ Implements `llm.AIProvider` using `google.golang.org/genai`. `Connect` validates
 
 ### Registry (`pkg/registry/`)
 
-- `market.go` — `AllMarket() []MarketEntry` — ordered list of market providers; currently only FMP.
+- `market.go` — `AllMarket() []MarketEntry` — ordered list of market providers: FMP, then EODHD. This order defines the fallback priority of the market chain built by `agent.NewMarketChain` (FMP primary, EODHD secondary — see FEAT-7 in `TODO.md`).
 - `llm.go` — `AllLLM() []LLMEntry` — ordered list of LLM providers; currently Ollama and Gemini.
 - Each entry carries a `Key` (stable config identifier), `DisplayName`, and a `New` factory function.
 
@@ -88,6 +102,7 @@ Implements `llm.AIProvider` using `google.golang.org/genai`. `Connect` validates
 
 `Agent` combines an `llm.AIProvider` and a `market.ProviderAPI`, exposing market operations as tools the LLM can call. Created with `agent.New(llmProvider, marketProvider, model)`.
 
+- `market_chain.go` — `NewMarketChain(providers ...market.ProviderAPI) market.ProviderAPI` wraps an ordered list of providers (`providers[0]` primary) into a single `market.ProviderAPI`. Each call is tried against providers in order; it falls back to the next only on `ErrNotFound`/`ErrNotSupported`/`ErrRateLimit`/`ErrSubscriptionRequired` — other errors (`ErrUnauthorized`, `ErrNotConnected`, ...) surface immediately rather than being masked by a fallback. If none resolve the call, the **primary's** error is returned (never the last-tried provider's). `pkg/tui/app.go`'s `buildMarketProvider` constructs this chain from every market provider the user configured, in `registry.AllMarket()` order (see FEAT-7 in `TODO.md`).
 - `loop.go` — `runLoop` drives the ReAct loop up to `maxLoopIterations` (10). Exits when `StopReason != "tool_calls"`.
 - `tools.go` — `buildTools()` declares all tool schemas; `dispatch()` routes tool calls to market methods or built-in time tools (`time_now`, `time_today`, `time_yesterday`).
 - `math.go` — `calc*` functions backing the calculation tools (Sharpe, VaR, DCF, technical indicators, Monte Carlo, etc.).
@@ -100,7 +115,7 @@ Built with Bubble Tea. `AppModel` is the root model; it owns the active screen a
 
 **Screen flow** (controlled by the `transition` method via `ScreenDoneMsg`):
 
-- **First run / setup**: Welcome → Disclaimer → (Locale?) → Theme → Passphrase → Profile → Provider → APIKey → AIProviderSelect → AIProviderConfig(×N) → AIDefaultModel → Menu
+- **First run / setup**: Welcome → Disclaimer → (Locale?) → Theme → Passphrase → Profile → Provider → APIKey → (APIKeySecondary, optional — any other registered market provider not yet configured) → AIProviderSelect → AIProviderConfig(×N) → AIDefaultModel → Menu
 - **Returning user**: Welcome → Unlock → Menu
 - **From menu**: Menu ↔ Agent (toggle with Shift+Tab); settings screens return to Menu via `FlowMenu` context.
 
@@ -158,7 +173,7 @@ Code-derived figures the deck quotes (and where the truth lives):
 
 - **57 tools** and the per-category counts (21 calculation, 16 portfolio, 9 market, 6 technical indicators, 3 time, 1 news, 1 currency) → `buildTools()` in `pkg/agent/tools.go` / `TestBuildTools_Count`. If you change the tool count, also rescale the category bar widths (`.toolcat .bar i`, sized relative to the largest category).
 - **498 test functions / 271 in pkg/agent** → recount with `grep -rn "func Test" --include="*_test.go" | wc -l`.
-- **4 AI drivers (Anthropic · Gemini · Ollama · MiniMax) and 1 market driver (FMP)** → `pkg/registry/`. A new driver changes slides 5, 6 and possibly 3/15.
+- **4 AI drivers (Anthropic · Gemini · Ollama · MiniMax) and 2 market drivers (FMP · EODHD, cascade with fallback)** → `pkg/registry/`. A new driver changes slides 5, 6 and possibly 3/15.
 - **~23,500 LOC · 14 packages · Go 1.25 · 24 TUI screens · 2 locales · 6 themes** → recount when they drift meaningfully.
 - **≤ 10 ReAct iterations · 3 TaskTypes** → `maxLoopIterations` in `pkg/agent/agent.go`, `llm.TaskType`.
 - **Monte Carlo up to 100,000 paths** → `pkg/agent/math.go`.

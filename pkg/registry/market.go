@@ -4,6 +4,7 @@
 package registry
 
 import (
+	"auris/pkg/drivers/eodhd"
 	"auris/pkg/drivers/fmp"
 	"auris/pkg/market"
 )
@@ -21,11 +22,16 @@ type MarketEntry struct {
 }
 
 // AllMarket returns the ordered list of all registered market data provider entries.
-// The order determines how they appear in the setup wizard.
+// The order determines both how they appear in the setup wizard and the fallback
+// order of the market chain built by pkg/agent.NewMarketChain (fmp primary, eodhd
+// secondary — see FEAT-7 in TODO.md).
 func AllMarket() []MarketEntry {
 	return []MarketEntry{
 		newMarketEntry("fmp", func(apiKey string) market.ProviderAPI {
 			return fmp.New(apiKey)
+		}),
+		newMarketEntry("eodhd", func(apiKey string) market.ProviderAPI {
+			return eodhd.New(apiKey)
 		}),
 	}
 }
