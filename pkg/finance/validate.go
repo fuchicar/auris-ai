@@ -1,4 +1,4 @@
-package agent
+package finance
 
 import (
 	"fmt"
@@ -7,7 +7,7 @@ import (
 
 // Plausibility bounds for numeric tool inputs (REF-3). These exist to catch
 // corrupted/hallucinated data (NaN, ±Inf, absurd magnitudes) before it
-// reaches a calc* function — not to second-guess legitimate financial
+// reaches a Calc* function — not to second-guess legitimate financial
 // extremes. A 1000%+ return is unusual but real (an asset can multiply 10x
 // or more), so the return bound is deliberately generous; annualised rates
 // get a tighter bound since no real-world rate assumption approaches it even
@@ -27,10 +27,10 @@ const (
 	maxPlausibleRate = 10.0
 )
 
-// validateFinite rejects NaN and ±Inf. It makes no claim about sign or
+// ValidateFinite rejects NaN and ±Inf. It makes no claim about sign or
 // magnitude — use it for domain-agnostic values (EPS, EBITDA, currency
 // amounts) that can legitimately be negative or arbitrarily large/small.
-func validateFinite(name string, v float64) error {
+func ValidateFinite(name string, v float64) error {
 	if math.IsNaN(v) {
 		return fmt.Errorf("%s must be a finite number, got NaN", name)
 	}
@@ -40,20 +40,20 @@ func validateFinite(name string, v float64) error {
 	return nil
 }
 
-// validateFiniteAll applies validateFinite to every element of vs.
-func validateFiniteAll(name string, vs []float64) error {
+// ValidateFiniteAll applies ValidateFinite to every element of vs.
+func ValidateFiniteAll(name string, vs []float64) error {
 	for i, v := range vs {
-		if err := validateFinite(fmt.Sprintf("%s[%d]", name, i), v); err != nil {
+		if err := ValidateFinite(fmt.Sprintf("%s[%d]", name, i), v); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-// validatePositive requires v to be finite and strictly greater than zero.
+// ValidatePositive requires v to be finite and strictly greater than zero.
 // Use it for prices and other must-be-positive monetary inputs.
-func validatePositive(name string, v float64) error {
-	if err := validateFinite(name, v); err != nil {
+func ValidatePositive(name string, v float64) error {
+	if err := ValidateFinite(name, v); err != nil {
 		return err
 	}
 	if v <= 0 {
@@ -62,22 +62,22 @@ func validatePositive(name string, v float64) error {
 	return nil
 }
 
-// validatePositiveAll applies validatePositive to every element of vs. Use it
+// ValidatePositiveAll applies ValidatePositive to every element of vs. Use it
 // for prices []float64 series (volatility, max drawdown, technical
 // indicators).
-func validatePositiveAll(name string, vs []float64) error {
+func ValidatePositiveAll(name string, vs []float64) error {
 	for i, v := range vs {
-		if err := validatePositive(fmt.Sprintf("%s[%d]", name, i), v); err != nil {
+		if err := ValidatePositive(fmt.Sprintf("%s[%d]", name, i), v); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-// validateNonNegative requires v to be finite and >= zero. Use it where zero
+// ValidateNonNegative requires v to be finite and >= zero. Use it where zero
 // is a legitimate value (or an explicit "unset" sentinel) but negative isn't.
-func validateNonNegative(name string, v float64) error {
-	if err := validateFinite(name, v); err != nil {
+func ValidateNonNegative(name string, v float64) error {
+	if err := ValidateFinite(name, v); err != nil {
 		return err
 	}
 	if v < 0 {
@@ -86,21 +86,21 @@ func validateNonNegative(name string, v float64) error {
 	return nil
 }
 
-// validateNonNegativeAll applies validateNonNegative to every element of vs.
-func validateNonNegativeAll(name string, vs []float64) error {
+// ValidateNonNegativeAll applies ValidateNonNegative to every element of vs.
+func ValidateNonNegativeAll(name string, vs []float64) error {
 	for i, v := range vs {
-		if err := validateNonNegative(fmt.Sprintf("%s[%d]", name, i), v); err != nil {
+		if err := ValidateNonNegative(fmt.Sprintf("%s[%d]", name, i), v); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-// validateReturn requires v to be finite and within the plausible range for a
+// ValidateReturn requires v to be finite and within the plausible range for a
 // periodic/cumulative return expressed as a decimal fraction (e.g. 0.05 =
 // 5%). The range is deliberately generous — see the package-level constants.
-func validateReturn(name string, v float64) error {
-	if err := validateFinite(name, v); err != nil {
+func ValidateReturn(name string, v float64) error {
+	if err := ValidateFinite(name, v); err != nil {
 		return err
 	}
 	if v < minPlausibleReturn || v > maxPlausibleReturn {
@@ -110,21 +110,21 @@ func validateReturn(name string, v float64) error {
 	return nil
 }
 
-// validateReturnSlice applies validateReturn to every element of vs.
-func validateReturnSlice(name string, vs []float64) error {
+// ValidateReturnSlice applies ValidateReturn to every element of vs.
+func ValidateReturnSlice(name string, vs []float64) error {
 	for i, v := range vs {
-		if err := validateReturn(fmt.Sprintf("%s[%d]", name, i), v); err != nil {
+		if err := ValidateReturn(fmt.Sprintf("%s[%d]", name, i), v); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-// validateReturnPercent applies the same plausibility bound as
-// validateReturn, but for values expressed in percent units (e.g. -20 means
+// ValidateReturnPercent applies the same plausibility bound as
+// ValidateReturn, but for values expressed in percent units (e.g. -20 means
 // -20%) rather than decimal fractions.
-func validateReturnPercent(name string, v float64) error {
-	if err := validateFinite(name, v); err != nil {
+func ValidateReturnPercent(name string, v float64) error {
+	if err := ValidateFinite(name, v); err != nil {
 		return err
 	}
 	min, max := minPlausibleReturn*100, maxPlausibleReturn*100
@@ -134,21 +134,21 @@ func validateReturnPercent(name string, v float64) error {
 	return nil
 }
 
-// validateReturnPercentSlice applies validateReturnPercent to every element of vs.
-func validateReturnPercentSlice(name string, vs []float64) error {
+// ValidateReturnPercentSlice applies ValidateReturnPercent to every element of vs.
+func ValidateReturnPercentSlice(name string, vs []float64) error {
 	for i, v := range vs {
-		if err := validateReturnPercent(fmt.Sprintf("%s[%d]", name, i), v); err != nil {
+		if err := ValidateReturnPercent(fmt.Sprintf("%s[%d]", name, i), v); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-// validateRate requires v to be finite and within the plausible range for an
+// ValidateRate requires v to be finite and within the plausible range for an
 // annualised rate (discount rate, risk-free rate, growth-rate assumption)
 // expressed as a decimal fraction.
-func validateRate(name string, v float64) error {
-	if err := validateFinite(name, v); err != nil {
+func ValidateRate(name string, v float64) error {
+	if err := ValidateFinite(name, v); err != nil {
 		return err
 	}
 	if v < minPlausibleRate || v > maxPlausibleRate {

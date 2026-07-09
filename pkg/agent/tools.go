@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"auris/pkg/finance"
 	"auris/pkg/llm"
 	"auris/pkg/market"
 	"auris/pkg/news"
@@ -527,7 +528,7 @@ func buildTools() []llm.Tool {
 // alignedDailyReturns intersects the calendar days present in every symbol's
 // candle series and the benchmark's, then returns day-over-day simple returns
 // computed only across those common days for each. This keeps the resulting
-// series the same length (a requirement of calcBeta) even when individual
+// series the same length (a requirement of finance.CalcBeta) even when individual
 // symbols have slightly different trading calendars. Returns nil, nil when
 // fewer than 2 common days are available.
 func alignedDailyReturns(seriesBySymbol map[string][]market.Candle, benchmark []market.Candle) (map[string][]float64, []float64) {
@@ -693,131 +694,131 @@ func (a *Agent) dispatchInner(ctx context.Context, call llm.ToolCall, lastKind *
 	// Math tools — no market provider needed.
 	switch call.Function.Name {
 	case "calculate_roi":
-		return encode(calcROI(numVal("cost_basis"), numVal("current_value")))
+		return encode(finance.CalcROI(numVal("cost_basis"), numVal("current_value")))
 	case "calculate_cagr":
-		return encode(calcCAGR(numVal("initial_value"), numVal("final_value"), numVal("years")))
+		return encode(finance.CalcCAGR(numVal("initial_value"), numVal("final_value"), numVal("years")))
 	case "calculate_volatility":
 		prices, ok := arrNumVal("prices")
 		if !ok {
 			return `error: prices must be an array of numbers`
 		}
-		return encode(calcVolatility(prices))
+		return encode(finance.CalcVolatility(prices))
 	case "calculate_sharpe":
 		returns, ok := arrNumVal("returns")
 		if !ok {
 			return `error: returns must be an array of numbers`
 		}
-		return encode(calcSharpe(returns, numVal("risk_free_rate_annual")))
+		return encode(finance.CalcSharpe(returns, numVal("risk_free_rate_annual")))
 	case "calculate_sortino":
 		returns, ok := arrNumVal("returns")
 		if !ok {
 			return `error: returns must be an array of numbers`
 		}
-		return encode(calcSortino(returns, numVal("risk_free_rate_annual")))
+		return encode(finance.CalcSortino(returns, numVal("risk_free_rate_annual")))
 	case "calculate_max_drawdown":
 		prices, ok := arrNumVal("prices")
 		if !ok {
 			return `error: prices must be an array of numbers`
 		}
-		return encode(calcMaxDrawdown(prices))
+		return encode(finance.CalcMaxDrawdown(prices))
 	case "calculate_pnl":
-		return encode(calcPnL(numVal("entry_price"), numVal("current_price"), numVal("quantity"), str("position_type")))
+		return encode(finance.CalcPnL(numVal("entry_price"), numVal("current_price"), numVal("quantity"), str("position_type")))
 	case "calculate_beta":
 		ar, ok1 := arrNumVal("asset_returns")
 		br, ok2 := arrNumVal("benchmark_returns")
 		if !ok1 || !ok2 {
 			return `error: asset_returns and benchmark_returns must be arrays of numbers`
 		}
-		return encode(calcBeta(ar, br))
+		return encode(finance.CalcBeta(ar, br))
 	case "calculate_treynor":
 		returns, ok := arrNumVal("returns")
 		if !ok {
 			return `error: returns must be an array of numbers`
 		}
-		return encode(calcTreynor(returns, numVal("risk_free_rate_annual"), numVal("beta")))
+		return encode(finance.CalcTreynor(returns, numVal("risk_free_rate_annual"), numVal("beta")))
 	case "calculate_information_ratio":
 		ar, ok1 := arrNumVal("asset_returns")
 		br, ok2 := arrNumVal("benchmark_returns")
 		if !ok1 || !ok2 {
 			return `error: asset_returns and benchmark_returns must be arrays of numbers`
 		}
-		return encode(calcInformationRatio(ar, br))
+		return encode(finance.CalcInformationRatio(ar, br))
 	case "calculate_var":
 		returns, ok := arrNumVal("returns")
 		if !ok {
 			return `error: returns must be an array of numbers`
 		}
-		return encode(calcVaR(returns, numVal("confidence_level"), numVal("portfolio_value"), str("method")))
+		return encode(finance.CalcVaR(returns, numVal("confidence_level"), numVal("portfolio_value"), str("method")))
 	case "calculate_monte_carlo_simulation":
-		return encode(calcMonteCarloSimulation(numVal("last_price"), numVal("drift_annual"), numVal("volatility_annual"),
+		return encode(finance.CalcMonteCarloSimulation(numVal("last_price"), numVal("drift_annual"), numVal("volatility_annual"),
 			intVal("days", 0), intVal("num_simulations", 0)))
 	case "calculate_dcf":
 		fcf, ok := arrNumVal("free_cash_flows")
 		if !ok {
 			return `error: free_cash_flows must be an array of numbers`
 		}
-		return encode(calcDCF(fcf, numVal("discount_rate"), numVal("terminal_growth_rate"), numVal("shares_outstanding")))
+		return encode(finance.CalcDCF(fcf, numVal("discount_rate"), numVal("terminal_growth_rate"), numVal("shares_outstanding")))
 	case "calculate_multiples":
-		return encode(calcMultiples(numVal("price"), numVal("eps"), numVal("book_value_per_share"),
+		return encode(finance.CalcMultiples(numVal("price"), numVal("eps"), numVal("book_value_per_share"),
 			numVal("ebitda"), numVal("enterprise_value"), numVal("revenue")))
 	case "calculate_pfcf":
-		return encode(calcPFCF(numVal("price"), numVal("free_cash_flow_per_share"), str("currency")))
+		return encode(finance.CalcPFCF(numVal("price"), numVal("free_cash_flow_per_share"), str("currency")))
 	case "calculate_peg":
-		return encode(calcPEG(numVal("pe_ratio"), numVal("growth_rate_percent")))
+		return encode(finance.CalcPEG(numVal("pe_ratio"), numVal("growth_rate_percent")))
 	case "calculate_dividend_yield":
 		quarterly, _ := arrNumVal("quarterly_dividends")
-		return encode(calcDividendYield(numVal("price"), numVal("annual_dividend_per_share"), quarterly))
+		return encode(finance.CalcDividendYield(numVal("price"), numVal("annual_dividend_per_share"), quarterly))
 	case "calculate_dividend_growth":
 		dividends, ok := arrNumVal("dividends")
 		if !ok {
 			return `error: dividends must be an array of numbers`
 		}
-		return encode(calcDividendGrowth(dividends))
+		return encode(finance.CalcDividendGrowth(dividends))
 	case "calculate_stress_test":
 		shocks, ok := arrNumVal("shocks_percent")
 		if !ok {
 			return `error: shocks_percent must be an array of numbers`
 		}
-		return encode(calcStressTest(numVal("current_value"), shocks, str("label")))
+		return encode(finance.CalcStressTest(numVal("current_value"), shocks, str("label")))
 	case "convert_currency":
-		return encode(calcCurrencyConversion(numVal("amount"), str("from_currency"), str("to_currency"), numVal("exchange_rate")))
+		return encode(finance.CalcCurrencyConversion(numVal("amount"), str("from_currency"), str("to_currency"), numVal("exchange_rate")))
 	case "calculate_compound_interest":
-		return encode(calcCompoundInterest(numVal("principal"), numVal("annual_rate"), numVal("years"), intVal("compounds_per_year", 1)))
+		return encode(finance.CalcCompoundInterest(numVal("principal"), numVal("annual_rate"), numVal("years"), intVal("compounds_per_year", 1)))
 	case "calculate_stats":
 		vals, ok := arrNumVal("values")
 		if !ok {
 			return `error: values must be an array of numbers`
 		}
-		return encode(calcStats(vals, str("label")))
+		return encode(finance.CalcStats(vals, str("label")))
 
 	case "calculate_sma":
 		prices, ok := arrNumVal("prices")
 		if !ok {
 			return `error: prices must be an array of numbers`
 		}
-		return encode(calcSMA(prices, intVal("period", 20)))
+		return encode(finance.CalcSMA(prices, intVal("period", 20)))
 
 	case "calculate_ema":
 		prices, ok := arrNumVal("prices")
 		if !ok {
 			return `error: prices must be an array of numbers`
 		}
-		// alpha omitted -> 0, which calcEMA interprets as "use Wilder default".
-		return encode(calcEMA(prices, intVal("period", 20), numVal("alpha")))
+		// alpha omitted -> 0, which finance.CalcEMA interprets as "use Wilder default".
+		return encode(finance.CalcEMA(prices, intVal("period", 20), numVal("alpha")))
 
 	case "calculate_rsi":
 		prices, ok := arrNumVal("prices")
 		if !ok {
 			return `error: prices must be an array of numbers`
 		}
-		return encode(calcRSI(prices, intVal("period", 14)))
+		return encode(finance.CalcRSI(prices, intVal("period", 14)))
 
 	case "calculate_macd":
 		prices, ok := arrNumVal("prices")
 		if !ok {
 			return `error: prices must be an array of numbers`
 		}
-		return encode(calcMACD(prices,
+		return encode(finance.CalcMACD(prices,
 			intVal("fast_period", 12),
 			intVal("slow_period", 26),
 			intVal("signal_period", 9)))
@@ -831,7 +832,7 @@ func (a *Agent) dispatchInner(ctx context.Context, call llm.ToolCall, lastKind *
 		if numStd <= 0 {
 			numStd = 2.0 // standard default, consistent with EMA's alpha default
 		}
-		return encode(calcBollingerBands(prices, intVal("period", 20), numStd))
+		return encode(finance.CalcBollingerBands(prices, intVal("period", 20), numStd))
 
 	case "calculate_correlation_matrix":
 		raw, ok := args["series"].(map[string]any)
@@ -854,7 +855,7 @@ func (a *Agent) dispatchInner(ctx context.Context, call llm.ToolCall, lastKind *
 			}
 			series[name] = vals
 		}
-		return encode(calcCorrelationMatrix(series))
+		return encode(finance.CalcCorrelationMatrix(series))
 	}
 
 	// News tool — no market provider needed.
@@ -1058,10 +1059,10 @@ func (a *Agent) dispatchInner(ctx context.Context, call llm.ToolCall, lastKind *
 			symbol := str("symbol")
 			qty := numVal("quantity")
 			price := numVal("price")
-			if validatePositive("quantity", qty) != nil {
+			if finance.ValidatePositive("quantity", qty) != nil {
 				return `error: quantity must be positive`
 			}
-			if validatePositive("price", price) != nil {
+			if finance.ValidatePositive("price", price) != nil {
 				return `error: price must be positive`
 			}
 			for i, ins := range p.Instruments {
@@ -1103,10 +1104,10 @@ func (a *Agent) dispatchInner(ctx context.Context, call llm.ToolCall, lastKind *
 			symbol := str("symbol")
 			qty := numVal("quantity")
 			sellPrice := numVal("sell_price")
-			if validatePositive("quantity", qty) != nil {
+			if finance.ValidatePositive("quantity", qty) != nil {
 				return `error: quantity must be positive`
 			}
-			if validatePositive("sell_price", sellPrice) != nil {
+			if finance.ValidatePositive("sell_price", sellPrice) != nil {
 				return `error: sell_price must be positive`
 			}
 			for i, ins := range p.Instruments {
@@ -1184,7 +1185,7 @@ func (a *Agent) dispatchInner(ctx context.Context, call llm.ToolCall, lastKind *
 				return `error: portfolio not found`
 			}
 			cash, ok := args["cash"].(float64)
-			if !ok || validateNonNegative("cash", cash) != nil {
+			if !ok || finance.ValidateNonNegative("cash", cash) != nil {
 				return `error: cash must be a non-negative number`
 			}
 			delta := cash - p.Cash
@@ -1197,7 +1198,7 @@ func (a *Agent) dispatchInner(ctx context.Context, call llm.ToolCall, lastKind *
 			}
 			return encode(map[string]any{
 				"portfolio_id": p.ID,
-				"cash":         round2(p.Cash),
+				"cash":         finance.Round2(p.Cash),
 				"summary":      fmt.Sprintf("cash balance set to %.2f", cash),
 			}, nil)
 
@@ -1214,7 +1215,7 @@ func (a *Agent) dispatchInner(ctx context.Context, call llm.ToolCall, lastKind *
 				return `error: portfolio not found`
 			}
 			amount := numVal("amount")
-			if validatePositive("amount", amount) != nil {
+			if finance.ValidatePositive("amount", amount) != nil {
 				return `error: amount must be positive`
 			}
 			tx := p.RecordTransaction(portfolio.Transaction{
@@ -1227,7 +1228,7 @@ func (a *Agent) dispatchInner(ctx context.Context, call llm.ToolCall, lastKind *
 			return encode(map[string]any{
 				"portfolio_id":   p.ID,
 				"transaction_id": tx.ID,
-				"cash":           round2(p.Cash),
+				"cash":           finance.Round2(p.Cash),
 			}, nil)
 
 		case "portfolio_withdraw_cash":
@@ -1243,7 +1244,7 @@ func (a *Agent) dispatchInner(ctx context.Context, call llm.ToolCall, lastKind *
 				return `error: portfolio not found`
 			}
 			amount := numVal("amount")
-			if validatePositive("amount", amount) != nil {
+			if finance.ValidatePositive("amount", amount) != nil {
 				return `error: amount must be positive`
 			}
 			tx := p.RecordTransaction(portfolio.Transaction{
@@ -1256,7 +1257,7 @@ func (a *Agent) dispatchInner(ctx context.Context, call llm.ToolCall, lastKind *
 			return encode(map[string]any{
 				"portfolio_id":   p.ID,
 				"transaction_id": tx.ID,
-				"cash":           round2(p.Cash),
+				"cash":           finance.Round2(p.Cash),
 			}, nil)
 
 		case "portfolio_record_dividend":
@@ -1273,7 +1274,7 @@ func (a *Agent) dispatchInner(ctx context.Context, call llm.ToolCall, lastKind *
 			}
 			symbol := str("symbol")
 			amount := numVal("amount")
-			if validatePositive("amount", amount) != nil {
+			if finance.ValidatePositive("amount", amount) != nil {
 				return `error: amount must be positive`
 			}
 			found := false
@@ -1297,7 +1298,7 @@ func (a *Agent) dispatchInner(ctx context.Context, call llm.ToolCall, lastKind *
 				"portfolio_id":   p.ID,
 				"transaction_id": tx.ID,
 				"symbol":         symbol,
-				"cash":           round2(p.Cash),
+				"cash":           finance.Round2(p.Cash),
 			}, nil)
 
 		case "portfolio_set_target_allocation":
@@ -1320,7 +1321,7 @@ func (a *Agent) dispatchInner(ctx context.Context, call llm.ToolCall, lastKind *
 			sum := 0.0
 			for symbol, v := range raw {
 				w, ok := v.(float64)
-				if !ok || validateNonNegative("weight", w) != nil {
+				if !ok || finance.ValidateNonNegative("weight", w) != nil {
 					return fmt.Sprintf("error: target_allocation[%q] must be a non-negative number", symbol)
 				}
 				alloc[symbol] = w
@@ -1337,7 +1338,7 @@ func (a *Agent) dispatchInner(ctx context.Context, call llm.ToolCall, lastKind *
 			return encode(map[string]any{
 				"portfolio_id":      p.ID,
 				"target_allocation": alloc,
-				"sum":               round4(sum),
+				"sum":               finance.Round4(sum),
 				"summary":           summary,
 			}, nil)
 
@@ -1364,7 +1365,7 @@ func (a *Agent) dispatchInner(ctx context.Context, call llm.ToolCall, lastKind *
 						continue
 					}
 					last, ok := entry["last"].(float64)
-					if !ok || validatePositive("last", last) != nil {
+					if !ok || finance.ValidatePositive("last", last) != nil {
 						continue
 					}
 					pq := portfolio.Quote{Last: last}
@@ -1434,7 +1435,7 @@ func (a *Agent) dispatchInner(ctx context.Context, call llm.ToolCall, lastKind *
 			quotes := make(map[string]portfolio.Quote, len(p.Instruments)+len(p.TargetAllocation))
 			if raw, ok := args["quotes"].(map[string]any); ok {
 				for symbol, v := range raw {
-					if last, ok := v.(float64); ok && validatePositive("last", last) == nil {
+					if last, ok := v.(float64); ok && finance.ValidatePositive("last", last) == nil {
 						quotes[symbol] = portfolio.Quote{Last: last}
 					}
 				}
@@ -1464,7 +1465,7 @@ func (a *Agent) dispatchInner(ctx context.Context, call llm.ToolCall, lastKind *
 				}
 			}
 			maxDrift := numVal("max_drift_percent")
-			if err := validateNonNegative("max_drift_percent", maxDrift); err != nil {
+			if err := finance.ValidateNonNegative("max_drift_percent", maxDrift); err != nil {
 				return fmt.Sprintf("error: %s", err)
 			}
 			result, err := portfolio.SuggestRebalance(p, quotes, maxDrift)

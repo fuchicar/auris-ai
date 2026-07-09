@@ -297,7 +297,7 @@
           <div class="arrow">↓</div>
           <div class="box">pkg/tui <small>Bubble Tea · 24 pantallas · setup cifrado + chat + carteras</small></div>
           <div class="arrow">↓</div>
-          <div class="box" style="border-color:var(--accent2);background:rgba(124,58,237,.13)">pkg/agent <small>bucle ReAct · 57 tools · motor de cálculo · validación</small></div>
+          <div class="box" style="border-color:var(--accent2);background:rgba(124,58,237,.13)">pkg/agent <small>bucle ReAct · 57 tools · dispatch</small></div>
           <div class="arrow">↓&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;↓</div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:.8rem">
             <div class="box">pkg/llm <small>interfaz AIProvider</small></div>
@@ -447,12 +447,12 @@
           </ul>
         </div>
         <div>
-          <pre class="snippet"><span class="cm">// pkg/agent/validate.go — todo input del LLM</span>
+          <pre class="snippet"><span class="cm">// pkg/finance/validate.go — todo input del LLM</span>
 <span class="cm">// se valida por dominio ANTES de calcular</span>
-<span class="kw">func</span> <span class="fn">calcSharpe</span>(returns []<span class="kw">float64</span>, rf <span class="kw">float64</span>) {
-    <span class="kw">if</span> err := validateReturnSlice(<span class="st">"returns"</span>, returns);
+<span class="kw">func</span> <span class="fn">CalcSharpe</span>(returns []<span class="kw">float64</span>, rf <span class="kw">float64</span>) {
+    <span class="kw">if</span> err := ValidateReturnSlice(<span class="st">"returns"</span>, returns);
     …
-    <span class="kw">if</span> err := validateRate(<span class="st">"risk_free_rate"</span>, rf);
+    <span class="kw">if</span> err := ValidateRate(<span class="st">"risk_free_rate"</span>, rf);
     …
 }</pre>
           <ul class="list" style="margin-top:.9rem;font-size:.88rem">
@@ -533,8 +533,8 @@
     <hr class="rule">
     <div class="body">
       <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:1rem">
-        <div class="tile"><div class="v">498</div><div class="l">funciones de test en el repositorio</div></div>
-        <div class="tile"><div class="v">271</div><div class="l">tests solo en pkg/agent: el motor de cálculo es la pieza más blindada</div></div>
+        <div class="tile"><div class="v">594</div><div class="l">funciones de test en el repositorio</div></div>
+        <div class="tile"><div class="v">171</div><div class="l">tests solo en pkg/finance: el motor de cálculo es la pieza más blindada</div></div>
         <div class="tile"><div class="v">2</div><div class="l">idiomas completos (es/en) con detección automática del locale</div></div>
         <div class="tile"><div class="v">6</div><div class="l">temas visuales con previsualización en vivo</div></div>
       </div>

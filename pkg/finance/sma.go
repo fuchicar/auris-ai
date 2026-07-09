@@ -1,6 +1,8 @@
-// Package finance holds pure numeric indicator functions shared between the
-// agent's math tools (pkg/agent/math.go) and the TUI's chart rendering
-// (pkg/tui), so the TUI can compute overlays without going through the LLM.
+// Package finance holds pure numeric finance/valuation/risk/indicator
+// functions with no dependency on the agent or market layers. They're used
+// both by the agent's calculation tools (pkg/agent/tools.go dispatch) and
+// directly by the TUI's chart/portfolio rendering (pkg/tui), so the TUI can
+// compute metrics and indicators without going through the LLM.
 package finance
 
 import (
