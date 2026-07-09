@@ -54,11 +54,15 @@ type Agent struct {
 // provider's default. Optional functional options (e.g. [WithDebugLogger])
 // configure additional behaviour.
 func New(llmProvider llm.AIProvider, mp market.ProviderAPI, model string, opts ...Option) *Agent {
+	tools := buildTools()
+	if cr, ok := mp.(market.CapabilityReporter); ok {
+		tools = filterTools(tools, cr.UnsupportedTools())
+	}
 	a := &Agent{
 		llm:    llmProvider,
 		market: mp,
 		model:  model,
-		tools:  buildTools(),
+		tools:  tools,
 	}
 	for _, opt := range opts {
 		opt(a)

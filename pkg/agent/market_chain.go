@@ -34,6 +34,47 @@ func NewMarketChain(providers ...market.ProviderAPI) market.ProviderAPI {
 }
 
 var _ market.ProviderAPI = (*marketChain)(nil)
+var _ market.CapabilityReporter = (*marketChain)(nil)
+
+// UnsupportedTools implements market.CapabilityReporter for the chain: a
+// tool is unsupported by the chain only if every provider in it declares the
+// tool unsupported. If any provider doesn't implement CapabilityReporter its
+// capabilities are unknown, so nothing is filtered — see FEAT-8 in TODO.md.
+func (c *marketChain) UnsupportedTools() []string {
+	if len(c.providers) == 0 {
+		return nil
+	}
+	sets := make([][]string, 0, len(c.providers))
+	for _, p := range c.providers {
+		cr, ok := p.(market.CapabilityReporter)
+		if !ok {
+			return nil
+		}
+		sets = append(sets, cr.UnsupportedTools())
+	}
+	return intersectToolNames(sets)
+}
+
+// intersectToolNames returns the tool names present in every set.
+func intersectToolNames(sets [][]string) []string {
+	counts := make(map[string]int)
+	for _, set := range sets {
+		seen := make(map[string]bool, len(set))
+		for _, name := range set {
+			if !seen[name] {
+				counts[name]++
+				seen[name] = true
+			}
+		}
+	}
+	var result []string
+	for name, count := range counts {
+		if count == len(sets) {
+			result = append(result, name)
+		}
+	}
+	return result
+}
 
 // isCascadable reports whether err should trigger trying the next provider in
 // the chain rather than being returned immediately.

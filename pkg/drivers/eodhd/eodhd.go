@@ -496,6 +496,12 @@ func (d *Driver) GetTicks(_ context.Context, _ string, _, _ time.Time) ([]market
 	return nil, fmt.Errorf("eodhd: GetTicks: %w", market.ErrNotSupported)
 }
 
+// UnsupportedTools implements market.CapabilityReporter: EODHD has no
+// order-book or tick-level data in its REST API — see FEAT-8 in TODO.md.
+func (d *Driver) UnsupportedTools() []string {
+	return []string{market.ToolGetOrderBook, market.ToolGetTicks}
+}
+
 // GetCorporateActions devuelve dividendos y splits para el símbolo y rango indicados.
 func (d *Driver) GetCorporateActions(ctx context.Context, symbol string, from, to time.Time) ([]market.CorporateAction, error) {
 	if err := d.checkConnected(); err != nil {

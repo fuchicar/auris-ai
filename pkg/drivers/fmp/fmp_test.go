@@ -59,12 +59,28 @@ func bg() context.Context { return context.Background() }
 // TestInterfaceCompliance verifica en tiempo de compilación que *Driver implementa ProviderAPI.
 func TestInterfaceCompliance(t *testing.T) {
 	var _ market.ProviderAPI = (*fmp.Driver)(nil)
+	var _ market.CapabilityReporter = (*fmp.Driver)(nil)
 }
 
 func TestDescription_NonEmpty(t *testing.T) {
 	d := fmp.New("dummy")
 	if d.Description() == "" {
 		t.Error("Description() returned empty string")
+	}
+}
+
+func TestUnsupportedTools(t *testing.T) {
+	d := fmp.New("dummy")
+	got := d.UnsupportedTools()
+	want := []string{market.ToolGetOrderBook, market.ToolGetTicks}
+	if len(got) != len(want) {
+		t.Fatalf("expected %v, got %v", want, got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("expected %v, got %v", want, got)
+			break
+		}
 	}
 }
 

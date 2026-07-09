@@ -88,8 +88,68 @@ func (s *stubMarket) GetFundamentals(_ context.Context, _ string) (market.Fundam
 
 var _ market.ProviderAPI = (*stubMarket)(nil)
 
+// capabilityStubMarket layers market.CapabilityReporter on top of stubMarket,
+// so tests can mix "declares capabilities" and "unknown capabilities"
+// (plain stubMarket, which doesn't implement CapabilityReporter) providers
+// within the same chain.
+type capabilityStubMarket struct {
+	stubMarket
+	unsupported []string
+}
+
+func (c *capabilityStubMarket) UnsupportedTools() []string { return c.unsupported }
+
+var _ market.CapabilityReporter = (*capabilityStubMarket)(nil)
+
 func TestMarketChain_InterfaceCompliance(t *testing.T) {
 	var _ market.ProviderAPI = (*marketChain)(nil)
+	var _ market.CapabilityReporter = (*marketChain)(nil)
+}
+
+func TestMarketChain_UnsupportedTools_EmptyChain(t *testing.T) {
+	chain := NewMarketChain().(*marketChain)
+	if got := chain.UnsupportedTools(); got != nil {
+		t.Errorf("expected nil, got %v", got)
+	}
+}
+
+func TestMarketChain_UnsupportedTools_SameSetIntersects(t *testing.T) {
+	primary := &capabilityStubMarket{unsupported: []string{market.ToolGetOrderBook, market.ToolGetTicks}}
+	secondary := &capabilityStubMarket{unsupported: []string{market.ToolGetOrderBook, market.ToolGetTicks}}
+	chain := NewMarketChain(primary, secondary).(*marketChain)
+
+	got := chain.UnsupportedTools()
+	want := map[string]bool{market.ToolGetOrderBook: true, market.ToolGetTicks: true}
+	if len(got) != len(want) {
+		t.Fatalf("expected %v, got %v", want, got)
+	}
+	for _, name := range got {
+		if !want[name] {
+			t.Errorf("unexpected entry %q in %v", name, got)
+		}
+	}
+}
+
+func TestMarketChain_UnsupportedTools_DifferentSetsIntersectToOverlap(t *testing.T) {
+	primary := &capabilityStubMarket{unsupported: []string{market.ToolGetOrderBook, market.ToolGetTicks}}
+	secondary := &capabilityStubMarket{unsupported: []string{market.ToolGetOrderBook}}
+	chain := NewMarketChain(primary, secondary).(*marketChain)
+
+	got := chain.UnsupportedTools()
+	if len(got) != 1 || got[0] != market.ToolGetOrderBook {
+		t.Errorf("expected [%s], got %v", market.ToolGetOrderBook, got)
+	}
+}
+
+func TestMarketChain_UnsupportedTools_UnknownProviderDisablesFiltering(t *testing.T) {
+	primary := &capabilityStubMarket{unsupported: []string{market.ToolGetOrderBook, market.ToolGetTicks}}
+	// secondary is a plain stubMarket: doesn't implement CapabilityReporter.
+	secondary := &stubMarket{}
+	chain := NewMarketChain(primary, secondary).(*marketChain)
+
+	if got := chain.UnsupportedTools(); got != nil {
+		t.Errorf("expected nil (unknown capability must not filter), got %v", got)
+	}
 }
 
 func TestMarketChain_SucceedsOnPrimary_SecondaryNeverCalled(t *testing.T) {

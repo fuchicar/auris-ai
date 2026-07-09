@@ -91,14 +91,14 @@ func buildTools() []llm.Tool {
 				"symbol": str("Ticker symbol, e.g. AAPL"),
 			}, []string{"symbol"}),
 		),
-		tool("market_get_order_book",
+		tool(market.ToolGetOrderBook,
 			"Get the current order book depth for a symbol.",
 			obj(map[string]any{
 				"symbol": str("Ticker symbol"),
 				"depth":  intProp("Number of price levels per side (default 10)"),
 			}, []string{"symbol"}),
 		),
-		tool("market_get_ticks",
+		tool(market.ToolGetTicks,
 			"Get tick-by-tick trade data for a symbol in a time range.",
 			obj(map[string]any{
 				"symbol": str("Ticker symbol"),
@@ -541,6 +541,25 @@ func buildTools() []llm.Tool {
 			}, []string{}),
 		),
 	}
+}
+
+// filterTools drops tools whose Function.Name is in unsupported, preserving
+// order. unsupported may be nil (no-op) -- see market.CapabilityReporter.
+func filterTools(tools []llm.Tool, unsupported []string) []llm.Tool {
+	if len(unsupported) == 0 {
+		return tools
+	}
+	skip := make(map[string]bool, len(unsupported))
+	for _, name := range unsupported {
+		skip[name] = true
+	}
+	filtered := make([]llm.Tool, 0, len(tools))
+	for _, t := range tools {
+		if !skip[t.Function.Name] {
+			filtered = append(filtered, t)
+		}
+	}
+	return filtered
 }
 
 // alignedDailyReturns intersects the calendar days present in every symbol's

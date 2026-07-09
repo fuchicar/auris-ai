@@ -51,6 +51,7 @@ cmd/auris/           — Entry point
 - `providerapi.go` — `ProviderAPI` interface: auth lifecycle, instrument discovery, historical data, snapshots, streaming, and fundamentals.
 - `instrument.go` — Shared value types: `Instrument`, `Candle`, `Tick`, `Quote`, `OrderBook`, `CorporateAction`, `Fundamental`, plus `AssetType` and `Timeframe` enums.
 - `errors.go` — Sentinel errors: `ErrNotSupported`, `ErrNotFound`, `ErrUnauthorized`, `ErrRateLimit`, `ErrNotConnected`, `ErrSubscriptionRequired`. Drivers wrap with `fmt.Errorf("driver: method: %w", market.ErrXxx)`.
+- `capability.go` — `CapabilityReporter` (optional interface, `UnsupportedTools() []string`) lets a driver statically declare agent tool names it can never fulfil, plus the `ToolGetOrderBook`/`ToolGetTicks` name constants both `pkg/agent/tools.go` and the drivers reference (single source of truth for the string). See "Capability filtering" under Agent below.
 
 ### AI abstraction (`pkg/llm/`)
 
@@ -118,7 +119,8 @@ Pure numeric finance/valuation/risk/indicator functions with no dependency on `A
 
 - `market_chain.go` — `NewMarketChain(providers ...market.ProviderAPI) market.ProviderAPI` wraps an ordered list of providers (`providers[0]` primary) into a single `market.ProviderAPI`. Each call is tried against providers in order; it falls back to the next only on `ErrNotFound`/`ErrNotSupported`/`ErrRateLimit`/`ErrSubscriptionRequired` — other errors (`ErrUnauthorized`, `ErrNotConnected`, ...) surface immediately rather than being masked by a fallback. If none resolve the call, the **primary's** error is returned (never the last-tried provider's). `pkg/tui/app.go`'s `buildMarketProvider` constructs this chain from every market provider the user configured, in `registry.AllMarket()` order (see FEAT-7 in `TODO.md`).
 - `loop.go` — `runLoop` drives the ReAct loop up to `maxLoopIterations` (10). Exits when `StopReason != "tool_calls"`.
-- `tools.go` — `buildTools()` declares all tool schemas; `dispatch()` routes tool calls to `finance.CalcXxx` functions, market methods, or built-in time tools (`time_now`, `time_today`, `time_yesterday`).
+- `tools.go` — `buildTools()` declares all tool schemas (always the full set, provider-independent); `filterTools()` removes tools by name; `dispatch()` routes tool calls to `finance.CalcXxx` functions, market methods, or built-in time tools (`time_now`, `time_today`, `time_yesterday`).
+- **Capability filtering** (FEAT-8): `agent.New` calls `buildTools()` and then, if the `market.ProviderAPI` passed in also implements the optional `market.CapabilityReporter` interface (`UnsupportedTools() []string`), filters out any tool named in that list before building `Agent.tools` — e.g. `market_get_order_book`/`market_get_ticks`, which both FMP and EODHD always return `ErrNotSupported` for, so the LLM never burns a `maxLoopIterations` iteration calling something that can't work. `fmp.Driver`/`eodhd.Driver` implement it with a static slice; `marketChain` implements it as the **intersection** of its providers' declared-unsupported sets (a tool is excluded only if *every* provider in the chain lacks it) and returns `nil` (nothing filtered) if any provider in the chain doesn't implement `CapabilityReporter` at all — capability-unknown is the conservative default, never over-filtering.
 - `benchmark.go` — `buildBenchmarkComparison` assembles the `portfolio_compare_benchmark` result (alpha, beta via `finance.CalcBeta`) from numbers the dispatch case in `tools.go` already fetched (candles/quotes, start-of-period holdings).
 - `prompts.go` — System prompt construction.
 
@@ -149,6 +151,7 @@ Each screen emits a typed `ScreenDoneMsg.Result` (e.g. `UnlockResult`, `APIKeyRe
 4. Add compile-time check in tests: `var _ market.ProviderAPI = (*Driver)(nil)`.
 5. Register in `pkg/registry/market.go`.
 6. Integration tests must `t.Skip` if credentials are absent.
+7. If any method **always** returns `ErrNotSupported` regardless of symbol or account tier (not a plan/subscription restriction — see `market.ErrSubscriptionRequired` for that case), implement `market.CapabilityReporter.UnsupportedTools() []string` returning the corresponding agent tool name(s) (e.g. `market.ToolGetOrderBook`), so `agent.New` excludes them from the LLM's tool list instead of letting it burn a loop iteration on a call that can never succeed (see FEAT-8 in `TODO.md`).
 
 ### Adding a new LLM driver
 
