@@ -25,6 +25,7 @@ var configMenuItems = []menuItem{
 	{"menu.change_model", "model", nil},
 	{"menu.manage_market_providers", "marketproviders", nil},
 	{"menu.manage_ai_providers", "aiproviders", nil},
+	{"menu.change_passphrase", "changepassphrase", nil},
 	{"menu.back", "back", nil},
 }
 

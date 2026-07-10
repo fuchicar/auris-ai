@@ -75,6 +75,25 @@
     "other": "Enter passphrase · Tab to confirm field"
   },
 
+  "changepass.title": {
+    "other": "Change your master passphrase:"
+  },
+  "changepass.current": {
+    "other": "Current passphrase:"
+  },
+  "changepass.new": {
+    "other": "New passphrase:"
+  },
+  "changepass.confirm": {
+    "other": "Confirm new passphrase:"
+  },
+  "changepass.wrong_current": {
+    "other": "Wrong current passphrase. Please try again."
+  },
+  "changepass.hint": {
+    "other": "Tab next field · Enter confirm"
+  },
+
   "profile.progress": {
     "other": "Question {{.Current}} of {{.Total}}"
   },
@@ -370,6 +389,9 @@
   },
   "menu.manage_ai_providers": {
     "other": "Manage AI Providers"
+  },
+  "menu.change_passphrase": {
+    "other": "Change Passphrase"
   },
   "menu.agent_unavailable": {
     "other": "Configure an AI provider first — use /aiproviders"

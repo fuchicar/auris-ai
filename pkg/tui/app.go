@@ -27,6 +27,7 @@ const (
 	ScreenUnlock                         // passphrase prompt for an existing config
 	ScreenTheme                          // theme selection
 	ScreenPassphrase                     // passphrase creation (setup only)
+	ScreenChangePassphrase               // change passphrase (post-setup, from menu)
 	ScreenProfile                        // financial profile questionnaire (setup only)
 	ScreenProvider                       // market data provider selection (setup only)
 	ScreenAPIKey                         // primary market provider API key input and validation (setup only)
@@ -103,6 +104,9 @@ type LocaleResult struct{ Locale string }
 
 // PassphraseResult is the payload emitted by the Passphrase creation screen.
 type PassphraseResult struct{ Passphrase string }
+
+// ChangePassphraseResult is the payload emitted by the Change Passphrase screen.
+type ChangePassphraseResult struct{ NewPassphrase string }
 
 // ProfileResult is the payload emitted by the Profile questionnaire screen.
 type ProfileResult struct{ Profile config.FinancialProfile }
@@ -394,6 +398,14 @@ func (a *AppModel) transition(msg ScreenDoneMsg) (tea.Model, tea.Cmd) {
 		}
 		a.screen = ScreenProfile
 		a.current = newProfileModel(a.styles, nil, false)
+
+	case ScreenChangePassphrase:
+		if r, ok := msg.Result.(ChangePassphraseResult); ok {
+			a.passphrase = r.NewPassphrase
+		}
+		a.saveConfig()
+		a.screen = ScreenMenu
+		a.current = newMenuModel(a.styles, a.cfg.ActiveAIProvider != "")
 
 	case ScreenProfile:
 		if r, ok := msg.Result.(ProfileResult); ok {
@@ -884,6 +896,11 @@ func (a *AppModel) handleCommand(cmd CommandResult) (tea.Model, tea.Cmd) {
 		a.flowContext = FlowMenu
 		a.screen = ScreenProfile
 		a.current = newProfileModel(a.styles, a.cfg.FinancialProfile, true)
+
+	case "changepassphrase":
+		a.flowContext = FlowMenu
+		a.screen = ScreenChangePassphrase
+		a.current = newChangePassphraseModel(a.styles, a.passphrase, true)
 
 	case "model":
 		if a.cfg.ActiveAIProvider == "" {

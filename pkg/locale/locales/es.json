@@ -75,6 +75,25 @@
     "other": "Escriba la contraseña · Tab para el campo de confirmación"
   },
 
+  "changepass.title": {
+    "other": "Cambie su contraseña maestra:"
+  },
+  "changepass.current": {
+    "other": "Contraseña actual:"
+  },
+  "changepass.new": {
+    "other": "Nueva contraseña:"
+  },
+  "changepass.confirm": {
+    "other": "Confirme la nueva contraseña:"
+  },
+  "changepass.wrong_current": {
+    "other": "Contraseña actual incorrecta. Inténtelo de nuevo."
+  },
+  "changepass.hint": {
+    "other": "Tab siguiente campo · Enter confirmar"
+  },
+
   "profile.progress": {
     "other": "Pregunta {{.Current}} de {{.Total}}"
   },
@@ -370,6 +389,9 @@
   },
   "menu.manage_ai_providers": {
     "other": "Gestionar proveedores de IA"
+  },
+  "menu.change_passphrase": {
+    "other": "Cambiar contraseña"
   },
   "menu.agent_unavailable": {
     "other": "Configura un proveedor de IA primero — usa /aiproviders"

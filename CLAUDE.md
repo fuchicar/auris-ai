@@ -190,7 +190,7 @@ Code-derived figures the deck quotes (and where the truth lives):
 - **57 tools** and the per-category counts (21 calculation, 16 portfolio, 9 market, 6 technical indicators, 3 time, 1 news, 1 currency) → `buildTools()` in `pkg/agent/tools.go` / `TestBuildTools_Count`. If you change the tool count, also rescale the category bar widths (`.toolcat .bar i`, sized relative to the largest category).
 - **594 test functions / 171 in pkg/finance** → recount with `grep -rn "func Test" --include="*_test.go" | wc -l`. The calculation-engine tests live in `pkg/finance` since REF-7 (previously counted under `pkg/agent`).
 - **4 AI drivers (Anthropic · Gemini · Ollama · MiniMax) and 2 market drivers (FMP · EODHD, cascade with fallback)** → `pkg/registry/`. A new driver changes slides 5, 6 and possibly 3/15.
-- **~23,500 LOC · 14 packages · Go 1.25 · 24 TUI screens · 2 locales · 6 themes** → recount when they drift meaningfully.
+- **~23,500 LOC · 14 packages · Go 1.25 · 25 TUI screens · 2 locales · 6 themes** → recount when they drift meaningfully.
 - **≤ 10 ReAct iterations · 3 TaskTypes** → `maxLoopIterations` in `pkg/agent/agent.go`, `llm.TaskType`.
 - **Monte Carlo up to 100,000 paths** → `pkg/finance/simulation.go`.
 - **Argon2id (64 MiB, 16 B salt) + AES-256-GCM (12 B nonce)** → `pkg/config/crypto.go`.

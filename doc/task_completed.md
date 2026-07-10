@@ -127,6 +127,14 @@ Refuerzan la profundidad analítica del TFM o la utilidad práctica continuada; 
 
 ---
 
+# ✅ Tier C — Interesante, no imprescindible (items cerrados)
+
+Tier C es opcional por diseño (ver `TODO.md`); esta sección solo recoge los items de Tier C que sí se llegaron a implementar.
+
+- [x] **FEAT-15** Cambio de passphrase desde la app — antes requería borrar el config y repetir el setup completo. ✅ Implementado 2026-07-10. No hizo falta ninguna primitiva nueva en `pkg/config/crypto.go`: `config.Load(passphrase)` ya descifra todo a un `*AurisConfig` en texto plano y `config.Save(cfg, passphrase)` ya vuelve a cifrar generando una sal nueva, así que "cambiar de passphrase" es simplemente un `Save` con una passphrase distinta a la del `Load` — el trabajo real fue la pantalla TUI nueva y el cableado. Nueva pantalla `pkg/tui/screen_passphrase_change.go` (`ChangePassphraseModel`), inspirada en `PassphraseModel` (`screen_passphrase.go`, creación de passphrase en el setup) y en `UnlockModel` (`screen_unlock.go`, verificación): 3 campos (`current`/`newPass`/`confirm`) con `Tab`/`Shift+Tab` para navegar; valida la passphrase actual contra la que ya está en memoria desde el desbloqueo (`AppModel.passphrase`, sin volver a llamar a `config.Load`), luego longitud mínima y coincidencia de la nueva (reutiliza `minPassphraseLen` y las claves i18n `setup.passphrase.short`/`setup.passphrase.mismatch`, ya existentes). Alcanzable desde el menú de Configuración (`configMenuItems` en `screen_menu.go`, nueva entrada `menu.change_passphrase`) y como comando `/changepassphrase` (añadido a `knownCommands` en `commands.go`), igual que `"profile"`, solo desde el menú principal, no desde el modo agente. Wiring en `pkg/tui/app.go`: `ScreenChangePassphrase` en el enum `Screen`, `ChangePassphraseResult{NewPassphrase}`, `case "changepassphrase"` en `handleCommand` y `case ScreenChangePassphrase` en `transition()` (guarda incondicionalmente y vuelve al menú, mismo patrón que `ScreenTheme` — cancelar con Esc es un no-op inofensivo). Claves i18n nuevas `changepass.*` en `en.json`/`es.json`. 6 tests nuevos en `pkg/tui/screen_passphrase_change_test.go` (passphrase actual incorrecta, nueva demasiado corta, nueva y confirmación no coinciden, flujo correcto completo, Esc cancela, Esc no hace nada si `canGoBack=false`). `go build`, `go vet` y suite completa `go test ./...` en verde (aparte de los fallos preexistentes de integración de `pkg/drivers/eodhd` por límite diario de API agotado, no relacionados con este cambio).
+
+---
+
 # 📅 Notas de sesión
 
 - **2026-06-21**: Auditoría inicial. Catálogo actual suficiente para riesgo-retorno y valoración DCF, pero sin análisis técnico ni agregación de cartera. Pendiente decisión sobre alcance antes de implementar.
