@@ -12,7 +12,7 @@ import (
 
 // marketChain wraps an ordered list of market.ProviderAPI and cascades through
 // them on each call. providers[0] is the primary; the rest are fallbacks tried
-// in order. See FEAT-7 in TODO.md for the product rationale (FMP primary +
+// in order. See FEAT-7 in doc/task_completed.md for the product rationale (FMP primary +
 // EODHD secondary, to cover the BME symbols FMP's free tier doesn't serve).
 type marketChain struct {
 	providers []market.ProviderAPI
@@ -39,7 +39,7 @@ var _ market.CapabilityReporter = (*marketChain)(nil)
 // UnsupportedTools implements market.CapabilityReporter for the chain: a
 // tool is unsupported by the chain only if every provider in it declares the
 // tool unsupported. If any provider doesn't implement CapabilityReporter its
-// capabilities are unknown, so nothing is filtered — see FEAT-8 in TODO.md.
+// capabilities are unknown, so nothing is filtered — see FEAT-8 in doc/task_completed.md.
 func (c *marketChain) UnsupportedTools() []string {
 	if len(c.providers) == 0 {
 		return nil

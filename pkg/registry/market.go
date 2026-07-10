@@ -24,7 +24,7 @@ type MarketEntry struct {
 // AllMarket returns the ordered list of all registered market data provider entries.
 // The order determines both how they appear in the setup wizard and the fallback
 // order of the market chain built by pkg/agent.NewMarketChain (fmp primary, eodhd
-// secondary — see FEAT-7 in TODO.md).
+// secondary — see FEAT-7 in doc/task_completed.md).
 func AllMarket() []MarketEntry {
 	return []MarketEntry{
 		newMarketEntry("fmp", func(apiKey string) market.ProviderAPI {

@@ -497,7 +497,7 @@ func (d *Driver) GetTicks(_ context.Context, _ string, _, _ time.Time) ([]market
 }
 
 // UnsupportedTools implements market.CapabilityReporter: EODHD has no
-// order-book or tick-level data in its REST API — see FEAT-8 in TODO.md.
+// order-book or tick-level data in its REST API — see FEAT-8 in doc/task_completed.md.
 func (d *Driver) UnsupportedTools() []string {
 	return []string{market.ToolGetOrderBook, market.ToolGetTicks}
 }

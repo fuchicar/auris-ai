@@ -170,7 +170,6 @@ type fmpDailyCandle struct {
 	Volume float64 `json:"volume"`
 }
 
-
 type fmpIntradayCandle struct {
 	Date   string  `json:"date"`
 	Open   float64 `json:"open"`
@@ -472,7 +471,7 @@ func (d *Driver) GetTicks(_ context.Context, _ string, _, _ time.Time) ([]market
 }
 
 // UnsupportedTools implements market.CapabilityReporter: FMP has no
-// order-book or tick-level data in its REST API — see FEAT-8 in TODO.md.
+// order-book or tick-level data in its REST API — see FEAT-8 in doc/task_completed.md.
 func (d *Driver) UnsupportedTools() []string {
 	return []string{market.ToolGetOrderBook, market.ToolGetTicks}
 }

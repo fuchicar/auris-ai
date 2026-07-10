@@ -1254,7 +1254,7 @@ func (a *AppModel) marketProviderOrder() []registry.MarketEntry {
 // buildMarketProvider instantiates a market.ProviderAPI covering every market
 // data provider the user configured, in the user's chosen priority order
 // (marketProviderOrder — the first configured entry is primary; any others
-// are cascade fallbacks — see FEAT-7 in TODO.md and agent.NewMarketChain).
+// are cascade fallbacks — see FEAT-7 in doc/task_completed.md and agent.NewMarketChain).
 // Returns nil if none are configured.
 func (a *AppModel) buildMarketProvider() market.ProviderAPI {
 	var providers []market.ProviderAPI
