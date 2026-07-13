@@ -94,6 +94,19 @@
     "other": "Tab siguiente campo · Enter confirmar"
   },
 
+  "encryption.title": {
+    "other": "¿Cifrar carteras y sesiones de chat en disco?"
+  },
+  "encryption.enabled": {
+    "other": "Activado"
+  },
+  "encryption.disabled": {
+    "other": "Desactivado"
+  },
+  "encryption.hint": {
+    "other": "Usa tu passphrase para cifrar los archivos de carteras y sesiones en disco. ↑↓ navegar · Enter confirmar"
+  },
+
   "profile.progress": {
     "other": "Pregunta {{.Current}} de {{.Total}}"
   },
@@ -392,6 +405,9 @@
   },
   "menu.change_passphrase": {
     "other": "Cambiar contraseña"
+  },
+  "menu.change_encryption": {
+    "other": "Cifrado de datos"
   },
   "menu.agent_unavailable": {
     "other": "Configura un proveedor de IA primero — usa /aiproviders"

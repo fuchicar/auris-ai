@@ -1,7 +1,6 @@
 package portfolio
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -214,7 +213,7 @@ func SavePortfolio(p *Portfolio) error {
 		return fmt.Errorf("portfolio: SavePortfolio: mkdir: %w", err)
 	}
 	p.UpdatedAt = time.Now()
-	data, err := json.MarshalIndent(p, "", "  ")
+	data, err := config.MarshalEncryptable(p, config.StorageKey())
 	if err != nil {
 		return fmt.Errorf("portfolio: SavePortfolio: marshal: %w", err)
 	}
@@ -240,7 +239,7 @@ func LoadPortfolio(id string) (*Portfolio, error) {
 		return nil, fmt.Errorf("portfolio: LoadPortfolio: %w", err)
 	}
 	var p Portfolio
-	if err := json.Unmarshal(data, &p); err != nil {
+	if err := config.UnmarshalEncryptable(data, &p, config.StorageKey()); err != nil {
 		return nil, fmt.Errorf("portfolio: LoadPortfolio: unmarshal: %w", err)
 	}
 	return &p, nil
@@ -286,6 +285,54 @@ func DeletePortfolio(id string) error {
 	path := filepath.Join(dir, id+".json")
 	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("portfolio: DeletePortfolio: %w", err)
+	}
+	return nil
+}
+
+// ReencryptAllPortfolios rewrites every portfolio file under PortfoliosDir
+// from oldKey to newKey (either may be nil for plaintext). It is used when
+// the user toggles storage encryption on/off or changes their passphrase
+// (FEAT-16), and is safe to retry: for each file it first tries oldKey, and
+// if that fails and newKey is set, it tries newKey too — the file may
+// already have been migrated by a prior partial run — before giving up.
+func ReencryptAllPortfolios(oldKey, newKey []byte) error {
+	dir, err := PortfoliosDir()
+	if err != nil {
+		return err
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		return fmt.Errorf("portfolio: ReencryptAllPortfolios: %w", err)
+	}
+	for _, e := range entries {
+		if e.IsDir() || filepath.Ext(e.Name()) != ".json" {
+			continue
+		}
+		path := filepath.Join(dir, e.Name())
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return fmt.Errorf("portfolio: ReencryptAllPortfolios: read %s: %w", e.Name(), err)
+		}
+		var p Portfolio
+		if err := config.UnmarshalEncryptable(data, &p, oldKey); err != nil {
+			if newKey == nil {
+				return fmt.Errorf("portfolio: ReencryptAllPortfolios: %s: %w", e.Name(), err)
+			}
+			if err := config.UnmarshalEncryptable(data, &p, newKey); err != nil {
+				return fmt.Errorf("portfolio: ReencryptAllPortfolios: %s: %w", e.Name(), err)
+			}
+			continue // already migrated in a prior partial run
+		}
+		out, err := config.MarshalEncryptable(&p, newKey)
+		if err != nil {
+			return fmt.Errorf("portfolio: ReencryptAllPortfolios: marshal %s: %w", e.Name(), err)
+		}
+		if err := os.WriteFile(path, out, 0o600); err != nil {
+			return fmt.Errorf("portfolio: ReencryptAllPortfolios: write %s: %w", e.Name(), err)
+		}
 	}
 	return nil
 }

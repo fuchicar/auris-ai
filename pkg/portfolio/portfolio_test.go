@@ -3,8 +3,11 @@ package portfolio
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
+
+	"auris/pkg/config"
 )
 
 // ─── FIFO tests ───────────────────────────────────────────────────────────────
@@ -288,5 +291,151 @@ func TestLoadPortfolio_NoTransactionsField(t *testing.T) {
 	}
 	if loaded.Transactions != nil {
 		t.Errorf("Transactions = %+v, want nil", loaded.Transactions)
+	}
+}
+
+// ─── FEAT-16: storage encryption ───────────────────────────────────────────────
+
+func TestSaveLoadPortfolio_Encrypted(t *testing.T) {
+	tmp := t.TempDir()
+	origDir := portfoliosDirOverride
+	portfoliosDirOverride = filepath.Join(tmp, "portfolios")
+	t.Cleanup(func() { portfoliosDirOverride = origDir })
+
+	salt, err := config.NewSalt()
+	if err != nil {
+		t.Fatalf("NewSalt: %v", err)
+	}
+	key := config.DeriveStorageKey("pass", salt)
+	config.SetStorageKey(key)
+	t.Cleanup(func() { config.SetStorageKey(nil) })
+
+	p := NewPortfolio("Encrypted Portfolio")
+	p.Cash = 500
+	if err := SavePortfolio(p); err != nil {
+		t.Fatalf("SavePortfolio: %v", err)
+	}
+
+	raw, err := os.ReadFile(filepath.Join(portfoliosDirOverride, p.ID+".json"))
+	if err != nil {
+		t.Fatalf("read raw file: %v", err)
+	}
+	if strings.Contains(string(raw), "Encrypted Portfolio") {
+		t.Error("portfolio name found in plaintext on disk, expected it to be encrypted")
+	}
+
+	loaded, err := LoadPortfolio(p.ID)
+	if err != nil {
+		t.Fatalf("LoadPortfolio: %v", err)
+	}
+	if loaded == nil || loaded.Name != "Encrypted Portfolio" {
+		t.Fatalf("LoadPortfolio: got %+v", loaded)
+	}
+}
+
+func TestLoadPortfolio_LegacyPlaintextWithKeySet(t *testing.T) {
+	tmp := t.TempDir()
+	dir := filepath.Join(tmp, "portfolios")
+	origDir := portfoliosDirOverride
+	portfoliosDirOverride = dir
+	t.Cleanup(func() { portfoliosDirOverride = origDir })
+
+	key := config.DeriveStorageKey("pass", []byte("0123456789abcdef"))
+	config.SetStorageKey(key)
+	t.Cleanup(func() { config.SetStorageKey(nil) })
+
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	raw := `{"id":"legacy-2","name":"Legacy Plaintext","created_at":"2024-01-01T00:00:00Z","updated_at":"2024-01-01T00:00:00Z"}`
+	if err := os.WriteFile(filepath.Join(dir, "legacy-2.json"), []byte(raw), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	loaded, err := LoadPortfolio("legacy-2")
+	if err != nil {
+		t.Fatalf("LoadPortfolio: %v", err)
+	}
+	if loaded == nil || loaded.Name != "Legacy Plaintext" {
+		t.Fatalf("LoadPortfolio: got %+v", loaded)
+	}
+}
+
+func TestReencryptAllPortfolios(t *testing.T) {
+	tmp := t.TempDir()
+	origDir := portfoliosDirOverride
+	portfoliosDirOverride = filepath.Join(tmp, "portfolios")
+	t.Cleanup(func() { portfoliosDirOverride = origDir })
+	t.Cleanup(func() { config.SetStorageKey(nil) })
+
+	// Start plaintext (nil key), create two portfolios. NewPortfolio's ID has
+	// only second resolution, so assign distinct IDs explicitly to avoid a
+	// collision between p1 and p2 created in the same test.
+	config.SetStorageKey(nil)
+	p1 := NewPortfolio("P1")
+	p1.ID = "20260101-000001"
+	p2 := NewPortfolio("P2")
+	p2.ID = "20260101-000002"
+	if err := SavePortfolio(p1); err != nil {
+		t.Fatalf("SavePortfolio p1: %v", err)
+	}
+	if err := SavePortfolio(p2); err != nil {
+		t.Fatalf("SavePortfolio p2: %v", err)
+	}
+
+	saltA, _ := config.NewSalt()
+	keyA := config.DeriveStorageKey("pass", saltA)
+
+	// Migrate plaintext -> keyA.
+	if err := ReencryptAllPortfolios(nil, keyA); err != nil {
+		t.Fatalf("ReencryptAllPortfolios (plaintext->A): %v", err)
+	}
+	config.SetStorageKey(keyA)
+	loaded, err := LoadPortfolio(p1.ID)
+	if err != nil || loaded == nil || loaded.Name != "P1" {
+		t.Fatalf("LoadPortfolio after migration to keyA: %v, %+v", err, loaded)
+	}
+
+	raw, err := os.ReadFile(filepath.Join(portfoliosDirOverride, p1.ID+".json"))
+	if err != nil {
+		t.Fatalf("read raw: %v", err)
+	}
+	if strings.Contains(string(raw), "P1") {
+		t.Error("portfolio name found in plaintext after migration to keyA")
+	}
+
+	// Idempotent retry: calling again with the same (nil, keyA) pair should
+	// detect the files are already migrated and succeed without error.
+	if err := ReencryptAllPortfolios(nil, keyA); err != nil {
+		t.Fatalf("ReencryptAllPortfolios retry: %v", err)
+	}
+
+	saltB, _ := config.NewSalt()
+	keyB := config.DeriveStorageKey("pass2", saltB)
+
+	// Re-key from keyA -> keyB.
+	if err := ReencryptAllPortfolios(keyA, keyB); err != nil {
+		t.Fatalf("ReencryptAllPortfolios (A->B): %v", err)
+	}
+	config.SetStorageKey(keyB)
+	loaded, err = LoadPortfolio(p2.ID)
+	if err != nil || loaded == nil || loaded.Name != "P2" {
+		t.Fatalf("LoadPortfolio after migration to keyB: %v, %+v", err, loaded)
+	}
+
+	// keyA should no longer decrypt the files.
+	config.SetStorageKey(keyA)
+	if _, err := LoadPortfolio(p1.ID); err == nil {
+		t.Error("expected error loading with stale keyA after re-key to keyB, got nil")
+	}
+
+	// Decrypt back to plaintext.
+	if err := ReencryptAllPortfolios(keyB, nil); err != nil {
+		t.Fatalf("ReencryptAllPortfolios (B->plaintext): %v", err)
+	}
+	config.SetStorageKey(nil)
+	loaded, err = LoadPortfolio(p1.ID)
+	if err != nil || loaded == nil || loaded.Name != "P1" {
+		t.Fatalf("LoadPortfolio after decrypt: %v, %+v", err, loaded)
 	}
 }

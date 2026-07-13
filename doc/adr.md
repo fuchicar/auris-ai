@@ -132,3 +132,35 @@ Cascada con fallback FMP→EODHD, primario FMP, secundario EODHD, basada en el h
 - Verificar el email de EODHD: ¿es phishing, bienvenida genérica de un tier distinto, o informativo real del plan free?
 - Si se confirma 20 calls/día, evaluar si la decisión debe endurecerse (p.ej. marcar el secundario como "solo a partir del segundo fallo consecutivo del primario" para racionar) o quedarse como está.
 - Acciones derivadas no resueltas: ninguna tarea abierta en `TODO.md` derivada de DD-5.
+
+---
+
+## DD-6 — Cifrado de carteras/sesiones: salt independiente, clave a nivel de paquete, re-cifrado inmediato
+
+- **Status**: accepted
+- **Opened**: 2026-07-13
+- **Closed**: 2026-07-13
+
+### Context
+
+FEAT-16 extiende el cifrado AES-256-GCM que ya protegía las API keys (`pkg/config/crypto.go`) a carteras (`pkg/portfolio/`) y sesiones de chat (`pkg/config/session.go`), ninguna de las cuales tenía cifrado alguno. Tres decisiones de diseño no eran obvias a partir del código existente:
+
+1. **Salt**: `config.Save` regenera el salt del KDF de credenciales (`diskKDF.Salt`) en cada llamada — reutilizarlo para el cifrado de almacenamiento habría cambiado la clave derivada en cada guardado no relacionado, rompiendo archivos ya cifrados.
+2. **Threading de la clave**: `SavePortfolio`/`LoadPortfolio`/`SaveSession`/`LoadSession` se llaman desde muchos puntos (`app.go`, `screen_portfolio_*.go`, `pkg/agent/tools.go`) sin parámetro de passphrase/clave. Añadirlo a todas las firmas habría sido un diff grande e invasivo.
+3. **Qué hacer con los archivos existentes al activar/desactivar el toggle**: re-cifrar todo de inmediato (síncrono) vs. aplicar solo a partir del siguiente guardado natural de cada archivo.
+
+### Decision
+
+1. `AurisConfig.StorageSalt` es un campo independiente del salt de credenciales, generado una sola vez (al activar el cifrado por primera vez) y estable entre guardados — nunca se regenera en un `Save` no relacionado con el toggle.
+2. La clave activa vive en estado a nivel de paquete (`config.SetStorageKey`/`StorageKey`), siguiendo la misma convención ya usada para overrides de test (`portfoliosDirOverride`/`SetPortfoliosDirForTest`) en lugar de pasar la clave por parámetro en cada llamada. `nil` = cifrado desactivado (comportamiento previo, sin cambios).
+3. Activar/desactivar el toggle, o cambiar la passphrase con el cifrado activo, **re-cifra/descifra inmediatamente** todos los archivos existentes (`portfolio.ReencryptAllPortfolios`/`config.ReencryptAllSessions`, invocados por `AppModel.setStorageEncryption` y por la transición de `ScreenChangePassphrase`) — operación síncrona iniciada por el usuario, no un proceso en background. El algoritmo es idempotente ante reintentos: para cada archivo prueba primero la clave antigua y, si falla y hay clave nueva, prueba la nueva antes de darse por vencido (el archivo puede ya estar migrado de un intento parcial anterior).
+
+Además, el cifrado de almacenamiento es **opt-out, no opt-in**: los setups nuevos activan `EncryptStorage` por defecto (`ScreenPassphrase`, solo alcanzable en el asistente de primer arranque — los usuarios recurrentes pasan por `ScreenUnlock`, así que el valor por defecto es seguro de aplicar sin condición ahí).
+
+La detección de archivo cifrado vs. plano usa un sobre explícito (`config.EncryptedEnvelope`, `{"encrypted":true,"data":"..."}`) en vez de "intenta parsear JSON y si falla asume cifrado" — un archivo plano legado no tiene esas claves, así que `Encrypted` queda en `false` y cae al parseo directo, sin necesidad de una pasada de migración separada.
+
+### Consequences
+
+- Los archivos de carteras/sesiones cifrados y en claro conviven sin problema durante y después de una migración parcial — no hay estado "roto" intermedio.
+- El estado de clave a nivel de paquete es una dependencia oculta (hay que recordar llamar `SetStorageKey` tras desbloquear/cambiar passphrase/toggle) — aceptable en una app TUI de un solo proceso y un solo usuario, documentado en `CLAUDE.md`.
+- Un fallo a mitad del batch de re-cifrado deja algunos archivos migrados y otros no; no hay rollback transaccional (desproporcionado para una feature Tier C) — pero el reintento es seguro gracias al diseño idempotente.

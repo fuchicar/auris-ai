@@ -50,6 +50,7 @@ const (
 	ScreenPortfolioTransactions          // read-only transaction/cash-flow history
 	ScreenPortfolioWatchlist             // read-only watchlist with live price/%change
 	ScreenPortfolioExport                // export positions/lots/metrics to JSON+CSV
+	ScreenEncryption                     // toggle at-rest encryption of portfolios/sessions (post-setup, from menu)
 )
 
 // FlowContext distinguishes whether a settings screen was opened during first-
@@ -107,6 +108,9 @@ type PassphraseResult struct{ Passphrase string }
 
 // ChangePassphraseResult is the payload emitted by the Change Passphrase screen.
 type ChangePassphraseResult struct{ NewPassphrase string }
+
+// EncryptionResult is the payload emitted by the Encryption toggle screen.
+type EncryptionResult struct{ Enabled bool }
 
 // ProfileResult is the payload emitted by the Profile questionnaire screen.
 type ProfileResult struct{ Profile config.FinancialProfile }
@@ -372,6 +376,9 @@ func (a *AppModel) transition(msg ScreenDoneMsg) (tea.Model, tea.Cmd) {
 		if r, ok := msg.Result.(UnlockResult); ok {
 			a.passphrase = r.Passphrase
 			a.cfg = r.Config
+			if a.cfg.EncryptStorage {
+				config.SetStorageKey(config.DeriveStorageKey(a.passphrase, a.cfg.StorageSalt))
+			}
 			a.applyStoredTheme()
 			a.applyStoredLocale()
 		}
@@ -395,15 +402,43 @@ func (a *AppModel) transition(msg ScreenDoneMsg) (tea.Model, tea.Cmd) {
 	case ScreenPassphrase:
 		if r, ok := msg.Result.(PassphraseResult); ok {
 			a.passphrase = r.Passphrase
+			// FEAT-16: encryption is opt-out, not opt-in — new setups default
+			// to encrypted storage. ScreenPassphrase is only ever reached
+			// during first-run setup (returning users go through
+			// ScreenUnlock instead), so this default is safe to apply
+			// unconditionally here.
+			a.cfg.EncryptStorage = true
+			if salt, err := config.NewSalt(); err == nil {
+				a.cfg.StorageSalt = salt
+				config.SetStorageKey(config.DeriveStorageKey(a.passphrase, salt))
+			}
 		}
 		a.screen = ScreenProfile
 		a.current = newProfileModel(a.styles, nil, false)
 
 	case ScreenChangePassphrase:
 		if r, ok := msg.Result.(ChangePassphraseResult); ok {
+			if a.cfg.EncryptStorage {
+				oldKey := config.StorageKey()
+				newKey := config.DeriveStorageKey(r.NewPassphrase, a.cfg.StorageSalt)
+				_ = portfolio.ReencryptAllPortfolios(oldKey, newKey)
+				_ = config.ReencryptAllSessions(oldKey, newKey)
+				config.SetStorageKey(newKey)
+			}
 			a.passphrase = r.NewPassphrase
 		}
 		a.saveConfig()
+		a.screen = ScreenMenu
+		a.current = newMenuModel(a.styles, a.cfg.ActiveAIProvider != "")
+
+	case ScreenEncryption:
+		if r, ok := msg.Result.(EncryptionResult); ok && r.Enabled != a.cfg.EncryptStorage {
+			if err := a.setStorageEncryption(r.Enabled); err != nil {
+				a.screen = ScreenEncryption
+				a.current = newEncryptionModel(a.styles, a.cfg.EncryptStorage, err.Error())
+				return a, a.current.Init()
+			}
+		}
 		a.screen = ScreenMenu
 		a.current = newMenuModel(a.styles, a.cfg.ActiveAIProvider != "")
 
@@ -902,6 +937,11 @@ func (a *AppModel) handleCommand(cmd CommandResult) (tea.Model, tea.Cmd) {
 		a.screen = ScreenChangePassphrase
 		a.current = newChangePassphraseModel(a.styles, a.passphrase, true)
 
+	case "encryption":
+		a.flowContext = FlowMenu
+		a.screen = ScreenEncryption
+		a.current = newEncryptionModel(a.styles, a.cfg.EncryptStorage, "")
+
 	case "model":
 		if a.cfg.ActiveAIProvider == "" {
 			a.current = newMenuModel(a.styles, false)
@@ -1126,6 +1166,38 @@ func (a *AppModel) toggleMode() (tea.Model, tea.Cmd) {
 // a future iteration could surface them via an ErrMsg overlay.
 func (a *AppModel) saveConfig() {
 	_ = config.Save(a.cfg, a.passphrase)
+}
+
+// setStorageEncryption toggles FEAT-16 at-rest encryption of portfolios and
+// chat sessions, synchronously re-encrypting (or decrypting) every existing
+// file so on-disk state always matches the toggle. This runs once, at the
+// user's explicit request — never as a background job, per the project's
+// no-daemon design rule. On error, the caller should keep whatever succeeded
+// already migrated rather than attempt a rollback (see ReencryptAllPortfolios
+// / ReencryptAllSessions doc comments for the retry-safety this relies on).
+func (a *AppModel) setStorageEncryption(enable bool) error {
+	oldKey := config.StorageKey()
+	var newKey []byte
+	if enable {
+		if len(a.cfg.StorageSalt) == 0 {
+			salt, err := config.NewSalt()
+			if err != nil {
+				return err
+			}
+			a.cfg.StorageSalt = salt
+		}
+		newKey = config.DeriveStorageKey(a.passphrase, a.cfg.StorageSalt)
+	}
+	if err := portfolio.ReencryptAllPortfolios(oldKey, newKey); err != nil {
+		return err
+	}
+	if err := config.ReencryptAllSessions(oldKey, newKey); err != nil {
+		return err
+	}
+	config.SetStorageKey(newKey)
+	a.cfg.EncryptStorage = enable
+	a.saveConfig()
+	return nil
 }
 
 // applyStoredTheme rebuilds the style set using the theme persisted in the

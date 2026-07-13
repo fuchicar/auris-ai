@@ -44,6 +44,16 @@ type AurisConfig struct {
 	// Stored as plaintext JSON (no credentials). Defaults to DefaultFeeds on
 	// first run.
 	NewsFeeds []news.FeedConfig
+
+	// EncryptStorage, when true, encrypts portfolio and chat session files at
+	// rest with a key derived from the user's passphrase (FEAT-16). Defaults
+	// to true for new setups (opt-out, not opt-in) — see pkg/tui's
+	// ScreenPassphrase transition. StorageSalt is generated once when first
+	// enabled and, unlike the credential-encryption salt below (which
+	// rotates on every Save), stays stable across saves so the derived key
+	// doesn't change underneath already-encrypted files.
+	EncryptStorage bool
+	StorageSalt    []byte
 }
 
 // ChatTurn is a single message in the agent-mode conversation history.
@@ -112,13 +122,15 @@ type diskConfig struct {
 	Theme            string                   `json:"theme,omitempty"`
 	FinancialProfile *FinancialProfile        `json:"financial_profile,omitempty"`
 
-	ActiveAIProvider string                      `json:"active_ai_provider,omitempty"`
-	DefaultAIModel   string                      `json:"default_ai_model,omitempty"`
-	AIProviders      map[string]*diskAIProvider  `json:"ai_providers,omitempty"`
-	AITaskRoutes     map[string]AITaskRoute      `json:"ai_task_routes,omitempty"`
-	ChatHistory      []ChatTurn                  `json:"chat_history,omitempty"`
-	ActiveSessionID  string                      `json:"active_session_id,omitempty"`
-	NewsFeeds        []news.FeedConfig           `json:"news_feeds,omitempty"`
+	ActiveAIProvider string                     `json:"active_ai_provider,omitempty"`
+	DefaultAIModel   string                     `json:"default_ai_model,omitempty"`
+	AIProviders      map[string]*diskAIProvider `json:"ai_providers,omitempty"`
+	AITaskRoutes     map[string]AITaskRoute     `json:"ai_task_routes,omitempty"`
+	ChatHistory      []ChatTurn                 `json:"chat_history,omitempty"`
+	ActiveSessionID  string                     `json:"active_session_id,omitempty"`
+	NewsFeeds        []news.FeedConfig          `json:"news_feeds,omitempty"`
+	EncryptStorage   bool                       `json:"encrypt_storage,omitempty"`
+	StorageSalt      string                     `json:"storage_salt,omitempty"` // base64
 }
 
 type diskAIProvider struct {
@@ -127,7 +139,7 @@ type diskAIProvider struct {
 }
 
 type diskKDF struct {
-	Salt    string `json:"salt"`     // base64(16 random bytes)
+	Salt    string `json:"salt"` // base64(16 random bytes)
 	Time    uint32 `json:"time"`
 	Memory  uint32 `json:"memory"`
 	Threads uint8  `json:"threads"`
@@ -182,6 +194,14 @@ func Load(passphrase string) (*AurisConfig, error) {
 		newsFeeds = news.DefaultFeeds
 	}
 
+	var storageSalt []byte
+	if disk.StorageSalt != "" {
+		storageSalt, err = base64.StdEncoding.DecodeString(disk.StorageSalt)
+		if err != nil {
+			return nil, fmt.Errorf("config: Load: decode storage salt: %w", err)
+		}
+	}
+
 	cfg := &AurisConfig{
 		ActiveProvider:   disk.ActiveProvider,
 		Providers:        make(map[string]*ProviderConfig, len(disk.Providers)),
@@ -196,6 +216,8 @@ func Load(passphrase string) (*AurisConfig, error) {
 		ChatHistory:      disk.ChatHistory,
 		ActiveSessionID:  disk.ActiveSessionID,
 		NewsFeeds:        newsFeeds,
+		EncryptStorage:   disk.EncryptStorage,
+		StorageSalt:      storageSalt,
 	}
 	if cfg.AITaskRoutes == nil {
 		cfg.AITaskRoutes = make(map[string]AITaskRoute)
@@ -255,6 +277,8 @@ func Save(cfg *AurisConfig, passphrase string) error {
 		ChatHistory:      cfg.ChatHistory,
 		ActiveSessionID:  cfg.ActiveSessionID,
 		NewsFeeds:        cfg.NewsFeeds,
+		EncryptStorage:   cfg.EncryptStorage,
+		StorageSalt:      base64.StdEncoding.EncodeToString(cfg.StorageSalt),
 	}
 
 	if len(cfg.Providers) > 0 {

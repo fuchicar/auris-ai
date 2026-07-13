@@ -26,6 +26,7 @@ var configMenuItems = []menuItem{
 	{"menu.manage_market_providers", "marketproviders", nil},
 	{"menu.manage_ai_providers", "aiproviders", nil},
 	{"menu.change_passphrase", "changepassphrase", nil},
+	{"menu.change_encryption", "encryption", nil},
 	{"menu.back", "back", nil},
 }
 

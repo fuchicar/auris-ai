@@ -94,6 +94,19 @@
     "other": "Tab next field · Enter confirm"
   },
 
+  "encryption.title": {
+    "other": "Encrypt portfolios and chat sessions at rest?"
+  },
+  "encryption.enabled": {
+    "other": "Enabled"
+  },
+  "encryption.disabled": {
+    "other": "Disabled"
+  },
+  "encryption.hint": {
+    "other": "Uses your passphrase to encrypt portfolio and session files on disk. ↑↓ navigate · Enter confirm"
+  },
+
   "profile.progress": {
     "other": "Question {{.Current}} of {{.Total}}"
   },
@@ -392,6 +405,9 @@
   },
   "menu.change_passphrase": {
     "other": "Change Passphrase"
+  },
+  "menu.change_encryption": {
+    "other": "Data Encryption"
   },
   "menu.agent_unavailable": {
     "other": "Configure an AI provider first — use /aiproviders"

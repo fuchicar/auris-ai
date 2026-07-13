@@ -1,7 +1,6 @@
 package config
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -9,6 +8,53 @@ import (
 	"sort"
 	"time"
 )
+
+// ReencryptAllSessions rewrites every session file under SessionsDir from
+// oldKey to newKey (either may be nil for plaintext). Used when the user
+// toggles storage encryption on/off or changes their passphrase (FEAT-16);
+// safe to retry — see the equivalent doc on portfolio.ReencryptAllPortfolios
+// for the idempotent-retry algorithm this mirrors.
+func ReencryptAllSessions(oldKey, newKey []byte) error {
+	dir, err := SessionsDir()
+	if err != nil {
+		return err
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		return fmt.Errorf("config: ReencryptAllSessions: %w", err)
+	}
+	for _, e := range entries {
+		if e.IsDir() || filepath.Ext(e.Name()) != ".json" {
+			continue
+		}
+		path := filepath.Join(dir, e.Name())
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return fmt.Errorf("config: ReencryptAllSessions: read %s: %w", e.Name(), err)
+		}
+		var s Session
+		if err := UnmarshalEncryptable(data, &s, oldKey); err != nil {
+			if newKey == nil {
+				return fmt.Errorf("config: ReencryptAllSessions: %s: %w", e.Name(), err)
+			}
+			if err := UnmarshalEncryptable(data, &s, newKey); err != nil {
+				return fmt.Errorf("config: ReencryptAllSessions: %s: %w", e.Name(), err)
+			}
+			continue // already migrated in a prior partial run
+		}
+		out, err := MarshalEncryptable(&s, newKey)
+		if err != nil {
+			return fmt.Errorf("config: ReencryptAllSessions: marshal %s: %w", e.Name(), err)
+		}
+		if err := os.WriteFile(path, out, 0o600); err != nil {
+			return fmt.Errorf("config: ReencryptAllSessions: write %s: %w", e.Name(), err)
+		}
+	}
+	return nil
+}
 
 // Session is a single agent-chat session with its own history and metadata.
 type Session struct {
@@ -51,7 +97,7 @@ func SaveSession(s *Session) error {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("config: SaveSession: mkdir: %w", err)
 	}
-	data, err := json.MarshalIndent(s, "", "  ")
+	data, err := MarshalEncryptable(s, StorageKey())
 	if err != nil {
 		return fmt.Errorf("config: SaveSession: marshal: %w", err)
 	}
@@ -77,7 +123,7 @@ func LoadSession(id string) (*Session, error) {
 		return nil, fmt.Errorf("config: LoadSession: %w", err)
 	}
 	var s Session
-	if err := json.Unmarshal(data, &s); err != nil {
+	if err := UnmarshalEncryptable(data, &s, StorageKey()); err != nil {
 		return nil, fmt.Errorf("config: LoadSession: unmarshal: %w", err)
 	}
 	return &s, nil

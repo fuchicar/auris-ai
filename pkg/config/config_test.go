@@ -419,16 +419,16 @@ func TestRoundtrip_NewFields(t *testing.T) {
 	withTempConfig(t)
 
 	fp := &FinancialProfile{
-		LifeStage:           "under35",
-		IncomeStability:     "stable",
-		InvestmentGoals:     []string{"retirement", "wealth_growth"},
+		LifeStage:            "under35",
+		IncomeStability:      "stable",
+		InvestmentGoals:      []string{"retirement", "wealth_growth"},
 		InvestmentGoalsOther: "custom goal",
-		TimeHorizon:         "3_7y",
-		MaxAcceptableLoss:   "25pct",
-		FinancialExperience: []string{"stocks_etfs", "funds"},
-		InvestmentPriority:  "returns",
-		Restrictions:        []string{"no_crypto", "country_only"},
-		RestrictionsCountry: "Spain",
+		TimeHorizon:          "3_7y",
+		MaxAcceptableLoss:    "25pct",
+		FinancialExperience:  []string{"stocks_etfs", "funds"},
+		InvestmentPriority:   "returns",
+		Restrictions:         []string{"no_crypto", "country_only"},
+		RestrictionsCountry:  "Spain",
 	}
 
 	original := &AurisConfig{
@@ -468,5 +468,184 @@ func TestRoundtrip_NewFields(t *testing.T) {
 	}
 	if loaded.FinancialProfile.RestrictionsCountry != "Spain" {
 		t.Errorf("RestrictionsCountry: got %q, want %q", loaded.FinancialProfile.RestrictionsCountry, "Spain")
+	}
+}
+
+func TestRoundtrip_StorageEncryption(t *testing.T) {
+	withTempConfig(t)
+
+	salt, err := NewSalt()
+	if err != nil {
+		t.Fatalf("NewSalt: %v", err)
+	}
+	original := &AurisConfig{
+		EncryptStorage: true,
+		StorageSalt:    salt,
+	}
+	if err := Save(original, "pass"); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	loaded, err := Load("pass")
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if !loaded.EncryptStorage {
+		t.Error("EncryptStorage: got false, want true")
+	}
+	if string(loaded.StorageSalt) != string(salt) {
+		t.Errorf("StorageSalt: got %x, want %x", loaded.StorageSalt, salt)
+	}
+}
+
+func TestRoundtrip_StorageEncryption_Disabled(t *testing.T) {
+	withTempConfig(t)
+
+	if err := Save(&AurisConfig{}, "pass"); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	loaded, err := Load("pass")
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if loaded.EncryptStorage {
+		t.Error("EncryptStorage: got true, want false")
+	}
+	if len(loaded.StorageSalt) != 0 {
+		t.Errorf("StorageSalt: got %x, want empty", loaded.StorageSalt)
+	}
+}
+
+func TestDeriveStorageKey_Deterministic(t *testing.T) {
+	salt, err := NewSalt()
+	if err != nil {
+		t.Fatalf("NewSalt: %v", err)
+	}
+	k1 := DeriveStorageKey("passphrase", salt)
+	k2 := DeriveStorageKey("passphrase", salt)
+	if string(k1) != string(k2) {
+		t.Error("DeriveStorageKey: same passphrase+salt produced different keys")
+	}
+
+	other, err := NewSalt()
+	if err != nil {
+		t.Fatalf("NewSalt: %v", err)
+	}
+	k3 := DeriveStorageKey("passphrase", other)
+	if string(k1) == string(k3) {
+		t.Error("DeriveStorageKey: different salts produced the same key")
+	}
+}
+
+func TestEncryptDecryptBytes_Roundtrip(t *testing.T) {
+	salt, err := NewSalt()
+	if err != nil {
+		t.Fatalf("NewSalt: %v", err)
+	}
+	key := DeriveStorageKey("pass", salt)
+
+	blob, err := EncryptBytes(key, []byte(`{"foo":"bar"}`))
+	if err != nil {
+		t.Fatalf("EncryptBytes: %v", err)
+	}
+	got, err := DecryptBytes(key, blob)
+	if err != nil {
+		t.Fatalf("DecryptBytes: %v", err)
+	}
+	if string(got) != `{"foo":"bar"}` {
+		t.Errorf("got %q, want %q", got, `{"foo":"bar"}`)
+	}
+
+	wrongKey := DeriveStorageKey("wrong", salt)
+	if _, err := DecryptBytes(wrongKey, blob); err == nil {
+		t.Error("expected error decrypting with wrong key, got nil")
+	}
+}
+
+type testEncryptable struct {
+	Name string `json:"name"`
+}
+
+func TestMarshalUnmarshalEncryptable_Encrypted(t *testing.T) {
+	salt, err := NewSalt()
+	if err != nil {
+		t.Fatalf("NewSalt: %v", err)
+	}
+	key := DeriveStorageKey("pass", salt)
+
+	data, err := MarshalEncryptable(&testEncryptable{Name: "portfolio1"}, key)
+	if err != nil {
+		t.Fatalf("MarshalEncryptable: %v", err)
+	}
+
+	var raw map[string]any
+	if err := json.Unmarshal(data, &raw); err != nil {
+		t.Fatalf("unmarshal envelope: %v", err)
+	}
+	if raw["encrypted"] != true {
+		t.Errorf("expected encrypted envelope, got %v", raw)
+	}
+	if _, ok := raw["name"]; ok {
+		t.Error("plaintext field leaked into on-disk envelope")
+	}
+
+	var out testEncryptable
+	if err := UnmarshalEncryptable(data, &out, key); err != nil {
+		t.Fatalf("UnmarshalEncryptable: %v", err)
+	}
+	if out.Name != "portfolio1" {
+		t.Errorf("Name: got %q, want %q", out.Name, "portfolio1")
+	}
+
+	if err := UnmarshalEncryptable(data, &out, nil); err == nil {
+		t.Error("expected error unmarshalling encrypted data with nil key, got nil")
+	}
+}
+
+func TestMarshalUnmarshalEncryptable_Plaintext(t *testing.T) {
+	data, err := MarshalEncryptable(&testEncryptable{Name: "portfolio1"}, nil)
+	if err != nil {
+		t.Fatalf("MarshalEncryptable: %v", err)
+	}
+	if !strings.Contains(string(data), "portfolio1") {
+		t.Errorf("expected plaintext JSON, got %q", data)
+	}
+
+	var out testEncryptable
+	if err := UnmarshalEncryptable(data, &out, nil); err != nil {
+		t.Fatalf("UnmarshalEncryptable: %v", err)
+	}
+	if out.Name != "portfolio1" {
+		t.Errorf("Name: got %q, want %q", out.Name, "portfolio1")
+	}
+}
+
+func TestUnmarshalEncryptable_LegacyPlaintextCompatibleWithKeySet(t *testing.T) {
+	// A pre-FEAT-16 plaintext file has no "encrypted"/"data" keys. It must
+	// still parse correctly even when a storage key is available (i.e.
+	// encryption is enabled but this particular file predates it).
+	legacy := []byte(`{"name":"legacy-portfolio"}`)
+	key := DeriveStorageKey("pass", []byte("0123456789abcdef"))
+
+	var out testEncryptable
+	if err := UnmarshalEncryptable(legacy, &out, key); err != nil {
+		t.Fatalf("UnmarshalEncryptable: %v", err)
+	}
+	if out.Name != "legacy-portfolio" {
+		t.Errorf("Name: got %q, want %q", out.Name, "legacy-portfolio")
+	}
+}
+
+func TestSetGetStorageKey(t *testing.T) {
+	t.Cleanup(func() { SetStorageKey(nil) })
+
+	if StorageKey() != nil {
+		t.Fatal("expected StorageKey to start nil")
+	}
+	key := []byte("0123456789abcdef0123456789abcdef")
+	SetStorageKey(key)
+	if string(StorageKey()) != string(key) {
+		t.Error("StorageKey did not return the key set by SetStorageKey")
 	}
 }
