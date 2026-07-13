@@ -48,6 +48,7 @@ type Agent struct {
 	chartCh            chan<- ChartEvent
 	debugLogger        *log.Logger
 	currentPortfolioID string
+	lastUsage          llm.TokenUsage
 }
 
 // New creates an Agent. model selects which model to use; empty string uses the
@@ -86,6 +87,13 @@ func (a *Agent) SetChartCh(ch chan<- ChartEvent) {
 // Pass nil to detach.
 func (a *Agent) SetNewsProvider(p *news.Provider) {
 	a.news = p
+}
+
+// LastUsage returns the token usage reported by the most recent LLM
+// completion within this Agent's lifetime (the final ReAct iteration of the
+// last Chat/ChatStream call). Zero value if no completion has happened yet.
+func (a *Agent) LastUsage() llm.TokenUsage {
+	return a.lastUsage
 }
 
 // Chat runs the agentic loop and returns the final assistant message.

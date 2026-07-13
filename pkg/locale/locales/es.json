@@ -565,6 +565,39 @@
   "agent.export_error": {
     "other": "Error al exportar: {{.Error}}"
   },
+  "agent.cmd.info": {
+    "other": "Mostrar información del modelo, proveedor y sesión"
+  },
+  "agent.info.provider": {
+    "other": "Proveedor: {{.Provider}}"
+  },
+  "agent.info.model": {
+    "other": "Modelo: {{.Model}}"
+  },
+  "agent.info.context_window": {
+    "other": "Ventana de contexto: {{.Tokens}} tokens"
+  },
+  "agent.info.context_window_unknown": {
+    "other": "Ventana de contexto: desconocida"
+  },
+  "agent.info.session_name": {
+    "other": "Sesión: {{.Title}}"
+  },
+  "agent.info.session_messages": {
+    "other": "Mensajes: {{.Count}}"
+  },
+  "agent.info.session_created": {
+    "other": "Creada: {{.Date}}"
+  },
+  "agent.info.context_used": {
+    "other": "Contexto utilizado (última consulta): {{.Prompt}} entrada + {{.Completion}} salida = {{.Total}} tokens"
+  },
+  "agent.info.context_used_pct": {
+    "other": "Contexto utilizado (última consulta): {{.Prompt}} entrada + {{.Completion}} salida = {{.Total}} tokens ({{.Pct}}% de la ventana)"
+  },
+  "agent.info.context_used_none": {
+    "other": "Contexto utilizado: aún no se ha completado ninguna consulta en esta sesión"
+  },
   "agent.tool_financial": {
     "other": "Consultando datos financieros..."
   },

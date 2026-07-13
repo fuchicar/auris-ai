@@ -68,6 +68,7 @@ var agentCommands = []agentCmd{
 	{"marketproviders", "/marketproviders", "agent.cmd.marketproviders", true},
 	{"aiproviders", "/aiproviders", "agent.cmd.aiproviders", true},
 	{"export", "/export [filename]", "agent.cmd.export", true},
+	{"info", "/info", "agent.cmd.info", true},
 	{"theme", "/theme [light|dark|greenlight|greendark|boxlight|boxdark]", "agent.cmd.theme", false},
 	{"language", "/language [en|es]", "agent.cmd.language", false},
 	{"exit", "/exit", "agent.cmd.exit", true},
@@ -135,6 +136,9 @@ type AgentModel struct {
 
 	// infoMsg is a transient status line shown after /export (cleared on next send).
 	infoMsg string
+
+	// infoBlock is a transient multi-line info panel shown after /info (cleared on next send).
+	infoBlock string
 
 	// Markdown renderer — recreated when viewport width or light/dark base changes.
 	renderer      *glamour.TermRenderer
@@ -664,6 +668,9 @@ func (m *AgentModel) handleEnter() (tea.Model, tea.Cmd) {
 			if cmd.name == "export" {
 				return m.handleExportCmd(nil)
 			}
+			if cmd.name == "info" {
+				return m.handleInfoCmd()
+			}
 			return m.emitCommand(cmd.name, nil)
 		}
 		// Autocomplete: put "/name " in the input so the user can type the args.
@@ -692,6 +699,9 @@ func (m *AgentModel) handleEnter() (tea.Model, tea.Cmd) {
 				if cmd.name == name {
 					if name == "export" {
 						return m.handleExportCmd(args)
+					}
+					if name == "info" {
+						return m.handleInfoCmd()
 					}
 					return m.emitCommand(name, args)
 				}
@@ -730,6 +740,7 @@ func (m *AgentModel) handleExportCmd(args []string) (tea.Model, tea.Cmd) {
 	m.updateInputHeight()
 	m.err = ""
 	m.infoMsg = ""
+	m.infoBlock = ""
 	var filename string
 	if len(args) > 0 {
 		filename = args[0]
@@ -781,6 +792,82 @@ func exportSessionCmd(session *config.Session, filename string) tea.Cmd {
 		}
 		return agentExportMsg{path: absPath}
 	}
+}
+
+// handleInfoCmd resets palette state and renders the /info panel. Unlike
+// /export it needs no I/O — provider/model/session data is already in
+// memory — so it runs synchronously with no tea.Cmd round-trip.
+func (m *AgentModel) handleInfoCmd() (tea.Model, tea.Cmd) {
+	m.showCmdPalette = false
+	m.cmdMatches = nil
+	m.cmdCursor = 0
+	m.cmdOffset = 0
+	m.input.SetValue("")
+	m.updateInputHeight()
+	m.err = ""
+	m.infoMsg = ""
+	m.infoBlock = m.buildInfoBlock()
+	if m.ready {
+		m.viewport.SetContent(m.renderHistory())
+		m.viewport.GotoBottom()
+	}
+	return m, nil
+}
+
+// buildInfoBlock composes the multi-line panel shown by /info: which
+// provider/model is running (and its context window, if known), plus the
+// current session's name, size, and how much of that window the most recent
+// turn actually used.
+func (m *AgentModel) buildInfoBlock() string {
+	lines := []string{
+		locale.Tp("agent.info.provider", map[string]any{"Provider": m.provider.Name()}),
+		locale.Tp("agent.info.model", map[string]any{"Model": m.modelID}),
+	}
+
+	var window int
+	if cwr, ok := m.provider.(llm.ContextWindowReporter); ok {
+		window = cwr.ContextWindow(m.modelID)
+	}
+	if window > 0 {
+		lines = append(lines, locale.Tp("agent.info.context_window", map[string]any{"Tokens": window}))
+	} else {
+		lines = append(lines, locale.T("agent.info.context_window_unknown"))
+	}
+
+	title := m.session.Title
+	if title == "" || title == "new_session" {
+		title = "Untitled"
+	}
+	lines = append(lines,
+		"",
+		locale.Tp("agent.info.session_name", map[string]any{"Title": title}),
+		locale.Tp("agent.info.session_messages", map[string]any{"Count": len(m.session.History)}),
+		locale.Tp("agent.info.session_created", map[string]any{"Date": m.session.CreatedAt.Format("2006-01-02 15:04")}),
+	)
+
+	usage := m.ag.LastUsage()
+	if usage.PromptTokens == 0 && usage.CompletionTokens == 0 {
+		lines = append(lines, locale.T("agent.info.context_used_none"))
+	} else {
+		total := usage.PromptTokens + usage.CompletionTokens
+		if window > 0 {
+			pct := float64(usage.PromptTokens) / float64(window) * 100
+			lines = append(lines, locale.Tp("agent.info.context_used_pct", map[string]any{
+				"Prompt":     usage.PromptTokens,
+				"Completion": usage.CompletionTokens,
+				"Total":      total,
+				"Pct":        fmt.Sprintf("%.1f", pct),
+			}))
+		} else {
+			lines = append(lines, locale.Tp("agent.info.context_used", map[string]any{
+				"Prompt":     usage.PromptTokens,
+				"Completion": usage.CompletionTokens,
+				"Total":      total,
+			}))
+		}
+	}
+
+	return strings.Join(lines, "\n")
 }
 
 func (m *AgentModel) handleAgentResponse(msg agentResponseMsg) (tea.Model, tea.Cmd) {
@@ -884,6 +971,7 @@ func (m *AgentModel) sendMessage(text string) (tea.Model, tea.Cmd) {
 	m.updateInputHeight()
 	m.err = ""
 	m.infoMsg = ""
+	m.infoBlock = ""
 	m.session.History = append(m.session.History, config.ChatTurn{Role: "user", Content: text})
 	m.messages = append(m.messages, llm.Message{Role: llm.RoleUser, Content: text})
 	m.streaming = true
@@ -972,7 +1060,7 @@ func (m *AgentModel) renderMarkdown(s string) string {
 // Each turn is word-wrapped to m.width so lines never extend beyond the
 // visible area (the viewport does not wrap automatically).
 func (m *AgentModel) renderHistory() string {
-	if len(m.session.History) == 0 && !m.streaming {
+	if len(m.session.History) == 0 && !m.streaming && m.err == "" && m.infoMsg == "" && m.infoBlock == "" {
 		return m.styles.Hint.Render(locale.T("agent.empty"))
 	}
 
@@ -1028,6 +1116,11 @@ func (m *AgentModel) renderHistory() string {
 	if m.infoMsg != "" {
 		sb.WriteString("\n")
 		sb.WriteString(wrap(m.styles.Hint.Render(fmt.Sprintf("✓ %s", m.infoMsg))))
+	}
+
+	if m.infoBlock != "" {
+		sb.WriteString("\n")
+		sb.WriteString(wrap(m.styles.Hint.Render(m.infoBlock)))
 	}
 
 	return sb.String()

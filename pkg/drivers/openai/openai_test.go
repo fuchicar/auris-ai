@@ -13,6 +13,7 @@ import (
 )
 
 var _ llm.AIProvider = (*openai.Driver)(nil)
+var _ llm.ContextWindowReporter = (*openai.Driver)(nil)
 
 func TestInterfaceCompliance(t *testing.T) {
 	var _ llm.AIProvider = (*openai.Driver)(nil)

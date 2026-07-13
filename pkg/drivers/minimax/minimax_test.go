@@ -13,6 +13,7 @@ import (
 )
 
 var _ llm.AIProvider = (*minimax.Driver)(nil)
+var _ llm.ContextWindowReporter = (*minimax.Driver)(nil)
 
 func TestInterfaceCompliance(t *testing.T) {
 	var _ llm.AIProvider = (*minimax.Driver)(nil)

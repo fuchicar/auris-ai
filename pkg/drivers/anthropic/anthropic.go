@@ -18,6 +18,12 @@ import (
 
 const defaultMaxTokens = 8192
 
+// contextWindowDefault is the standard context window shared by every
+// current Claude 3+/4 model family. Anthropic's model-list API does not
+// report this, so it's hardcoded here; revisit if a future model ships with
+// a different (e.g. long-context beta) window.
+const contextWindowDefault = 200_000
+
 // Option configures a Driver.
 type Option func(*Driver)
 
@@ -122,6 +128,15 @@ func (d *Driver) ListModels(ctx context.Context) ([]llm.Model, error) {
 		return nil, fmt.Errorf("anthropic: ListModels: %w", mapErr(err))
 	}
 	return models, nil
+}
+
+// ContextWindow implements llm.ContextWindowReporter. Every known Claude
+// model ID reports the shared 200K window; unrecognized IDs report 0.
+func (d *Driver) ContextWindow(model string) int {
+	if strings.HasPrefix(model, "claude-") {
+		return contextWindowDefault
+	}
+	return 0
 }
 
 // Complete sends a blocking completion request and returns the full response.

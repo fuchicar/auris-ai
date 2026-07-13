@@ -119,6 +119,34 @@ func (d *Driver) ListModels(ctx context.Context) ([]llm.Model, error) {
 	return models, nil
 }
 
+// contextWindows maps known Gemini model-family prefixes to their published
+// input token limit. Google's model-list API doesn't surface this on the
+// [genai.Model] returned by client.Models.All, so it's hardcoded here;
+// revisit if a new model family ships with a different window.
+var contextWindows = []struct {
+	prefix string
+	tokens int
+}{
+	{"gemini-2.5-pro", 1_048_576},
+	{"gemini-2.5-flash", 1_048_576},
+	{"gemini-2.0-flash", 1_048_576},
+	{"gemini-1.5-pro", 2_097_152},
+	{"gemini-1.5-flash", 1_048_576},
+}
+
+// ContextWindow implements llm.ContextWindowReporter. model may be a bare
+// model ID or a "models/<id>" resource name as returned by ListModels; both
+// forms are matched by prefix. Returns 0 for unrecognized models.
+func (d *Driver) ContextWindow(model string) int {
+	name := strings.TrimPrefix(model, "models/")
+	for _, cw := range contextWindows {
+		if strings.HasPrefix(name, cw.prefix) {
+			return cw.tokens
+		}
+	}
+	return 0
+}
+
 // Complete sends a non-streaming completion request and returns the full response.
 func (d *Driver) Complete(ctx context.Context, req llm.CompletionRequest) (llm.CompletionResponse, error) {
 	client, err := d.getClient()

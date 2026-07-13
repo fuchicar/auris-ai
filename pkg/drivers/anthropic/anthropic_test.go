@@ -13,6 +13,7 @@ import (
 )
 
 var _ llm.AIProvider = (*anthropic.Driver)(nil)
+var _ llm.ContextWindowReporter = (*anthropic.Driver)(nil)
 
 func TestInterfaceCompliance(t *testing.T) {
 	var _ llm.AIProvider = (*anthropic.Driver)(nil)

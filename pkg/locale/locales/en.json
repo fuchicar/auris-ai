@@ -565,6 +565,39 @@
   "agent.export_error": {
     "other": "Export failed: {{.Error}}"
   },
+  "agent.cmd.info": {
+    "other": "Show model, provider, and session info"
+  },
+  "agent.info.provider": {
+    "other": "Provider: {{.Provider}}"
+  },
+  "agent.info.model": {
+    "other": "Model: {{.Model}}"
+  },
+  "agent.info.context_window": {
+    "other": "Context window: {{.Tokens}} tokens"
+  },
+  "agent.info.context_window_unknown": {
+    "other": "Context window: unknown"
+  },
+  "agent.info.session_name": {
+    "other": "Session: {{.Title}}"
+  },
+  "agent.info.session_messages": {
+    "other": "Messages: {{.Count}}"
+  },
+  "agent.info.session_created": {
+    "other": "Created: {{.Date}}"
+  },
+  "agent.info.context_used": {
+    "other": "Context used (last turn): {{.Prompt}} in + {{.Completion}} out = {{.Total}} tokens"
+  },
+  "agent.info.context_used_pct": {
+    "other": "Context used (last turn): {{.Prompt}} in + {{.Completion}} out = {{.Total}} tokens ({{.Pct}}% of window)"
+  },
+  "agent.info.context_used_none": {
+    "other": "Context used: no completions yet this session"
+  },
   "agent.tool_financial": {
     "other": "Querying financial data..."
   },

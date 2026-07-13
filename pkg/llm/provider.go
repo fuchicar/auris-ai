@@ -33,3 +33,11 @@ type AIProvider interface {
 	// Runtime streaming errors are carried inside StreamChunk.Err.
 	Stream(ctx context.Context, req CompletionRequest) (<-chan StreamChunk, error)
 }
+
+// ContextWindowReporter is an optional interface a driver can implement to
+// report a model's token context window synchronously, with no network call.
+// Returns 0 if the model is unrecognized or the window is unknown. Mirrors
+// the market.CapabilityReporter optional-interface pattern.
+type ContextWindowReporter interface {
+	ContextWindow(model string) int
+}

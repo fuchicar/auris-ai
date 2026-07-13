@@ -26,6 +26,7 @@ func skipIfRateLimited(t *testing.T, err error) {
 
 func TestInterfaceCompliance(t *testing.T) {
 	var _ llm.AIProvider = (*gemini.Driver)(nil)
+	var _ llm.ContextWindowReporter = (*gemini.Driver)(nil)
 }
 
 // ── Unit tests (no network) ──────────────────────────────────────────────────

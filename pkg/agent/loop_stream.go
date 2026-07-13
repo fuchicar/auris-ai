@@ -49,6 +49,7 @@ func runLoopStream(ctx context.Context, a *Agent, messages []llm.Message, onDelt
 				final = chunk
 			}
 		}
+		a.lastUsage = final.Usage
 
 		respMsg := llm.Message{
 			Role:      llm.RoleAssistant,

@@ -126,6 +126,36 @@ func (d *Driver) ListModels(ctx context.Context) ([]llm.Model, error) {
 	return models, nil
 }
 
+// contextWindows maps known OpenAI model-ID prefixes to their published
+// context window. OpenAI's /v1/models endpoint doesn't report this, so it's
+// hardcoded here; revisit if a new model family ships with a different
+// window. Unmatched IDs (including third-party OpenAI-compatible endpoints
+// configured via WithBaseURL) correctly fall back to 0/unknown.
+var contextWindows = []struct {
+	prefix string
+	tokens int
+}{
+	{"gpt-4o", 128_000},
+	{"gpt-4-turbo", 128_000},
+	{"gpt-4.1", 1_047_576},
+	{"gpt-4", 8_192},
+	{"gpt-3.5-turbo", 16_385},
+	{"o1", 200_000},
+	{"o3", 200_000},
+	{"o4", 200_000},
+}
+
+// ContextWindow implements llm.ContextWindowReporter. Returns 0 for
+// unrecognized model IDs.
+func (d *Driver) ContextWindow(model string) int {
+	for _, cw := range contextWindows {
+		if strings.HasPrefix(model, cw.prefix) {
+			return cw.tokens
+		}
+	}
+	return 0
+}
+
 // Complete sends a blocking completion request and returns the full response.
 func (d *Driver) Complete(ctx context.Context, req llm.CompletionRequest) (llm.CompletionResponse, error) {
 	client, err := d.getClient()

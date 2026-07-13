@@ -56,6 +56,12 @@ func WithContextSize(n int) Option {
 	}
 }
 
+// ContextWindow implements llm.ContextWindowReporter. It reports the
+// configured effective num_ctx rather than a per-model native maximum: Ollama
+// truncates every request to numCtx regardless of what the model natively
+// supports, so this is the number that actually bounds usable context.
+func (d *Driver) ContextWindow(model string) int { return d.numCtx }
+
 // New constructs a Driver. All options are optional; sensible defaults are applied.
 func New(opts ...Option) *Driver {
 	d := &Driver{

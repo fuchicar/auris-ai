@@ -17,6 +17,7 @@ import (
 
 func TestInterfaceCompliance(t *testing.T) {
 	var _ llm.AIProvider = (*ollama.Driver)(nil)
+	var _ llm.ContextWindowReporter = (*ollama.Driver)(nil)
 }
 
 // ── Unit tests (no network) ──────────────────────────────────────────────────

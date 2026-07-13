@@ -3,6 +3,7 @@ package minimax
 import (
 	"context"
 	"net/http"
+	"strings"
 
 	"auris/pkg/drivers/anthropic"
 	"auris/pkg/llm"
@@ -48,6 +49,30 @@ func (d *Driver) Ping(ctx context.Context) error       { return d.inner.Ping(ctx
 // URL is configured.
 func (d *Driver) ListModels(ctx context.Context) ([]llm.Model, error) {
 	return d.inner.ListModels(ctx)
+}
+
+// contextWindowPrefixes maps known MiniMax model-ID prefixes to their
+// published context window. Deliberately not delegated to the wrapped
+// anthropic.Driver's own table: MiniMax's model lineup (MiniMax-M*,
+// MiniMax-Text-*) doesn't share Claude's naming, so those prefixes would
+// never match. Revisit if MiniMax ships a model outside this window.
+var contextWindowPrefixes = []struct {
+	prefix string
+	tokens int
+}{
+	{"MiniMax-Text", 1_000_000},
+	{"MiniMax-M", 1_000_000},
+}
+
+// ContextWindow implements llm.ContextWindowReporter. Returns 0 for
+// unrecognized model IDs.
+func (d *Driver) ContextWindow(model string) int {
+	for _, cw := range contextWindowPrefixes {
+		if strings.HasPrefix(model, cw.prefix) {
+			return cw.tokens
+		}
+	}
+	return 0
 }
 
 func (d *Driver) Complete(ctx context.Context, req llm.CompletionRequest) (llm.CompletionResponse, error) {
