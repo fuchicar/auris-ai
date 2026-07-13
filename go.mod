@@ -12,6 +12,7 @@ require (
 	github.com/charmbracelet/x/ansi v0.11.6
 	github.com/mmcdole/gofeed v1.3.0
 	github.com/nicksnyder/go-i18n/v2 v2.6.1
+	github.com/openai/openai-go v1.12.0
 	golang.org/x/crypto v0.51.0
 	golang.org/x/net v0.53.0
 	golang.org/x/text v0.37.0

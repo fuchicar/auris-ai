@@ -447,6 +447,12 @@
   "setup.ai.config.baseurl.hint": {
     "other": "e.g. http://my-server:11434 · Enter confirm"
   },
+  "setup.ai.config.baseurl.generic.label": {
+    "other": "Base URL"
+  },
+  "setup.ai.config.baseurl.generic.hint": {
+    "other": "e.g. https://api.example.com/v1 · Enter confirm"
+  },
   "setup.ai.config.apikey.label": {
     "other": "API key (optional — Enter or Esc to skip)"
   },
@@ -459,6 +465,12 @@
   "setup.ai.config.apikey.required.hint": {
     "other": "Enter API key · Enter validate"
   },
+  "setup.ai.config.model.label": {
+    "other": "Default model ID"
+  },
+  "setup.ai.config.model.hint": {
+    "other": "e.g. gpt-4o-mini, or your provider's model name · Enter confirm"
+  },
   "setup.ai.config.connecting": {
     "other": "Connecting and listing models…"
   },
@@ -466,7 +478,7 @@
     "other": "Connection failed: {{.Error}}"
   },
   "setup.ai.config.retry": {
-    "other": "Press Enter to retry"
+    "other": "Press Enter to edit and try again"
   },
   "setup.ai.model.provider.label": {
     "other": "Select the default AI provider"

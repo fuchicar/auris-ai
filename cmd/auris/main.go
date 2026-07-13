@@ -20,6 +20,14 @@
 //	                       Increase to use larger context windows on capable models
 //	                       (e.g. 131072 for gemma4:e2b's full 128k window). Higher
 //	                       values consume more RAM for the KV cache.
+//
+//	OPENAI_BASE_URL        Fallback base URL for the OpenAI driver, used only when
+//	OPENAI_API_KEY         no base URL / API key is configured in the setup wizard.
+//	                       Unlike AURIS_OLLAMA_NUM_CTX, these follow the OpenAI SDKs'
+//	                       own naming convention (no AURIS_ prefix) so any
+//	                       OpenAI-compatible third party (MiniMax, DeepSeek, Groq,
+//	                       OpenRouter, a self-hosted proxy, ...) already configured
+//	                       via these variables works without extra setup.
 package main
 
 import (
@@ -47,6 +55,14 @@ Environment variables:
         unlock larger context windows on capable models (e.g. 131072 for
         gemma4:e2b's full 128k window). Higher values consume more RAM for
         the KV cache.
+
+  OPENAI_BASE_URL, OPENAI_API_KEY
+        Fallback base URL / API key for the OpenAI driver, used only when
+        the setup wizard hasn't configured one. Unlike AURIS_OLLAMA_NUM_CTX,
+        these follow the naming convention OpenAI's own SDKs use (no AURIS_
+        prefix), so any OpenAI-compatible third party (MiniMax, DeepSeek,
+        Groq, OpenRouter, a self-hosted proxy, ...) already configured via
+        these variables works without extra setup.
 `)
 	}
 	flag.Parse()

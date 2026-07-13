@@ -601,6 +601,15 @@ func (a *AppModel) transition(msg ScreenDoneMsg) (tea.Model, tea.Cmd) {
 				a.screen = ScreenAIDefaultModel
 				a.current = newAIDefaultModelModel(entries, a.pendingLLMModels, a.styles, false)
 			}
+		} else {
+			// nil result = cancelled via Esc — back one level to letting the
+			// user re-pick which AI providers to configure.
+			preSelected := make(map[string]bool, len(a.pendingLLMProviders))
+			for _, k := range a.pendingLLMProviders {
+				preSelected[k] = true
+			}
+			a.screen = ScreenAIProviderSelect
+			a.current = newAIProviderSelectModel(a.styles, preSelected, a.managingProviders)
 		}
 
 	case ScreenAIDefaultModel:

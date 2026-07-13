@@ -8,12 +8,25 @@ import (
 	"auris/pkg/drivers/gemini"
 	"auris/pkg/drivers/minimax"
 	"auris/pkg/drivers/ollama"
+	"auris/pkg/drivers/openai"
 	"auris/pkg/llm"
 )
 
 // envOllamaNumCtx, if set to a positive integer, overrides the Ollama driver's
 // default context window (num_ctx). Documented in `auris -h`.
 const envOllamaNumCtx = "AURIS_OLLAMA_NUM_CTX"
+
+// envOpenAIBaseURL and envOpenAIAPIKey mirror the environment variable
+// convention used by OpenAI's own SDKs (no AURIS_ prefix, deliberately), so
+// any OpenAI-compatible third party (MiniMax, DeepSeek, Groq, OpenRouter, a
+// self-hosted proxy, ...) that a user already has configured via these
+// variables works with the openai driver without extra setup. They are only
+// used as a fallback when the corresponding field is left empty in Auris's
+// own config. Documented in `auris -h`.
+const (
+	envOpenAIBaseURL = "OPENAI_BASE_URL"
+	envOpenAIAPIKey  = "OPENAI_API_KEY"
+)
 
 // LLMEntry describes a registered AI provider.
 type LLMEntry struct {
@@ -79,6 +92,42 @@ func AllLLM() []LLMEntry {
 					opts = append(opts, minimax.WithBaseURL(baseURL))
 				}
 				return minimax.New(apiKey, opts...)
+			},
+		},
+		{
+			Key:         "openai",
+			DisplayName: "OpenAI",
+			New: func(baseURL, apiKey string) llm.AIProvider {
+				var opts []openai.Option
+				effectiveBaseURL := baseURL
+				if effectiveBaseURL == "" {
+					effectiveBaseURL = os.Getenv(envOpenAIBaseURL)
+				}
+				if effectiveBaseURL != "" {
+					opts = append(opts, openai.WithBaseURL(effectiveBaseURL))
+				}
+				effectiveAPIKey := apiKey
+				if effectiveAPIKey == "" {
+					effectiveAPIKey = os.Getenv(envOpenAIAPIKey)
+				}
+				return openai.New(effectiveAPIKey, opts...)
+			},
+		},
+		{
+			Key:         "openai_compatible",
+			DisplayName: "OpenAI-Compatible",
+			// Deliberately no OPENAI_BASE_URL/OPENAI_API_KEY fallback here — this
+			// entry exists precisely so a third-party endpoint can be configured
+			// independently of (and without colliding with) the plain "openai"
+			// entry above. Both baseURL and apiKey must come from Auris's own
+			// config (set via the setup wizard, where base URL is a required
+			// field for this provider — see screen_ai_config.go).
+			New: func(baseURL, apiKey string) llm.AIProvider {
+				var opts []openai.Option
+				if baseURL != "" {
+					opts = append(opts, openai.WithBaseURL(baseURL))
+				}
+				return openai.New(apiKey, opts...)
 			},
 		},
 	}

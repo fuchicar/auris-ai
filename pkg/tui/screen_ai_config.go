@@ -21,11 +21,12 @@ const aiConnectTimeout = 15 * time.Second
 type aiConfigStep int
 
 const (
-	aiStepOllamaMode  aiConfigStep = iota // Ollama only: local vs remote selection
-	aiStepBaseURL                         // Ollama remote: enter server URL
-	aiStepAPIKey                          // API key (required for Gemini, optional for Ollama remote)
-	aiStepConnecting                      // async connect + list models
-	aiStepError                           // show error with retry option
+	aiStepOllamaMode aiConfigStep = iota // Ollama only: local vs remote selection
+	aiStepBaseURL                        // Ollama remote, or openai_compatible: enter server URL
+	aiStepAPIKey                         // API key (required for most providers, optional for Ollama)
+	aiStepModelName                      // openai_compatible only: free-text default model ID
+	aiStepConnecting                     // async connect + list models
+	aiStepError                          // show error; Enter returns to the failed step to edit it, Esc cancels
 )
 
 // aiConnectResultMsg carries the outcome of an async connect + ListModels call.
@@ -39,9 +40,11 @@ type aiConnectResultMsg struct {
 type AIProviderConfigModel struct {
 	entry      registry.LLMEntry
 	step       aiConfigStep
-	modeSelect int // cursor for local/remote option (Ollama only)
+	errStep    aiConfigStep // step to return to for editing after a connect error
+	modeSelect int          // cursor for local/remote option (Ollama only)
 	baseURL    string
 	apiKey     string
+	modelName  string // openai_compatible only: user-typed default model ID
 	input      textinput.Model
 	spin       spinner.Model
 	err        string
@@ -49,8 +52,9 @@ type AIProviderConfigModel struct {
 }
 
 // newAIProviderConfigModel constructs an [AIProviderConfigModel] for the given
-// provider. Ollama starts at the local/remote selection step; other providers
-// start directly at the API key step.
+// provider. Ollama starts at the local/remote selection step; openai_compatible
+// starts at the base URL step (it has no local/remote concept — the base URL is
+// always required); other providers start directly at the API key step.
 func newAIProviderConfigModel(entry registry.LLMEntry, s *Styles) *AIProviderConfigModel {
 	ti := textinput.New()
 
@@ -65,9 +69,14 @@ func newAIProviderConfigModel(entry registry.LLMEntry, s *Styles) *AIProviderCon
 		styles: s,
 	}
 
-	if entry.Key == "ollama" {
+	switch entry.Key {
+	case "ollama":
 		m.step = aiStepOllamaMode
-	} else {
+	case "openai_compatible":
+		m.step = aiStepBaseURL
+		m.input.Placeholder = "https://api.example.com/v1"
+		m.input.Focus()
+	default:
 		m.step = aiStepAPIKey
 		m.input.Placeholder = "API key"
 		m.input.Focus()
@@ -77,7 +86,7 @@ func newAIProviderConfigModel(entry registry.LLMEntry, s *Styles) *AIProviderCon
 
 // Init implements [tea.Model].
 func (m *AIProviderConfigModel) Init() tea.Cmd {
-	if m.step == aiStepAPIKey {
+	if m.step == aiStepAPIKey || m.step == aiStepBaseURL {
 		return textinput.Blink
 	}
 	return nil
@@ -116,7 +125,7 @@ func (m *AIProviderConfigModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	// Non-key messages (blink timer, etc.) go to the text input when active.
-	if m.step == aiStepBaseURL || m.step == aiStepAPIKey {
+	if m.step == aiStepBaseURL || m.step == aiStepAPIKey || m.step == aiStepModelName {
 		in, cmd := m.input.Update(msg)
 		m.input = in
 		return m, cmd
@@ -137,9 +146,12 @@ func (m *AIProviderConfigModel) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd
 			if m.modeSelect < 1 {
 				m.modeSelect++
 			}
+		case tea.KeyEsc:
+			return m, cancelConfigCmd()
 		case tea.KeyEnter:
 			if m.modeSelect == 0 {
 				// Local: connect immediately with defaults
+				m.errStep = aiStepOllamaMode
 				return m.startConnecting()
 			}
 			// Remote: ask for server URL next
@@ -152,11 +164,19 @@ func (m *AIProviderConfigModel) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd
 		return m, nil
 
 	case aiStepBaseURL:
+		if msg.Type == tea.KeyEsc {
+			return m, cancelConfigCmd()
+		}
 		if msg.Type == tea.KeyEnter && m.input.Value() != "" {
 			m.baseURL = m.input.Value()
 			m.step = aiStepAPIKey
-			m.input.Placeholder = "API key (optional)"
+			if m.entry.Key == "ollama" {
+				m.input.Placeholder = "API key (optional)"
+			} else {
+				m.input.Placeholder = "API key"
+			}
 			m.input.SetValue("")
+			m.input.Focus()
 			return m, textinput.Blink
 		}
 		in, cmd := m.input.Update(msg)
@@ -170,24 +190,61 @@ func (m *AIProviderConfigModel) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd
 				return m, nil // required for non-Ollama providers
 			}
 			m.apiKey = m.input.Value()
+			if m.entry.Key == "openai_compatible" {
+				m.step = aiStepModelName
+				m.input.Placeholder = "gpt-4o-mini"
+				m.input.SetValue("")
+				m.input.Focus()
+				return m, textinput.Blink
+			}
 			m.input.Blur()
+			m.errStep = aiStepAPIKey
 			return m.startConnecting()
 		case tea.KeyEsc:
 			if m.entry.Key == "ollama" {
 				// API key is optional for Ollama
 				m.apiKey = ""
 				m.input.Blur()
+				m.errStep = aiStepAPIKey
 				return m.startConnecting()
 			}
+			return m, cancelConfigCmd()
+		}
+		in, cmd := m.input.Update(msg)
+		m.input = in
+		return m, cmd
+
+	case aiStepModelName:
+		switch msg.Type {
+		case tea.KeyEnter:
+			if m.input.Value() == "" {
+				return m, nil // default model is required
+			}
+			m.modelName = m.input.Value()
+			m.input.Blur()
+			m.errStep = aiStepModelName
+			return m.startConnecting()
+		case tea.KeyEsc:
+			return m, cancelConfigCmd()
 		}
 		in, cmd := m.input.Update(msg)
 		m.input = in
 		return m, cmd
 
 	case aiStepError:
-		if msg.Type == tea.KeyEnter {
+		switch msg.Type {
+		case tea.KeyEnter:
+			// Return to the step that failed so the user can correct what
+			// they typed, instead of blindly resubmitting the same value.
 			m.err = ""
-			return m.startConnecting()
+			m.step = m.errStep
+			if m.step == aiStepBaseURL || m.step == aiStepAPIKey || m.step == aiStepModelName {
+				m.input.Focus()
+				return m, textinput.Blink
+			}
+			return m, nil
+		case tea.KeyEsc:
+			return m, cancelConfigCmd()
 		}
 		return m, nil
 	}
@@ -195,23 +252,40 @@ func (m *AIProviderConfigModel) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd
 	return m, nil
 }
 
+// cancelConfigCmd emits the "cancelled via Esc" signal. app.go's transition
+// treats a nil Result from ScreenAIProviderConfig as "back one level to
+// provider selection", mirroring the same convention already used by
+// ScreenAIProviderSelect and ScreenMarketProviderManage.
+func cancelConfigCmd() tea.Cmd {
+	return func() tea.Msg {
+		return ScreenDoneMsg{From: ScreenAIProviderConfig, Result: nil}
+	}
+}
+
 func (m *AIProviderConfigModel) startConnecting() (tea.Model, tea.Cmd) {
 	m.step = aiStepConnecting
 	entry := m.entry
 	baseURL := m.baseURL
 	apiKey := m.apiKey
-	return m, tea.Batch(m.spin.Tick, aiConnectCmd(entry, baseURL, apiKey))
+	modelName := m.modelName
+	return m, tea.Batch(m.spin.Tick, aiConnectCmd(entry, baseURL, apiKey, modelName))
 }
 
 // aiConnectCmd constructs the driver, calls Connect, lists models, and returns
-// the result as an [aiConnectResultMsg].
-func aiConnectCmd(entry registry.LLMEntry, baseURL, apiKey string) tea.Cmd {
+// the result as an [aiConnectResultMsg]. When modelName is non-empty (the
+// openai_compatible provider, where the user typed the default model by hand),
+// ListModels is skipped entirely — the chosen model doesn't depend on the
+// third-party endpoint implementing model discovery.
+func aiConnectCmd(entry registry.LLMEntry, baseURL, apiKey, modelName string) tea.Cmd {
 	return func() tea.Msg {
 		drv := entry.New(baseURL, apiKey)
 		ctx, cancel := context.WithTimeout(context.Background(), aiConnectTimeout)
 		defer cancel()
 		if err := drv.Connect(ctx); err != nil {
 			return aiConnectResultMsg{err: err}
+		}
+		if modelName != "" {
+			return aiConnectResultMsg{models: []llm.Model{{ID: modelName, Name: modelName}}}
 		}
 		models, err := drv.ListModels(ctx)
 		return aiConnectResultMsg{models: models, err: err}
@@ -221,6 +295,7 @@ func aiConnectCmd(entry registry.LLMEntry, baseURL, apiKey string) tea.Cmd {
 // View implements [tea.Model].
 func (m *AIProviderConfigModel) View() string {
 	title := m.styles.Subtitle.Render(m.entry.DisplayName)
+	escHint := locale.T("hint.esc_back")
 
 	switch m.step {
 	case aiStepOllamaMode:
@@ -240,15 +315,19 @@ func (m *AIProviderConfigModel) View() string {
 				rows = append(rows, fmt.Sprintf("  %s", m.styles.Unselected.Render(opt)))
 			}
 		}
-		hint := m.styles.Hint.Render(locale.T("setup.ai.model.hint"))
+		hint := m.styles.Hint.Render(locale.T("setup.ai.model.hint") + "  " + escHint)
 		parts := append([]string{title, "", label}, rows...)
 		parts = append(parts, hint)
 		return lipgloss.JoinVertical(lipgloss.Left, parts...)
 
 	case aiStepBaseURL:
-		label := m.styles.Unselected.Render(locale.T("setup.ai.config.baseurl.label"))
+		labelKey, hintKey := "setup.ai.config.baseurl.label", "setup.ai.config.baseurl.hint"
+		if m.entry.Key != "ollama" {
+			labelKey, hintKey = "setup.ai.config.baseurl.generic.label", "setup.ai.config.baseurl.generic.hint"
+		}
+		label := m.styles.Unselected.Render(locale.T(labelKey))
 		inp := m.styles.Input.Render(m.input.View())
-		hint := m.styles.Hint.Render(locale.T("setup.ai.config.baseurl.hint"))
+		hint := m.styles.Hint.Render(locale.T(hintKey) + "  " + escHint)
 		return lipgloss.JoinVertical(lipgloss.Left, title, "", label, inp, hint)
 
 	case aiStepAPIKey:
@@ -262,7 +341,13 @@ func (m *AIProviderConfigModel) View() string {
 		}
 		label := m.styles.Unselected.Render(locale.T(labelKey))
 		inp := m.styles.Input.Render(m.input.View())
-		hint := m.styles.Hint.Render(locale.T(hintKey))
+		hint := m.styles.Hint.Render(locale.T(hintKey) + "  " + escHint)
+		return lipgloss.JoinVertical(lipgloss.Left, title, "", label, inp, hint)
+
+	case aiStepModelName:
+		label := m.styles.Unselected.Render(locale.T("setup.ai.config.model.label"))
+		inp := m.styles.Input.Render(m.input.View())
+		hint := m.styles.Hint.Render(locale.T("setup.ai.config.model.hint") + "  " + escHint)
 		return lipgloss.JoinVertical(lipgloss.Left, title, "", label, inp, hint)
 
 	case aiStepConnecting:
@@ -273,7 +358,7 @@ func (m *AIProviderConfigModel) View() string {
 
 	case aiStepError:
 		errMsg := m.styles.Error.Render(fmt.Sprintf("✗ %s", m.err))
-		hint := m.styles.Hint.Render(locale.T("setup.ai.config.retry"))
+		hint := m.styles.Hint.Render(locale.T("setup.ai.config.retry") + "  " + escHint)
 		return lipgloss.JoinVertical(lipgloss.Left, title, "", errMsg, hint)
 	}
 
