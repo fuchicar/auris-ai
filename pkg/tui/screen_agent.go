@@ -20,6 +20,7 @@ import (
 
 	"auris/pkg/agent"
 	"auris/pkg/config"
+	"auris/pkg/drivers/simulation"
 	"auris/pkg/llm"
 	"auris/pkg/locale"
 	"auris/pkg/market"
@@ -67,6 +68,7 @@ var agentCommands = []agentCmd{
 	{"model", "/model", "agent.cmd.model", true},
 	{"marketproviders", "/marketproviders", "agent.cmd.marketproviders", true},
 	{"aiproviders", "/aiproviders", "agent.cmd.aiproviders", true},
+	{"simulation", "/simulation", "agent.cmd.simulation", true},
 	{"export", "/export [filename]", "agent.cmd.export", true},
 	{"info", "/info", "agent.cmd.info", true},
 	{"theme", "/theme [light|dark|greenlight|greendark|boxlight|boxdark]", "agent.cmd.theme", false},
@@ -134,6 +136,12 @@ type AgentModel struct {
 	toolLogsTurn  int                   // index into session.History of the user message that owns toolLogs
 	pendingCharts []string              // rendered ASCII chart blocks accumulated during the current turn
 
+	// simulationMode is true when the active market provider is the
+	// synthetic simulation driver (config.AurisConfig.SimulationMode) — shown
+	// as a persistent notice/badge so the user never mistakes fabricated data
+	// for real market data.
+	simulationMode bool
+
 	// infoMsg is a transient status line shown after /export (cleared on next send).
 	infoMsg string
 
@@ -164,7 +172,9 @@ type AgentModel struct {
 // viewport to be initialised immediately without waiting for a WindowSizeMsg.
 // sysMsg overrides the default system prompt when non-nil (e.g. portfolio agent).
 // portfolioID, when non-empty, scopes portfolio management tools to that portfolio.
-func newAgentModel(provider llm.AIProvider, mp market.ProviderAPI, session *config.Session, modelID string, s *Styles, width, height int, profile *config.FinancialProfile, newsFeeds []news.FeedConfig, debugLogger *log.Logger, sysMsg *llm.Message, portfolioID string) *AgentModel {
+// simulationMode, when true, uses the synthetic simulation news source
+// instead of real RSS feeds and shows the simulation-mode notice/badge.
+func newAgentModel(provider llm.AIProvider, mp market.ProviderAPI, session *config.Session, modelID string, s *Styles, width, height int, profile *config.FinancialProfile, newsFeeds []news.FeedConfig, debugLogger *log.Logger, sysMsg *llm.Message, portfolioID string, simulationMode bool) *AgentModel {
 	ti := textarea.New()
 	ti.Placeholder = locale.T("agent.placeholder")
 	ti.ShowLineNumbers = false
@@ -199,21 +209,28 @@ func newAgentModel(provider llm.AIProvider, mp market.ProviderAPI, session *conf
 	}
 
 	m := &AgentModel{
-		state:    agentStateConnecting,
-		session:  session,
-		input:    ti,
-		spin:     sp,
-		messages: messages,
-		provider: provider,
-		mp:       mp,
-		ag:       agent.New(provider, mp, modelID, agent.WithDebugLogger(debugLogger), agent.WithPortfolioID(portfolioID)),
-		modelID:  modelID,
-		styles:   s,
-		width:    width,
-		height:   height,
+		state:          agentStateConnecting,
+		session:        session,
+		input:          ti,
+		spin:           sp,
+		messages:       messages,
+		provider:       provider,
+		mp:             mp,
+		ag:             agent.New(provider, mp, modelID, agent.WithDebugLogger(debugLogger), agent.WithPortfolioID(portfolioID)),
+		modelID:        modelID,
+		styles:         s,
+		width:          width,
+		height:         height,
+		simulationMode: simulationMode,
 	}
 
-	m.ag.SetNewsProvider(news.NewProvider(newsFeeds))
+	var newsSource news.Source = news.NewProvider(newsFeeds)
+	if simulationMode {
+		if simDriver, ok := mp.(*simulation.Driver); ok {
+			newsSource = simDriver.NewsSource()
+		}
+	}
+	m.ag.SetNewsProvider(newsSource)
 
 	// Initialise the viewport now so it is ready as soon as the connection
 	// succeeds. BubbleTea only sends WindowSizeMsg once (at startup), so new
@@ -819,9 +836,14 @@ func (m *AgentModel) handleInfoCmd() (tea.Model, tea.Cmd) {
 // current session's name, size, and how much of that window the most recent
 // turn actually used.
 func (m *AgentModel) buildInfoBlock() string {
+	marketProviderName := locale.T("agent.info.market_provider_none")
+	if m.mp != nil {
+		marketProviderName = m.mp.Name()
+	}
 	lines := []string{
 		locale.Tp("agent.info.provider", map[string]any{"Provider": m.provider.Name()}),
 		locale.Tp("agent.info.model", map[string]any{"Model": m.modelID}),
+		locale.Tp("agent.info.market_provider", map[string]any{"Provider": marketProviderName}),
 	}
 
 	var window int
@@ -1060,10 +1082,6 @@ func (m *AgentModel) renderMarkdown(s string) string {
 // Each turn is word-wrapped to m.width so lines never extend beyond the
 // visible area (the viewport does not wrap automatically).
 func (m *AgentModel) renderHistory() string {
-	if len(m.session.History) == 0 && !m.streaming && m.err == "" && m.infoMsg == "" && m.infoBlock == "" {
-		return m.styles.Hint.Render(locale.T("agent.empty"))
-	}
-
 	wrap := func(s string) string {
 		if m.width <= 0 {
 			return s
@@ -1071,7 +1089,17 @@ func (m *AgentModel) renderHistory() string {
 		return lipgloss.NewStyle().Width(m.width).Render(s)
 	}
 
+	var notice string
+	if m.simulationMode {
+		notice = wrap(m.styles.Warning.Render("⚠ "+locale.T("agent.simulation_notice"))) + "\n\n"
+	}
+
+	if len(m.session.History) == 0 && !m.streaming && m.err == "" && m.infoMsg == "" && m.infoBlock == "" {
+		return notice + m.styles.Hint.Render(locale.T("agent.empty"))
+	}
+
 	var sb strings.Builder
+	sb.WriteString(notice)
 	for i, turn := range m.session.History {
 		if turn.Role == "user" {
 			sb.WriteString(wrap(m.styles.Selected.Render("You: ") + turn.Content))
@@ -1146,13 +1174,16 @@ func (m *AgentModel) View() string {
 	sep := strings.Repeat("─", m.width)
 	inputRow := m.input.View()
 
-	// Left side: normal help hint.
+	// Left side: normal help hint, with a persistent simulation-mode badge.
 	var leftHint string
 	switch {
 	case m.showCmdPalette:
 		leftHint = m.styles.Hint.Render(locale.T("agent.cmd.hint"))
 	default:
 		leftHint = m.styles.Hint.Render(locale.T("agent.hint"))
+	}
+	if m.simulationMode {
+		leftHint = m.styles.Warning.Render(locale.T("menu.simulation_badge")) + "  " + leftHint
 	}
 
 	// Right side: inference widget (animation + timer, or just timer).

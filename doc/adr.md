@@ -164,3 +164,57 @@ La detección de archivo cifrado vs. plano usa un sobre explícito (`config.Encr
 - Los archivos de carteras/sesiones cifrados y en claro conviven sin problema durante y después de una migración parcial — no hay estado "roto" intermedio.
 - El estado de clave a nivel de paquete es una dependencia oculta (hay que recordar llamar `SetStorageKey` tras desbloquear/cambiar passphrase/toggle) — aceptable en una app TUI de un solo proceso y un solo usuario, documentado en `CLAUDE.md`.
 - Un fallo a mitad del batch de re-cifrado deja algunos archivos migrados y otros no; no hay rollback transaccional (desproporcionado para una feature Tier C) — pero el reintento es seguro gracias al diseño idempotente.
+
+---
+
+## DD-7 — Modo simulación: flag de configuración en vez de proveedor seleccionable, extracción de `news.Source`
+
+- **Status**: accepted
+- **Opened**: 2026-07-13
+- **Closed**: 2026-07-13
+
+### Context
+
+FEAT-19 pide un "modo simulación" para evaluar el agente sin API key de ningún proveedor de mercado real. Dos arquitecturas posibles:
+
+1. **Registrar "simulación" como una entrada más en `registry.AllMarket()`**, seleccionable junto a FMP/EODHD en `ScreenProvider`/`MarketProviderManageModel`. Reutiliza toda la UI de selección existente, pero exige lógica de exclusión mutua nueva (el enunciado prohíbe combinar simulación con proveedores reales) y no hay forma limpia de "recordar" los proveedores reales configurados mientras se usa simulación sin builder ad-hoc en esas pantallas.
+2. **`AurisConfig.SimulationMode bool`**, ortogonal a `cfg.Providers`/`cfg.ActiveProvider`, que cortocircuita `AppModel.buildMarketProvider()` antes de tocar la cadena real.
+
+También hacía falta decidir cómo alimentar `fetch_news` con titulares sintéticos: `pkg/agent.Agent.news` era `*news.Provider` (tipo concreto, no interfaz), así que no había forma de inyectar un generador falso sin cambiar esa firma.
+
+### Decision
+
+1. Modo simulación es el flag `AurisConfig.SimulationMode bool` (mismo patrón que `EncryptStorage`: campo simple, copiado tal cual en `Load`/`Save`). `buildMarketProvider()` (`pkg/tui/app.go`) hace `if a.cfg.SimulationMode { return simulation.New() }` antes del bucle sobre `cfg.Providers` — los proveedores reales configurados **no se borran**, quedan en `cfg.Providers` sin usarse mientras el flag esté activo, así que desactivar simulación los restaura sin pedir credenciales de nuevo. `pkg/drivers/simulation` implementa `market.ProviderAPI` completo y se registra en el setup wizard (`ScreenDataMode`, nueva pantalla entre `ScreenProfile` y `ScreenProvider`) y en un toggle post-setup (`ScreenSimulationMode`, `/simulation`) — pero **no** en `pkg/registry/market.go`: no es "un proveedor más" de la cascada, es un modo que la sustituye entera. Esto es una desviación deliberada del checklist "Adding a new market driver" de `CLAUDE.md`.
+2. Se extrajo `news.Source` (interfaz con la firma exacta de `HandleFetchNews` que ya tenía `*news.Provider`) en `pkg/news/tool.go`; `Agent.news`/`SetNewsProvider` pasan de `*news.Provider` a `news.Source`. `pkg/drivers/simulation.NewsSource` implementa la interfaz generando titulares sintéticos a partir de los mismos "días de movimiento grande" que ya calcula el generador de velas — no hay RSS real posible para empresas inventadas.
+3. El generador de datos (`pkg/drivers/simulation/generator.go`) usa un factor de mercado diario compartido (una sola semilla por fecha de calendario) más ruido idiosincrático por instrumento, en vez de un paseo aleatorio independiente por símbolo — así el universo simulado sube y baja de forma correlacionada, como un mercado real, no como ruido sin sentido. Todo es determinista (`math/rand/v2` con semillas derivadas de `symbol|fecha`, sin estado persistido) para que la demo sea reproducible entre ejecuciones.
+
+### Consequences
+
+- Ningún cambio en `pkg/registry/market.go`, `ScreenProvider` ni `MarketProviderManageModel` — el driver de simulación vive completamente al margen de la cascada de proveedores reales, con su propio punto de entrada (`ScreenDataMode` en el wizard, `/simulation` después).
+- `Agent.news` como interfaz es un cambio de firma pequeño pero de superficie amplia (todo sitio que construye un `Agent` y llama `SetNewsProvider` sigue compilando sin cambios, ya que `*news.Provider` satisface `news.Source` estructuralmente).
+- El fichero de universo simulado (`pkg/drivers/simulation/data/simulation_data.json`) se embebe en el binario vía `go:embed` como valor por defecto — la app funciona "de fábrica" sin ningún fichero externo — pero admite override en cwd o en el directorio de configuración para personalización/tests, sin necesidad de recompilar.
+
+## DD-8 — Pipeline de release: GoReleaser sobre Makefile a mano; versión `dev` + `debug.ReadBuildInfo()` como fallback del ldflags de GoReleaser
+
+- **Status**: accepted
+- **Opened**: 2026-07-13
+- **Closed**: 2026-07-13
+
+### Context
+
+Hasta FEAT-20 el proyecto no tenía tooling de build/CI: sin Makefile, sin `.github/`, sin forma de que el binario reportara su propia versión. El usuario planea publicar el repo en GitHub próximamente y quiere usar sus herramientas gratuitas (Actions) para todo el ciclo de vida. Dos decisiones no eran obvias:
+
+1. Cómo automatizar builds multi-plataforma y releases de GitHub: Makefile/script a mano vs. GoReleaser (herramienta de terceros gratuita/OSS, exige `.goreleaser.yaml` y una Action dedicada).
+2. Cómo debe comportarse `-version` cuando el binario NO se construyó con GoReleaser (`go build`/`go install` directos, el camino documentado hoy en el README): mostrar un `"dev"` desnudo, o aprovechar el VCS stamping automático de Go 1.18+ (`runtime/debug.ReadBuildInfo()`) para mostrar el commit real sin herramienta extra. En el momento de esta decisión el repo no tenía ningún tag de git (`git describe --tags --always --dirty` caía al hash corto), así que la vía del tag real todavía no podía probarse con un release de verdad.
+
+### Decision
+
+1. GoReleaser (v2, `.goreleaser.yaml`), no Makefile: multi-plataforma con checksums, archivos y changelog agrupado es su caso de uso de fábrica; se invoca sin instalación permanente (`go run github.com/goreleaser/goreleaser/v2@latest`), disparado solo por push de tag (`.github/workflows/release.yml`), separado de un `ci.yml` simple que no depende de GoReleaser y corre en cada push/PR a `main`. Se descartó también disparar `release.yml` en `pull_request` (como sugiere el ejemplo oficial de la documentación de GoReleaser) porque `goreleaser release` sin `--snapshot` falla si no hay un tag real en el ref — habría dejado todas las PRs en rojo.
+2. `cmd/auris/version.go` declara `version`/`commit`/`date`/`builtBy` con los nombres exactos que usa la plantilla de ldflags **por defecto** de GoReleaser, evitando un bloque `ldflags:` propio. Defaults sin GoReleaser: `"dev"`/`"none"`/`"unknown"`/`"unknown"`. Cuando `version == "dev"`, `-version` se enriquece con `debug.ReadBuildInfo()` (`vcs.revision` truncado a 7 chars, sufijo `-dirty` si `vcs.modified == "true"`); si no hay VCS info disponible, cae al `"dev"` desnudo sin error.
+
+### Consequences
+
+- El binario nunca miente sobre su versión: en release real lleva el tag; en build local lleva, cuando es posible, el commit real, sin exigir `-ldflags` manual.
+- Acoplamiento implícito: si `version`/`commit`/`date`/`builtBy` se renombran algún día, hay que añadir un `ldflags:` explícito o re-alinear nombres con GoReleaser.
+- `release.yml`/`ci.yml` quedan inactivos hasta publicar el repo en GitHub (remoto actual: Gitea/Forgejo autoalojado) — esperado, no un error de configuración.
+- Primera dependencia de *tooling* externo del repo (no toca `go.mod`); validada localmente con `goreleaser check` y `goreleaser build --snapshot --clean --single-target` (requirió `GOTOOLCHAIN=auto`, ya que GoReleaser v2 exige Go ≥ 1.26.4 y el entorno de desarrollo tenía 1.25.12 instalado — el propio `go run` descargó el toolchain necesario sin tocar `go.mod`, que sigue declarando `go 1.25.0`).

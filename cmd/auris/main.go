@@ -2,7 +2,7 @@
 //
 // Usage:
 //
-//	auris [-setup] [-debug <path>]
+//	auris [-setup] [-debug <path>] [-version]
 //
 // Without flags, Auris detects whether a configuration file exists. If not,
 // the first-run setup wizard is shown automatically. If a configuration
@@ -13,6 +13,7 @@
 //
 //	-setup          Re-run the setup wizard even when a configuration already exists.
 //	-debug <path>   Append per-iteration agent diagnostics to <path>. Disabled by default for privacy.
+//	-version        Print version information and exit.
 //
 // Environment variables:
 //
@@ -45,8 +46,9 @@ import (
 func main() {
 	setupFlag := flag.Bool("setup", false, "Re-run the setup wizard")
 	debugPath := flag.String("debug", "", "Append agent diagnostics to the given file path (disabled by default)")
+	versionFlag := flag.Bool("version", false, "Print version information and exit")
 	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, "Usage: auris [-setup] [-debug <path>]\n\nFlags:\n")
+		fmt.Fprintf(os.Stderr, "Usage: auris [-setup] [-debug <path>] [-version]\n\nFlags:\n")
 		flag.PrintDefaults()
 		fmt.Fprintf(os.Stderr, `
 Environment variables:
@@ -66,6 +68,11 @@ Environment variables:
 `)
 	}
 	flag.Parse()
+
+	if *versionFlag {
+		fmt.Println(versionString())
+		return
+	}
 
 	// Detect the OS locale and initialise the translation bundle before any
 	// TUI output so that even early error messages are localised.

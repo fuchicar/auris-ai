@@ -55,6 +55,10 @@ After building, copy the binary to a directory in your `$PATH`:
 go install ./cmd/auris
 ```
 
+### Prebuilt binaries
+
+Tagged releases (`vX.Y.Z`) publish prebuilt Linux, macOS, and Windows binaries (amd64/arm64) via GitHub Releases, built with [GoReleaser](https://goreleaser.com). Run `auris -version` to check what a given binary was built from.
+
 ---
 
 ## Quick Start
@@ -87,6 +91,7 @@ auris [flags]
 Flags:
   -setup          Force the setup wizard, even if a config already exists
   -debug <path>   Append agent diagnostic logs to the given file
+  -version        Print version information and exit
 ```
 
 ### Environment variables

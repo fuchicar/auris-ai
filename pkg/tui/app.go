@@ -11,6 +11,7 @@ import (
 
 	"auris/pkg/agent"
 	"auris/pkg/config"
+	"auris/pkg/drivers/simulation"
 	"auris/pkg/llm"
 	"auris/pkg/locale"
 	"auris/pkg/market"
@@ -29,6 +30,8 @@ const (
 	ScreenPassphrase                     // passphrase creation (setup only)
 	ScreenChangePassphrase               // change passphrase (post-setup, from menu)
 	ScreenProfile                        // financial profile questionnaire (setup only)
+	ScreenDataMode                       // real provider vs. simulation mode choice (setup only)
+	ScreenSimulationMode                 // post-setup: toggle simulation mode (Configuration menu, /simulation)
 	ScreenProvider                       // market data provider selection (setup only)
 	ScreenAPIKey                         // primary market provider API key input and validation (setup only)
 	ScreenAPIKeySecondary                // optional secondary market provider API key, e.g. EODHD (setup only)
@@ -114,6 +117,14 @@ type EncryptionResult struct{ Enabled bool }
 
 // ProfileResult is the payload emitted by the Profile questionnaire screen.
 type ProfileResult struct{ Profile config.FinancialProfile }
+
+// DataModeResult is the payload emitted by the real-provider-vs-simulation
+// choice screen shown during first-run setup.
+type DataModeResult struct{ Simulation bool }
+
+// SimulationModeResult is the payload emitted by the post-setup simulation
+// mode toggle screen (Configuration menu, /simulation).
+type SimulationModeResult struct{ Enabled bool }
 
 // ProviderResult is the payload emitted by the Provider selection screen.
 type ProviderResult struct{ Entry registry.MarketEntry }
@@ -366,7 +377,7 @@ func (a *AppModel) transition(msg ScreenDoneMsg) (tea.Model, tea.Cmd) {
 		if a.flowContext == FlowMenu {
 			a.saveConfig()
 			a.screen = ScreenMenu
-			a.current = newMenuModel(a.styles, a.cfg.ActiveAIProvider != "")
+			a.current = newMenuModel(a.styles, a.cfg.ActiveAIProvider != "", a.cfg.SimulationMode)
 		} else {
 			a.screen = ScreenTheme
 			a.current = newThemeModel(a.styles, false)
@@ -383,7 +394,7 @@ func (a *AppModel) transition(msg ScreenDoneMsg) (tea.Model, tea.Cmd) {
 			a.applyStoredLocale()
 		}
 		a.screen = ScreenMenu
-		a.current = newMenuModel(a.styles, a.cfg.ActiveAIProvider != "")
+		a.current = newMenuModel(a.styles, a.cfg.ActiveAIProvider != "", a.cfg.SimulationMode)
 
 	case ScreenTheme:
 		if r, ok := msg.Result.(ThemeResult); ok {
@@ -393,7 +404,7 @@ func (a *AppModel) transition(msg ScreenDoneMsg) (tea.Model, tea.Cmd) {
 		if a.flowContext == FlowMenu {
 			a.saveConfig()
 			a.screen = ScreenMenu
-			a.current = newMenuModel(a.styles, a.cfg.ActiveAIProvider != "")
+			a.current = newMenuModel(a.styles, a.cfg.ActiveAIProvider != "", a.cfg.SimulationMode)
 		} else {
 			a.screen = ScreenPassphrase
 			a.current = newPassphraseModel(a.styles)
@@ -429,7 +440,7 @@ func (a *AppModel) transition(msg ScreenDoneMsg) (tea.Model, tea.Cmd) {
 		}
 		a.saveConfig()
 		a.screen = ScreenMenu
-		a.current = newMenuModel(a.styles, a.cfg.ActiveAIProvider != "")
+		a.current = newMenuModel(a.styles, a.cfg.ActiveAIProvider != "", a.cfg.SimulationMode)
 
 	case ScreenEncryption:
 		if r, ok := msg.Result.(EncryptionResult); ok && r.Enabled != a.cfg.EncryptStorage {
@@ -440,7 +451,7 @@ func (a *AppModel) transition(msg ScreenDoneMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 		a.screen = ScreenMenu
-		a.current = newMenuModel(a.styles, a.cfg.ActiveAIProvider != "")
+		a.current = newMenuModel(a.styles, a.cfg.ActiveAIProvider != "", a.cfg.SimulationMode)
 
 	case ScreenProfile:
 		if r, ok := msg.Result.(ProfileResult); ok {
@@ -449,11 +460,30 @@ func (a *AppModel) transition(msg ScreenDoneMsg) (tea.Model, tea.Cmd) {
 		if a.flowContext == FlowMenu {
 			a.saveConfig()
 			a.screen = ScreenMenu
-			a.current = newMenuModel(a.styles, a.cfg.ActiveAIProvider != "")
+			a.current = newMenuModel(a.styles, a.cfg.ActiveAIProvider != "", a.cfg.SimulationMode)
+		} else {
+			a.screen = ScreenDataMode
+			a.current = newDataModeModel(a.styles)
+		}
+
+	case ScreenDataMode:
+		r, _ := msg.Result.(DataModeResult)
+		if r.Simulation {
+			a.cfg.SimulationMode = true
+			a.screen = ScreenAIProviderSelect
+			a.current = newAIProviderSelectModel(a.styles, nil, false)
 		} else {
 			a.screen = ScreenProvider
 			a.current = newProviderModel(a.styles)
 		}
+
+	case ScreenSimulationMode:
+		if r, ok := msg.Result.(SimulationModeResult); ok {
+			a.cfg.SimulationMode = r.Enabled
+			a.saveConfig()
+		}
+		a.screen = ScreenMenu
+		a.current = newMenuModel(a.styles, a.cfg.ActiveAIProvider != "", a.cfg.SimulationMode)
 
 	case ScreenProvider:
 		if r, ok := msg.Result.(ProviderResult); ok {
@@ -527,7 +557,7 @@ func (a *AppModel) transition(msg ScreenDoneMsg) (tea.Model, tea.Cmd) {
 			return a.enterAgentMode()
 		}
 		a.screen = ScreenMenu
-		a.current = newMenuModel(a.styles, a.cfg.ActiveAIProvider != "")
+		a.current = newMenuModel(a.styles, a.cfg.ActiveAIProvider != "", a.cfg.SimulationMode)
 
 	case ScreenAIProviderSelect:
 		if r, ok := msg.Result.(AIProviderSelectResult); ok {
@@ -538,7 +568,7 @@ func (a *AppModel) transition(msg ScreenDoneMsg) (tea.Model, tea.Cmd) {
 				// User skipped AI setup.
 				a.saveConfig()
 				a.screen = ScreenMenu
-				a.current = newMenuModel(a.styles, false)
+				a.current = newMenuModel(a.styles, false, a.cfg.SimulationMode)
 			} else {
 				a.pendingLLMProviders = r.Keys
 				a.pendingLLMIdx = 0
@@ -555,7 +585,7 @@ func (a *AppModel) transition(msg ScreenDoneMsg) (tea.Model, tea.Cmd) {
 			return a.enterAgentMode()
 		}
 		a.screen = ScreenMenu
-		a.current = newMenuModel(a.styles, a.cfg.ActiveAIProvider != "")
+		a.current = newMenuModel(a.styles, a.cfg.ActiveAIProvider != "", a.cfg.SimulationMode)
 
 	case ScreenAIProviderConfig:
 		if r, ok := msg.Result.(AIProviderConfigResult); ok {
@@ -622,7 +652,7 @@ func (a *AppModel) transition(msg ScreenDoneMsg) (tea.Model, tea.Cmd) {
 			return a.enterAgentMode()
 		}
 		a.screen = ScreenMenu
-		a.current = newMenuModel(a.styles, a.cfg.ActiveAIProvider != "")
+		a.current = newMenuModel(a.styles, a.cfg.ActiveAIProvider != "", a.cfg.SimulationMode)
 
 	case ScreenMenu:
 		switch r := msg.Result.(type) {
@@ -638,7 +668,7 @@ func (a *AppModel) transition(msg ScreenDoneMsg) (tea.Model, tea.Cmd) {
 		case nil:
 			a.saveConfig()
 			a.screen = ScreenMenu
-			a.current = newMenuModel(a.styles, a.cfg.ActiveAIProvider != "")
+			a.current = newMenuModel(a.styles, a.cfg.ActiveAIProvider != "", a.cfg.SimulationMode)
 		case CommandResult:
 			return a.handleAgentCommand(r)
 		}
@@ -674,7 +704,7 @@ func (a *AppModel) transition(msg ScreenDoneMsg) (tea.Model, tea.Cmd) {
 		switch r := msg.Result.(type) {
 		case nil:
 			a.screen = ScreenMenu
-			a.current = newMenuModel(a.styles, a.cfg.ActiveAIProvider != "")
+			a.current = newMenuModel(a.styles, a.cfg.ActiveAIProvider != "", a.cfg.SimulationMode)
 		case PortfolioMenuResult:
 			switch r.Action {
 			case "create":
@@ -892,14 +922,14 @@ func (a *AppModel) handleCommand(cmd CommandResult) (tea.Model, tea.Cmd) {
 		if a.cfg.ActiveAIProvider == "" {
 			// AI not configured — stay on menu (the item already shows an error
 			// when clicked from nav mode; command mode just resets silently).
-			a.current = newMenuModel(a.styles, false)
+			a.current = newMenuModel(a.styles, false, a.cfg.SimulationMode)
 			return a, a.current.Init()
 		}
 		return a.enterAgentMode()
 
 	case "menu":
 		// /menu from anywhere (including within command mode) returns to menu.
-		a.current = newMenuModel(a.styles, a.cfg.ActiveAIProvider != "")
+		a.current = newMenuModel(a.styles, a.cfg.ActiveAIProvider != "", a.cfg.SimulationMode)
 		return a, a.current.Init()
 
 	case "theme":
@@ -911,7 +941,7 @@ func (a *AppModel) handleCommand(cmd CommandResult) (tea.Model, tea.Cmd) {
 				a.styles = NewStyles(Theme(t))
 				a.saveConfig()
 			}
-			a.current = newMenuModel(a.styles, a.cfg.ActiveAIProvider != "")
+			a.current = newMenuModel(a.styles, a.cfg.ActiveAIProvider != "", a.cfg.SimulationMode)
 			return a, a.current.Init()
 		}
 		// Navigate to theme picker.
@@ -928,7 +958,7 @@ func (a *AppModel) handleCommand(cmd CommandResult) (tea.Model, tea.Cmd) {
 				a.cfg.Locale = tag
 				a.saveConfig()
 			}
-			a.current = newMenuModel(a.styles, a.cfg.ActiveAIProvider != "")
+			a.current = newMenuModel(a.styles, a.cfg.ActiveAIProvider != "", a.cfg.SimulationMode)
 			return a, a.current.Init()
 		}
 		// Navigate to language picker.
@@ -951,9 +981,14 @@ func (a *AppModel) handleCommand(cmd CommandResult) (tea.Model, tea.Cmd) {
 		a.screen = ScreenEncryption
 		a.current = newEncryptionModel(a.styles, a.cfg.EncryptStorage, "")
 
+	case "simulation":
+		a.flowContext = FlowMenu
+		a.screen = ScreenSimulationMode
+		a.current = newSimulationModeModel(a.styles, a.cfg.SimulationMode)
+
 	case "model":
 		if a.cfg.ActiveAIProvider == "" {
-			a.current = newMenuModel(a.styles, false)
+			a.current = newMenuModel(a.styles, false, a.cfg.SimulationMode)
 			return a, a.current.Init()
 		}
 		a.flowContext = FlowMenu
@@ -1002,7 +1037,7 @@ func (a *AppModel) handleAgentCommand(cmd CommandResult) (tea.Model, tea.Cmd) {
 			return a, a.current.Init()
 		}
 		a.screen = ScreenMenu
-		a.current = newMenuModel(a.styles, a.cfg.ActiveAIProvider != "")
+		a.current = newMenuModel(a.styles, a.cfg.ActiveAIProvider != "", a.cfg.SimulationMode)
 		return a, a.current.Init()
 
 	case "exit":
@@ -1077,6 +1112,12 @@ func (a *AppModel) handleAgentCommand(cmd CommandResult) (tea.Model, tea.Cmd) {
 		return a, a.current.Init()
 
 	case "marketproviders":
+		if a.cfg.SimulationMode {
+			if ag, ok := a.current.(*AgentModel); ok {
+				ag.err = locale.T("menu.marketproviders_disabled_simulation")
+			}
+			return a, nil
+		}
 		preSelected := make(map[string]bool, len(a.cfg.Providers))
 		for k := range a.cfg.Providers {
 			preSelected[k] = true
@@ -1085,6 +1126,12 @@ func (a *AppModel) handleAgentCommand(cmd CommandResult) (tea.Model, tea.Cmd) {
 		a.managingMarketProviders = true
 		a.screen = ScreenMarketProviderManage
 		a.current = newMarketProviderManageModel(a.styles, a.marketProviderOrder(), preSelected, true)
+		return a, a.current.Init()
+
+	case "simulation":
+		a.flowContext = FlowAgent
+		a.screen = ScreenSimulationMode
+		a.current = newSimulationModeModel(a.styles, a.cfg.SimulationMode)
 		return a, a.current.Init()
 	}
 
@@ -1121,7 +1168,7 @@ func (a *AppModel) enterAgentModeWithSession(session *config.Session) (tea.Model
 	mp := a.buildMarketProvider()
 
 	a.screen = ScreenAgent
-	a.current = newAgentModel(provider, mp, session, a.cfg.DefaultAIModel, a.styles, a.width, a.height, a.cfg.FinancialProfile, a.cfg.NewsFeeds, a.debugLogger, nil, "")
+	a.current = newAgentModel(provider, mp, session, a.cfg.DefaultAIModel, a.styles, a.width, a.height, a.cfg.FinancialProfile, a.cfg.NewsFeeds, a.debugLogger, nil, "", a.cfg.SimulationMode)
 	return a, a.current.Init()
 }
 
@@ -1164,7 +1211,7 @@ func (a *AppModel) toggleMode() (tea.Model, tea.Cmd) {
 	if a.screen == ScreenAgent {
 		a.saveConfig()
 		a.screen = ScreenMenu
-		a.current = newMenuModel(a.styles, a.cfg.ActiveAIProvider != "")
+		a.current = newMenuModel(a.styles, a.cfg.ActiveAIProvider != "", a.cfg.SimulationMode)
 		return a, a.current.Init()
 	}
 	return a, nil
@@ -1286,7 +1333,7 @@ func (a *AppModel) returnFromProviderManagement() (tea.Model, tea.Cmd) {
 		return a.enterAgentMode()
 	}
 	a.screen = ScreenMenu
-	a.current = newMenuModel(a.styles, a.cfg.ActiveAIProvider != "")
+	a.current = newMenuModel(a.styles, a.cfg.ActiveAIProvider != "", a.cfg.SimulationMode)
 	return a, a.current.Init()
 }
 
@@ -1355,6 +1402,9 @@ func (a *AppModel) marketProviderOrder() []registry.MarketEntry {
 // are cascade fallbacks — see FEAT-7 in doc/task_completed.md and agent.NewMarketChain).
 // Returns nil if none are configured.
 func (a *AppModel) buildMarketProvider() market.ProviderAPI {
+	if a.cfg.SimulationMode {
+		return simulation.New()
+	}
 	var providers []market.ProviderAPI
 	for _, e := range a.marketProviderOrder() {
 		pc, ok := a.cfg.Providers[e.Key]
@@ -1424,7 +1474,7 @@ func (a *AppModel) returnFromMarketProviderManagement() (tea.Model, tea.Cmd) {
 		return a.enterAgentMode()
 	}
 	a.screen = ScreenMenu
-	a.current = newMenuModel(a.styles, a.cfg.ActiveAIProvider != "")
+	a.current = newMenuModel(a.styles, a.cfg.ActiveAIProvider != "", a.cfg.SimulationMode)
 	return a, a.current.Init()
 }
 
@@ -1483,7 +1533,7 @@ func (a *AppModel) enterPortfolioAgentModeWithSession(p *portfolio.Portfolio, se
 
 	a.screen = ScreenAgent
 	a.flowContext = FlowPortfolio
-	a.current = newAgentModel(provider, mp, session, modelID, a.styles, a.width, a.height, a.cfg.FinancialProfile, a.cfg.NewsFeeds, a.debugLogger, sysMsg, p.ID)
+	a.current = newAgentModel(provider, mp, session, modelID, a.styles, a.width, a.height, a.cfg.FinancialProfile, a.cfg.NewsFeeds, a.debugLogger, sysMsg, p.ID, a.cfg.SimulationMode)
 	return a, a.current.Init()
 }
 

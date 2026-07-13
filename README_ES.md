@@ -55,6 +55,10 @@ Una vez compilado, copia el binario a un directorio de tu `$PATH`:
 go install ./cmd/auris
 ```
 
+### Binarios precompilados
+
+Los releases etiquetados (`vX.Y.Z`) publican binarios precompilados para Linux, macOS y Windows (amd64/arm64) vía GitHub Releases, generados con [GoReleaser](https://goreleaser.com). Ejecuta `auris -version` para comprobar de qué build proviene un binario concreto.
+
 ---
 
 ## Inicio rápido
@@ -87,6 +91,7 @@ auris [opciones]
 Opciones:
   -setup          Fuerza el asistente de configuración aunque ya exista un config
   -debug <ruta>   Añade logs de diagnóstico del agente al fichero indicado
+  -version        Imprime la información de versión y termina
 ```
 
 ### Variables de entorno

@@ -11,3 +11,6 @@ auris
 # Nix build artifacts
 result
 result-*
+
+# GoReleaser local build/snapshot output
+dist/

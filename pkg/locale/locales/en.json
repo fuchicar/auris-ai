@@ -107,6 +107,32 @@
     "other": "Uses your passphrase to encrypt portfolio and session files on disk. ↑↓ navigate · Enter confirm"
   },
 
+  "datamode.title": {
+    "other": "How do you want to get market data?"
+  },
+  "datamode.real": {
+    "other": "Real provider (requires a free API key)"
+  },
+  "datamode.simulation": {
+    "other": "Simulation mode (demo — fabricated data, no signup needed)"
+  },
+  "datamode.hint": {
+    "other": "↑↓ navigate · Enter confirm"
+  },
+
+  "simulation.title": {
+    "other": "Simulation mode"
+  },
+  "simulation.enabled": {
+    "other": "Enabled"
+  },
+  "simulation.disabled": {
+    "other": "Disabled"
+  },
+  "simulation.hint": {
+    "other": "Replaces real market providers with fabricated demo data. ↑↓ navigate · Enter confirm"
+  },
+
   "profile.progress": {
     "other": "Question {{.Current}} of {{.Total}}"
   },
@@ -409,8 +435,17 @@
   "menu.change_encryption": {
     "other": "Data Encryption"
   },
+  "menu.toggle_simulation_mode": {
+    "other": "Simulation Mode"
+  },
   "menu.agent_unavailable": {
     "other": "Configure an AI provider first — use /aiproviders"
+  },
+  "menu.marketproviders_disabled_simulation": {
+    "other": "Simulation mode is active — disable it with /simulation to manage real market providers"
+  },
+  "menu.simulation_badge": {
+    "other": "⚠ Simulation mode — fabricated data, not real market data"
   },
   "menu.exit_confirm": {
     "other": "Press Esc again to exit"
@@ -556,6 +591,12 @@
   "agent.cmd.aiproviders": {
     "other": "Add or remove AI providers"
   },
+  "agent.cmd.simulation": {
+    "other": "Toggle simulation mode"
+  },
+  "agent.simulation_notice": {
+    "other": "You are using simulated data for demonstration purposes. Prices and news are not real."
+  },
   "agent.cmd.export": {
     "other": "Export conversation to a file"
   },
@@ -573,6 +614,12 @@
   },
   "agent.info.model": {
     "other": "Model: {{.Model}}"
+  },
+  "agent.info.market_provider": {
+    "other": "Market data: {{.Provider}}"
+  },
+  "agent.info.market_provider_none": {
+    "other": "none configured"
   },
   "agent.info.context_window": {
     "other": "Context window: {{.Tokens}} tokens"

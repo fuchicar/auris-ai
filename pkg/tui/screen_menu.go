@@ -27,6 +27,7 @@ var configMenuItems = []menuItem{
 	{"menu.manage_ai_providers", "aiproviders", nil},
 	{"menu.change_passphrase", "changepassphrase", nil},
 	{"menu.change_encryption", "encryption", nil},
+	{"menu.toggle_simulation_mode", "simulation", nil},
 	{"menu.back", "back", nil},
 }
 
@@ -53,16 +54,18 @@ type MenuModel struct {
 	exitConfirm    bool // true after first Escape on the main menu
 	styles         *Styles
 	agentAvailable bool
+	simulationMode bool
 }
 
 // newMenuModel constructs a [MenuModel] in nav mode.
-func newMenuModel(s *Styles, agentAvailable bool) *MenuModel {
+func newMenuModel(s *Styles, agentAvailable bool, simulationMode bool) *MenuModel {
 	ti := textinput.New()
 	ti.Placeholder = "/command [args]"
 	return &MenuModel{
 		styles:         s,
 		cmdInput:       ti,
 		agentAvailable: agentAvailable,
+		simulationMode: simulationMode,
 		items:          mainMenuItems,
 		titleKey:       "menu.title",
 	}
@@ -149,6 +152,13 @@ func (m *MenuModel) updateCommandMode(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.err = locale.T("menu.command.unknown")
 				return m, nil
 			}
+			if cmd.Cmd == "marketproviders" && m.simulationMode {
+				m.err = locale.T("menu.marketproviders_disabled_simulation")
+				m.commandMode = false
+				m.cmdInput.SetValue("")
+				m.cmdInput.Blur()
+				return m, nil
+			}
 			m.commandMode = false
 			m.cmdInput.SetValue("")
 			m.cmdInput.Blur()
@@ -193,6 +203,10 @@ func (m *MenuModel) selectItem(item menuItem) (tea.Model, tea.Cmd) {
 		m.err = locale.T("menu.agent_unavailable")
 		return m, nil
 	}
+	if item.cmdName == "marketproviders" && m.simulationMode {
+		m.err = locale.T("menu.marketproviders_disabled_simulation")
+		return m, nil
+	}
 	return m, func() tea.Msg {
 		return ScreenDoneMsg{From: ScreenMenu, Result: CommandResult{Cmd: item.cmdName}}
 	}
@@ -201,6 +215,9 @@ func (m *MenuModel) selectItem(item menuItem) (tea.Model, tea.Cmd) {
 // View implements [tea.Model].
 func (m *MenuModel) View() string {
 	title := m.styles.Title.Render(locale.T(m.titleKey))
+	if m.simulationMode {
+		title += "\n" + m.styles.Warning.Render(locale.T("menu.simulation_badge"))
+	}
 
 	var rows []string
 	for i, item := range m.items {

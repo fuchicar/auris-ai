@@ -1,0 +1,64 @@
+version: 2
+
+project_name: auris
+
+builds:
+  - id: auris
+    main: ./cmd/auris
+    binary: auris
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    # No custom ldflags: here — GoReleaser's own default template
+    # (-s -w -X main.version={{.Version}} -X main.commit={{.Commit}}
+    #  -X main.date={{.Date}} -X main.builtBy=goreleaser) already matches
+    # the var names declared in cmd/auris/version.go. See DD-8 in doc/adr.md.
+
+archives:
+  - id: auris
+    ids:
+      - auris
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    files:
+      - README.md
+      - README_ES.md
+
+checksum:
+  name_template: "checksums.txt"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs?:"
+      - "^test:"
+      - "Merge pull request"
+      - "Merge branch"
+  groups:
+    - title: Features
+      regexp: '^.*?feat(\(.+\))??!?:.+$'
+      order: 0
+    - title: "Bug fixes"
+      regexp: '^.*?fix(\(.+\))??!?:.+$'
+      order: 1
+    - title: Other changes
+      order: 999
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+release:
+  draft: false
+  # No `github: owner/name:` override — GoReleaser infers the repo from
+  # `git remote get-url origin`. Today that remote is a self-hosted
+  # Gitea/Forgejo instance, so this section is inert until the repo is
+  # pushed to GitHub with a github.com origin remote.

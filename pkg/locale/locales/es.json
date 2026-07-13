@@ -107,6 +107,32 @@
     "other": "Usa tu passphrase para cifrar los archivos de carteras y sesiones en disco. ↑↓ navegar · Enter confirmar"
   },
 
+  "datamode.title": {
+    "other": "¿Cómo quieres obtener los datos de mercado?"
+  },
+  "datamode.real": {
+    "other": "Proveedor real (requiere una API key gratuita)"
+  },
+  "datamode.simulation": {
+    "other": "Modo simulación (demo — datos ficticios, sin necesidad de registro)"
+  },
+  "datamode.hint": {
+    "other": "↑↓ navegar · Enter confirmar"
+  },
+
+  "simulation.title": {
+    "other": "Modo simulación"
+  },
+  "simulation.enabled": {
+    "other": "Activado"
+  },
+  "simulation.disabled": {
+    "other": "Desactivado"
+  },
+  "simulation.hint": {
+    "other": "Sustituye los proveedores reales de mercado por datos de demostración ficticios. ↑↓ navegar · Enter confirmar"
+  },
+
   "profile.progress": {
     "other": "Pregunta {{.Current}} de {{.Total}}"
   },
@@ -409,8 +435,17 @@
   "menu.change_encryption": {
     "other": "Cifrado de datos"
   },
+  "menu.toggle_simulation_mode": {
+    "other": "Modo simulación"
+  },
   "menu.agent_unavailable": {
     "other": "Configura un proveedor de IA primero — usa /aiproviders"
+  },
+  "menu.marketproviders_disabled_simulation": {
+    "other": "El modo simulación está activo — desactívalo con /simulation para gestionar proveedores reales"
+  },
+  "menu.simulation_badge": {
+    "other": "⚠ Modo simulación — datos ficticios, no son datos reales"
   },
   "menu.exit_confirm": {
     "other": "Pulse Esc otra vez para salir"
@@ -556,6 +591,12 @@
   "agent.cmd.aiproviders": {
     "other": "Añadir o quitar proveedores de IA"
   },
+  "agent.cmd.simulation": {
+    "other": "Activar o desactivar el modo simulación"
+  },
+  "agent.simulation_notice": {
+    "other": "Estás usando datos simulados con fines de demostración. Los precios y las noticias no son reales."
+  },
   "agent.cmd.export": {
     "other": "Exportar conversación a un archivo"
   },
@@ -573,6 +614,12 @@
   },
   "agent.info.model": {
     "other": "Modelo: {{.Model}}"
+  },
+  "agent.info.market_provider": {
+    "other": "Datos de mercado: {{.Provider}}"
+  },
+  "agent.info.market_provider_none": {
+    "other": "ninguno configurado"
   },
   "agent.info.context_window": {
     "other": "Ventana de contexto: {{.Tokens}} tokens"

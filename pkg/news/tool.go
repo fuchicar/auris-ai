@@ -40,6 +40,13 @@ func ToolParams() map[string]any {
 	}
 }
 
+// Source is anything that can execute the fetch_news tool pipeline. Provider
+// is the real RSS-backed implementation; pkg/drivers/simulation supplies a
+// synthetic implementation used in simulation mode (see agent.SetNewsProvider).
+type Source interface {
+	HandleFetchNews(ctx context.Context, params FetchNewsParams) ([]NewsItem, error)
+}
+
 // Provider holds the configured RSS feeds and executes the fetch_news pipeline.
 type Provider struct {
 	feeds []FeedConfig

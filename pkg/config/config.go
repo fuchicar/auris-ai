@@ -54,6 +54,13 @@ type AurisConfig struct {
 	// doesn't change underneath already-encrypted files.
 	EncryptStorage bool
 	StorageSalt    []byte
+
+	// SimulationMode, when true, replaces the real market-provider cascade
+	// with the synthetic pkg/drivers/simulation driver (see buildMarketProvider
+	// in pkg/tui/app.go) so the agent can be evaluated without any market data
+	// API key. Real provider configs in Providers are preserved untouched so
+	// disabling simulation mode restores them without re-entering credentials.
+	SimulationMode bool
 }
 
 // ChatTurn is a single message in the agent-mode conversation history.
@@ -131,6 +138,7 @@ type diskConfig struct {
 	NewsFeeds        []news.FeedConfig          `json:"news_feeds,omitempty"`
 	EncryptStorage   bool                       `json:"encrypt_storage,omitempty"`
 	StorageSalt      string                     `json:"storage_salt,omitempty"` // base64
+	SimulationMode   bool                       `json:"simulation_mode,omitempty"`
 }
 
 type diskAIProvider struct {
@@ -218,6 +226,7 @@ func Load(passphrase string) (*AurisConfig, error) {
 		NewsFeeds:        newsFeeds,
 		EncryptStorage:   disk.EncryptStorage,
 		StorageSalt:      storageSalt,
+		SimulationMode:   disk.SimulationMode,
 	}
 	if cfg.AITaskRoutes == nil {
 		cfg.AITaskRoutes = make(map[string]AITaskRoute)
@@ -279,6 +288,7 @@ func Save(cfg *AurisConfig, passphrase string) error {
 		NewsFeeds:        cfg.NewsFeeds,
 		EncryptStorage:   cfg.EncryptStorage,
 		StorageSalt:      base64.StdEncoding.EncodeToString(cfg.StorageSalt),
+		SimulationMode:   cfg.SimulationMode,
 	}
 
 	if len(cfg.Providers) > 0 {

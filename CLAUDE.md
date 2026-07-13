@@ -27,6 +27,12 @@ Integration test credentials:
 - Ollama LLM driver: requires a local Ollama instance running
 - Tests `t.Skip` automatically when credentials are absent.
 
+## Release process
+
+- **Versioning**: `cmd/auris/version.go` declares `version`/`commit`/`date`/`builtBy` (defaults `"dev"`/`"none"`/`"unknown"`/`"unknown"`). These names are load-bearing — they're populated at link time by GoReleaser's own **default** ldflags template (`-X main.version=... -X main.commit=... -X main.date=... -X main.builtBy=goreleaser`), so `.goreleaser.yaml` doesn't need a custom `ldflags:` block as long as they stay in sync. Renaming any of them requires adding an explicit `ldflags:` override. See DD-8 in `doc/adr.md`.
+- A plain `go build`/`go install` (no GoReleaser) leaves the vars at their defaults; `auris -version` then falls back to Go's automatic VCS stamping (`runtime/debug.ReadBuildInfo()`) to still show the real commit hash (and a `-dirty` suffix if the tree has uncommitted changes) instead of a bare `dev`.
+- **`.goreleaser.yaml`** (v2 schema) builds `./cmd/auris` for linux/darwin/windows × amd64/arm64, `CGO_ENABLED=0`. `.github/workflows/release.yml` runs it on every `git push --tags`, publishing a GitHub Release with archives + checksums + changelog. `.github/workflows/ci.yml` runs `go build ./...` / `go vet ./...` / `go test ./... -timeout 120s` on every push/PR to `main`. Both workflows are inert until this repo's remote is on GitHub with Actions enabled.
+
 ## Architecture
 
 Auris is a terminal-based financial AI advisor. The two core abstractions are **market data** (`pkg/market/`) and **AI inference** (`pkg/llm/`). Both follow the same driver pattern — an interface defined in the abstraction package, implementations in `pkg/drivers/<name>/`, and a static registry in `pkg/registry/`.

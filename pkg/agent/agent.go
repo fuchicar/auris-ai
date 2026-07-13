@@ -41,7 +41,7 @@ type ChartEvent struct {
 type Agent struct {
 	llm                llm.AIProvider
 	market             market.ProviderAPI
-	news               *news.Provider
+	news               news.Source
 	model              string
 	tools              []llm.Tool
 	progressCh         chan<- ProgressEvent
@@ -83,9 +83,9 @@ func (a *Agent) SetChartCh(ch chan<- ChartEvent) {
 	a.chartCh = ch
 }
 
-// SetNewsProvider attaches a news provider used by the fetch_news tool.
+// SetNewsProvider attaches a news source used by the fetch_news tool.
 // Pass nil to detach.
-func (a *Agent) SetNewsProvider(p *news.Provider) {
+func (a *Agent) SetNewsProvider(p news.Source) {
 	a.news = p
 }
 
