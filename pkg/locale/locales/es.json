@@ -107,6 +107,43 @@
     "other": "Usa tu passphrase para cifrar los archivos de carteras y sesiones en disco. ↑↓ navegar · Enter confirmar"
   },
 
+  "newsfeeds.title": {
+    "other": "Feeds de noticias"
+  },
+  "newsfeeds.hint": {
+    "other": "↑↓ navegar · Espacio marcar · a añadir · d eliminar personalizado · Enter guardar"
+  },
+  "newsfeeds.custom_tag": {
+    "other": "personalizado"
+  },
+  "newsfeeds.add.title": {
+    "other": "Añadir un feed de noticias personalizado"
+  },
+  "newsfeeds.add.name.label": {
+    "other": "Nombre del feed"
+  },
+  "newsfeeds.add.name.hint": {
+    "other": "Enter confirmar · Esc cancelar"
+  },
+  "newsfeeds.add.name.error_empty": {
+    "other": "El nombre no puede estar vacío."
+  },
+  "newsfeeds.add.url.label": {
+    "other": "URL del feed"
+  },
+  "newsfeeds.add.url.hint": {
+    "other": "Enter confirmar · Esc volver"
+  },
+  "newsfeeds.add.url.error_invalid": {
+    "other": "La URL debe empezar por http:// o https://"
+  },
+  "newsfeeds.add.language.label": {
+    "other": "Idioma (p. ej. en, es)"
+  },
+  "newsfeeds.add.language.hint": {
+    "other": "Enter guardar · Esc volver"
+  },
+
   "datamode.title": {
     "other": "¿Cómo quieres obtener los datos de mercado?"
   },
@@ -428,6 +465,9 @@
   },
   "menu.manage_ai_providers": {
     "other": "Gestionar proveedores de IA"
+  },
+  "menu.manage_news_feeds": {
+    "other": "Gestionar feeds de noticias"
   },
   "menu.change_passphrase": {
     "other": "Cambiar contraseña"

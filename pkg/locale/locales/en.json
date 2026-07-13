@@ -107,6 +107,43 @@
     "other": "Uses your passphrase to encrypt portfolio and session files on disk. ↑↓ navigate · Enter confirm"
   },
 
+  "newsfeeds.title": {
+    "other": "News Feeds"
+  },
+  "newsfeeds.hint": {
+    "other": "↑↓ navigate · Space toggle · a add · d delete custom · Enter save"
+  },
+  "newsfeeds.custom_tag": {
+    "other": "custom"
+  },
+  "newsfeeds.add.title": {
+    "other": "Add a custom news feed"
+  },
+  "newsfeeds.add.name.label": {
+    "other": "Feed name"
+  },
+  "newsfeeds.add.name.hint": {
+    "other": "Enter confirm · Esc cancel"
+  },
+  "newsfeeds.add.name.error_empty": {
+    "other": "Name cannot be empty."
+  },
+  "newsfeeds.add.url.label": {
+    "other": "Feed URL"
+  },
+  "newsfeeds.add.url.hint": {
+    "other": "Enter confirm · Esc back"
+  },
+  "newsfeeds.add.url.error_invalid": {
+    "other": "URL must start with http:// or https://"
+  },
+  "newsfeeds.add.language.label": {
+    "other": "Language (e.g. en, es)"
+  },
+  "newsfeeds.add.language.hint": {
+    "other": "Enter save · Esc back"
+  },
+
   "datamode.title": {
     "other": "How do you want to get market data?"
   },
@@ -428,6 +465,9 @@
   },
   "menu.manage_ai_providers": {
     "other": "Manage AI Providers"
+  },
+  "menu.manage_news_feeds": {
+    "other": "Manage News Feeds"
   },
   "menu.change_passphrase": {
     "other": "Change Passphrase"

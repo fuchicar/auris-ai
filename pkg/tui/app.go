@@ -15,6 +15,7 @@ import (
 	"auris/pkg/llm"
 	"auris/pkg/locale"
 	"auris/pkg/market"
+	"auris/pkg/news"
 	"auris/pkg/portfolio"
 	"auris/pkg/registry"
 )
@@ -54,6 +55,7 @@ const (
 	ScreenPortfolioWatchlist             // read-only watchlist with live price/%change
 	ScreenPortfolioExport                // export positions/lots/metrics to JSON+CSV
 	ScreenEncryption                     // toggle at-rest encryption of portfolios/sessions (post-setup, from menu)
+	ScreenNewsFeeds                      // post-setup: edit active RSS/Atom news feeds (Configuration menu, /news)
 )
 
 // FlowContext distinguishes whether a settings screen was opened during first-
@@ -114,6 +116,9 @@ type ChangePassphraseResult struct{ NewPassphrase string }
 
 // EncryptionResult is the payload emitted by the Encryption toggle screen.
 type EncryptionResult struct{ Enabled bool }
+
+// NewsFeedsResult is the payload emitted by the News Feeds management screen.
+type NewsFeedsResult struct{ Feeds []news.FeedConfig }
 
 // ProfileResult is the payload emitted by the Profile questionnaire screen.
 type ProfileResult struct{ Profile config.FinancialProfile }
@@ -449,6 +454,14 @@ func (a *AppModel) transition(msg ScreenDoneMsg) (tea.Model, tea.Cmd) {
 				a.current = newEncryptionModel(a.styles, a.cfg.EncryptStorage, err.Error())
 				return a, a.current.Init()
 			}
+		}
+		a.screen = ScreenMenu
+		a.current = newMenuModel(a.styles, a.cfg.ActiveAIProvider != "", a.cfg.SimulationMode)
+
+	case ScreenNewsFeeds:
+		if r, ok := msg.Result.(NewsFeedsResult); ok {
+			a.cfg.NewsFeeds = r.Feeds
+			a.saveConfig()
 		}
 		a.screen = ScreenMenu
 		a.current = newMenuModel(a.styles, a.cfg.ActiveAIProvider != "", a.cfg.SimulationMode)
@@ -980,6 +993,11 @@ func (a *AppModel) handleCommand(cmd CommandResult) (tea.Model, tea.Cmd) {
 		a.flowContext = FlowMenu
 		a.screen = ScreenEncryption
 		a.current = newEncryptionModel(a.styles, a.cfg.EncryptStorage, "")
+
+	case "news":
+		a.flowContext = FlowMenu
+		a.screen = ScreenNewsFeeds
+		a.current = newNewsFeedsModel(a.styles, a.cfg.NewsFeeds, true)
 
 	case "simulation":
 		a.flowContext = FlowMenu
