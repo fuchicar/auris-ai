@@ -48,6 +48,7 @@ type APIKeyModel struct {
 func newAPIKeyModel(entry registry.MarketEntry, s *Styles, from Screen, optional bool, canGoBack bool) *APIKeyModel {
 	ti := textinput.New()
 	ti.Placeholder = "api key"
+	ti.EchoMode = textinput.EchoPassword
 	ti.Focus()
 
 	sp := spinner.New()

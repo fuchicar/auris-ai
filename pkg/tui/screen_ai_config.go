@@ -79,9 +79,20 @@ func newAIProviderConfigModel(entry registry.LLMEntry, s *Styles) *AIProviderCon
 	default:
 		m.step = aiStepAPIKey
 		m.input.Placeholder = "API key"
+		m.input.EchoMode = textinput.EchoPassword
 		m.input.Focus()
 	}
 	return m
+}
+
+// echoModeFor returns the [textinput.EchoMode] appropriate for step — masked
+// for the API key step (a secret), plain for every other step (URLs and model
+// names are not sensitive and are useful to proofread on screen).
+func echoModeFor(step aiConfigStep) textinput.EchoMode {
+	if step == aiStepAPIKey {
+		return textinput.EchoPassword
+	}
+	return textinput.EchoNormal
 }
 
 // Init implements [tea.Model].
@@ -175,6 +186,7 @@ func (m *AIProviderConfigModel) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd
 			} else {
 				m.input.Placeholder = "API key"
 			}
+			m.input.EchoMode = echoModeFor(m.step)
 			m.input.SetValue("")
 			m.input.Focus()
 			return m, textinput.Blink
@@ -193,6 +205,7 @@ func (m *AIProviderConfigModel) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd
 			if m.entry.Key == "openai_compatible" {
 				m.step = aiStepModelName
 				m.input.Placeholder = "gpt-4o-mini"
+				m.input.EchoMode = echoModeFor(m.step)
 				m.input.SetValue("")
 				m.input.Focus()
 				return m, textinput.Blink
@@ -239,6 +252,7 @@ func (m *AIProviderConfigModel) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd
 			m.err = ""
 			m.step = m.errStep
 			if m.step == aiStepBaseURL || m.step == aiStepAPIKey || m.step == aiStepModelName {
+				m.input.EchoMode = echoModeFor(m.step)
 				m.input.Focus()
 				return m, textinput.Blink
 			}
