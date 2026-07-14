@@ -23,10 +23,14 @@ type connectResultMsg struct{ err error }
 // it by calling Connect, and emits [ScreenDoneMsg] on success. When optional is
 // true, Esc skips configuration entirely (emits an empty APIKey) instead of
 // requiring input — used for secondary market providers in the setup wizard.
+// When canGoBack is true (and optional is false), Esc instead emits a nil
+// Result meaning "go back one step" — used for the mandatory primary-provider
+// screen during first-run setup (see AppModel.transition's ScreenAPIKey case).
 type APIKeyModel struct {
 	entry      registry.MarketEntry
 	from       Screen
 	optional   bool
+	canGoBack  bool
 	input      textinput.Model
 	spin       spinner.Model
 	connecting bool
@@ -38,7 +42,10 @@ type APIKeyModel struct {
 // from is echoed back in the emitted [ScreenDoneMsg.From] so the same model can
 // serve both the mandatory primary-provider screen and the optional secondary
 // one. When optional is true, Esc skips configuration (empty APIKey result).
-func newAPIKeyModel(entry registry.MarketEntry, s *Styles, from Screen, optional bool) *APIKeyModel {
+// When canGoBack is true, Esc instead goes back a step (nil Result) — the two
+// are mutually exclusive in practice (optional is only used for the secondary
+// provider screen, which does not support going back).
+func newAPIKeyModel(entry registry.MarketEntry, s *Styles, from Screen, optional bool, canGoBack bool) *APIKeyModel {
 	ti := textinput.New()
 	ti.Placeholder = "api key"
 	ti.Focus()
@@ -47,7 +54,7 @@ func newAPIKeyModel(entry registry.MarketEntry, s *Styles, from Screen, optional
 	sp.Spinner = spinner.Dot
 	sp.Style = s.Spinner
 
-	return &APIKeyModel{entry: entry, from: from, optional: optional, input: ti, spin: sp, styles: s}
+	return &APIKeyModel{entry: entry, from: from, optional: optional, canGoBack: canGoBack, input: ti, spin: sp, styles: s}
 }
 
 // Init implements [tea.Model]; starts cursor blink on the input field.
@@ -86,6 +93,12 @@ func (m *APIKeyModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					From:   from,
 					Result: APIKeyResult{Entry: entry, APIKey: ""},
 				}
+			}
+		}
+		if !m.connecting && m.canGoBack && msg.Type == tea.KeyEsc {
+			from := m.from
+			return m, func() tea.Msg {
+				return ScreenDoneMsg{From: from, Result: nil}
 			}
 		}
 		if !m.connecting && msg.Type == tea.KeyEnter && m.input.Value() != "" {
@@ -138,7 +151,11 @@ func (m *APIKeyModel) View() string {
 	} else if m.err != "" {
 		status = m.styles.Error.Render(fmt.Sprintf("✗ %s", m.err))
 	} else {
-		status = m.styles.Hint.Render(locale.T(hintKey))
+		hintText := locale.T(hintKey)
+		if m.canGoBack {
+			hintText += "  " + locale.T("hint.esc_back")
+		}
+		status = m.styles.Hint.Render(hintText)
 	}
 
 	inp := m.styles.Input.Render(m.input.View())

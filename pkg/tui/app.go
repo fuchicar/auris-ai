@@ -217,6 +217,14 @@ type AppModel struct {
 	selectedEntry    registry.MarketEntry // provider chosen in ScreenProvider
 	width, height    int                  // current terminal dimensions (from WindowSizeMsg)
 
+	// aiSelectOrigin records which setup-wizard screen led into
+	// ScreenAIProviderSelect (ScreenDataMode, ScreenAPIKey, or
+	// ScreenAPIKeySecondary), since that screen has three possible
+	// predecessors depending on earlier choices (simulation mode, whether a
+	// secondary market provider was offered). Esc during setup routes back
+	// here — mirrors the instrumentSearchOrigin idiom below.
+	aiSelectOrigin Screen
+
 	// AI setup state — used during the setup wizard and /aiproviders management.
 	pendingLLMProviders []string               // provider keys still to be configured
 	pendingLLMIdx       int                    // index of the provider currently being configured
@@ -340,6 +348,9 @@ func (a *AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // the full terminal so it is rendered without lipgloss.Place.
 func (a *AppModel) View() string {
 	inner := a.current.View()
+	if step := a.wizardStepLine(); step != "" {
+		inner = lipgloss.JoinVertical(lipgloss.Left, step, "", inner)
+	}
 	if a.width == 0 {
 		return inner // before first resize event
 	}
@@ -348,6 +359,69 @@ func (a *AppModel) View() string {
 	}
 	return lipgloss.Place(a.width, a.height,
 		lipgloss.Center, lipgloss.Center, inner)
+}
+
+// wizardStep computes the current position (1-based) and total step count of
+// the first-run setup wizard, filtering out steps that don't apply given
+// choices already made (locale prompt skipped when auto-detected, market
+// provider steps skipped in simulation mode, secondary provider step skipped
+// when only one market provider is registered). ok is false when the active
+// screen isn't part of the wizard (or we're not in the setup flow at all),
+// so callers know not to render an indicator.
+func (a *AppModel) wizardStep() (current, total int, ok bool) {
+	if a.flowContext != FlowSetup {
+		return 0, 0, false
+	}
+	steps := []struct {
+		screen     Screen
+		applicable bool
+	}{
+		{ScreenDisclaimer, true},
+		{ScreenLocale, a.showLocaleSelect},
+		{ScreenTheme, true},
+		{ScreenPassphrase, true},
+		{ScreenProfile, true},
+		{ScreenDataMode, true},
+		{ScreenProvider, !a.cfg.SimulationMode},
+		{ScreenAPIKey, !a.cfg.SimulationMode},
+		{ScreenAPIKeySecondary, !a.cfg.SimulationMode && len(registry.AllMarket()) > 1},
+		{ScreenAIProviderSelect, true},
+		{ScreenAIProviderConfig, true},
+		{ScreenAIDefaultModel, true},
+	}
+	for _, s := range steps {
+		if !s.applicable {
+			continue
+		}
+		total++
+		if s.screen == a.screen {
+			current = total
+		}
+	}
+	if current == 0 {
+		return 0, 0, false
+	}
+	return current, total, true
+}
+
+// wizardStepLine renders the "Step N/M" indicator line for the active setup
+// screen, or an empty string when the current screen isn't part of the
+// wizard. When configuring multiple AI providers in sequence
+// (ScreenAIProviderConfig), a "(provider i/N)" suffix is appended so the user
+// can tell the repeated step is actually progressing.
+func (a *AppModel) wizardStepLine() string {
+	current, total, ok := a.wizardStep()
+	if !ok {
+		return ""
+	}
+	text := locale.Tp("setup.step", map[string]any{"Current": current, "Total": total})
+	if a.screen == ScreenAIProviderConfig && len(a.pendingLLMProviders) > 1 {
+		text += locale.Tp("setup.step.provider_suffix", map[string]any{
+			"Current": a.pendingLLMIdx + 1,
+			"Total":   len(a.pendingLLMProviders),
+		})
+	}
+	return a.styles.Hint.Render(text)
 }
 
 // transition advances to the next screen based on the routing state machine.
@@ -367,14 +441,15 @@ func (a *AppModel) transition(msg ScreenDoneMsg) (tea.Model, tea.Cmd) {
 		if a.showLocaleSelect {
 			a.flowContext = FlowSetup
 			a.screen = ScreenLocale
-			a.current = newLocaleModel(a.styles, false)
+			a.current = newLocaleModel(a.styles, true)
 		} else {
 			a.screen = ScreenTheme
-			a.current = newThemeModel(a.styles, false)
+			a.current = newThemeModel(a.styles, true)
 		}
 
 	case ScreenLocale:
-		if r, ok := msg.Result.(LocaleResult); ok {
+		r, resultOK := msg.Result.(LocaleResult)
+		if resultOK {
 			a.detectedLocale = r.Locale
 			a.cfg.Locale = r.Locale
 			_ = locale.Init(r.Locale) // reinitialise translations with chosen locale
@@ -383,9 +458,13 @@ func (a *AppModel) transition(msg ScreenDoneMsg) (tea.Model, tea.Cmd) {
 			a.saveConfig()
 			a.screen = ScreenMenu
 			a.current = newMenuModel(a.styles, a.cfg.ActiveAIProvider != "", a.cfg.SimulationMode)
+		} else if !resultOK {
+			// Esc-back: only reachable from ScreenDisclaimer during setup.
+			a.screen = ScreenDisclaimer
+			a.current = newDisclaimerModel(a.styles)
 		} else {
 			a.screen = ScreenTheme
-			a.current = newThemeModel(a.styles, false)
+			a.current = newThemeModel(a.styles, true)
 		}
 
 	case ScreenUnlock:
@@ -402,7 +481,8 @@ func (a *AppModel) transition(msg ScreenDoneMsg) (tea.Model, tea.Cmd) {
 		a.current = newMenuModel(a.styles, a.cfg.ActiveAIProvider != "", a.cfg.SimulationMode)
 
 	case ScreenTheme:
-		if r, ok := msg.Result.(ThemeResult); ok {
+		r, resultOK := msg.Result.(ThemeResult)
+		if resultOK {
 			a.cfg.Theme = r.Theme
 			a.styles = NewStyles(Theme(r.Theme))
 		}
@@ -410,13 +490,23 @@ func (a *AppModel) transition(msg ScreenDoneMsg) (tea.Model, tea.Cmd) {
 			a.saveConfig()
 			a.screen = ScreenMenu
 			a.current = newMenuModel(a.styles, a.cfg.ActiveAIProvider != "", a.cfg.SimulationMode)
+		} else if !resultOK {
+			// Esc-back: to Locale if it was shown, else to Disclaimer.
+			if a.showLocaleSelect {
+				a.screen = ScreenLocale
+				a.current = newLocaleModel(a.styles, true)
+			} else {
+				a.screen = ScreenDisclaimer
+				a.current = newDisclaimerModel(a.styles)
+			}
 		} else {
 			a.screen = ScreenPassphrase
 			a.current = newPassphraseModel(a.styles)
 		}
 
 	case ScreenPassphrase:
-		if r, ok := msg.Result.(PassphraseResult); ok {
+		r, resultOK := msg.Result.(PassphraseResult)
+		if resultOK {
 			a.passphrase = r.Passphrase
 			// FEAT-16: encryption is opt-out, not opt-in — new setups default
 			// to encrypted storage. ScreenPassphrase is only ever reached
@@ -429,8 +519,14 @@ func (a *AppModel) transition(msg ScreenDoneMsg) (tea.Model, tea.Cmd) {
 				config.SetStorageKey(config.DeriveStorageKey(a.passphrase, salt))
 			}
 		}
-		a.screen = ScreenProfile
-		a.current = newProfileModel(a.styles, nil, false)
+		if !resultOK {
+			// Esc-back: to Theme.
+			a.screen = ScreenTheme
+			a.current = newThemeModel(a.styles, true)
+		} else {
+			a.screen = ScreenProfile
+			a.current = newProfileModel(a.styles, nil, true)
+		}
 
 	case ScreenChangePassphrase:
 		if r, ok := msg.Result.(ChangePassphraseResult); ok {
@@ -477,25 +573,38 @@ func (a *AppModel) transition(msg ScreenDoneMsg) (tea.Model, tea.Cmd) {
 		a.current = newMenuModel(a.styles, a.cfg.ActiveAIProvider != "", a.cfg.SimulationMode)
 
 	case ScreenProfile:
-		if r, ok := msg.Result.(ProfileResult); ok {
+		r, resultOK := msg.Result.(ProfileResult)
+		if resultOK {
 			a.cfg.FinancialProfile = &r.Profile
 		}
 		if a.flowContext == FlowMenu {
 			a.saveConfig()
 			a.screen = ScreenMenu
 			a.current = newMenuModel(a.styles, a.cfg.ActiveAIProvider != "", a.cfg.SimulationMode)
+		} else if !resultOK {
+			// Esc-back: to Passphrase.
+			a.screen = ScreenPassphrase
+			a.current = newPassphraseModel(a.styles)
 		} else {
 			a.screen = ScreenDataMode
 			a.current = newDataModeModel(a.styles)
 		}
 
 	case ScreenDataMode:
-		r, _ := msg.Result.(DataModeResult)
+		r, resultOK := msg.Result.(DataModeResult)
+		if !resultOK {
+			// Esc-back: to Profile.
+			a.screen = ScreenProfile
+			a.current = newProfileModel(a.styles, a.cfg.FinancialProfile, true)
+			break
+		}
 		if r.Simulation {
 			a.cfg.SimulationMode = true
+			a.aiSelectOrigin = ScreenDataMode
 			a.screen = ScreenAIProviderSelect
-			a.current = newAIProviderSelectModel(a.styles, nil, false)
+			a.current = newAIProviderSelectModel(a.styles, nil, true)
 		} else {
+			a.cfg.SimulationMode = false
 			a.screen = ScreenProvider
 			a.current = newProviderModel(a.styles)
 		}
@@ -509,11 +618,16 @@ func (a *AppModel) transition(msg ScreenDoneMsg) (tea.Model, tea.Cmd) {
 		a.current = newMenuModel(a.styles, a.cfg.ActiveAIProvider != "", a.cfg.SimulationMode)
 
 	case ScreenProvider:
-		if r, ok := msg.Result.(ProviderResult); ok {
-			a.selectedEntry = r.Entry
+		r, resultOK := msg.Result.(ProviderResult)
+		if !resultOK {
+			// Esc-back: to DataMode.
+			a.screen = ScreenDataMode
+			a.current = newDataModeModel(a.styles)
+			break
 		}
+		a.selectedEntry = r.Entry
 		a.screen = ScreenAPIKey
-		a.current = newAPIKeyModel(a.selectedEntry, a.styles, ScreenAPIKey, false)
+		a.current = newAPIKeyModel(a.selectedEntry, a.styles, ScreenAPIKey, false, true)
 
 	case ScreenAPIKey:
 		r, resultOK := msg.Result.(APIKeyResult)
@@ -530,7 +644,7 @@ func (a *AppModel) transition(msg ScreenDoneMsg) (tea.Model, tea.Cmd) {
 			a.pendingMarketIdx++
 			if a.pendingMarketIdx < len(a.pendingMarketProviders) {
 				nextEntry, _ := findMarketEntry(a.pendingMarketProviders[a.pendingMarketIdx])
-				a.current = newAPIKeyModel(nextEntry, a.styles, ScreenAPIKey, false)
+				a.current = newAPIKeyModel(nextEntry, a.styles, ScreenAPIKey, false, false)
 				return a, a.current.Init()
 			}
 			a.managingMarketProviders = false
@@ -538,25 +652,31 @@ func (a *AppModel) transition(msg ScreenDoneMsg) (tea.Model, tea.Cmd) {
 			return a.returnFromMarketProviderManagement()
 		}
 
+		if !resultOK {
+			// Esc-back: to Provider selection.
+			a.screen = ScreenProvider
+			a.current = newProviderModel(a.styles)
+			break
+		}
+
 		// Setup flow (unchanged): primary configured. This also seeds the
 		// cascade's initial priority order (cfg.ProviderOrder) so whichever
 		// provider was picked as primary here stays primary until the user
 		// explicitly reorders via /marketproviders.
-		if resultOK {
-			a.cfg.ActiveProvider = r.Entry.Key
-			a.cfg.ProviderOrder = []string{r.Entry.Key}
-			a.cfg.Locale = a.detectedLocale
-		}
+		a.cfg.ActiveProvider = r.Entry.Key
+		a.cfg.ProviderOrder = []string{r.Entry.Key}
+		a.cfg.Locale = a.detectedLocale
 		if next, ok := a.nextUnconfiguredMarketEntry(); ok {
 			// Offer any other registered market provider (e.g. EODHD) as an
 			// optional secondary — extends coverage via the fallback chain
 			// built by buildMarketProvider (FEAT-7). Esc skips it.
 			a.cfg.ProviderOrder = append(a.cfg.ProviderOrder, next.Key)
 			a.screen = ScreenAPIKeySecondary
-			a.current = newAPIKeyModel(next, a.styles, ScreenAPIKeySecondary, true)
+			a.current = newAPIKeyModel(next, a.styles, ScreenAPIKeySecondary, true, false)
 		} else {
+			a.aiSelectOrigin = ScreenAPIKey
 			a.screen = ScreenAIProviderSelect
-			a.current = newAIProviderSelectModel(a.styles, nil, false)
+			a.current = newAIProviderSelectModel(a.styles, nil, true)
 		}
 
 	case ScreenAPIKeySecondary:
@@ -566,8 +686,9 @@ func (a *AppModel) transition(msg ScreenDoneMsg) (tea.Model, tea.Cmd) {
 			}
 			a.cfg.Providers[r.Entry.Key] = &config.ProviderConfig{APIKey: r.APIKey}
 		}
+		a.aiSelectOrigin = ScreenAPIKeySecondary
 		a.screen = ScreenAIProviderSelect
-		a.current = newAIProviderSelectModel(a.styles, nil, false)
+		a.current = newAIProviderSelectModel(a.styles, nil, true)
 
 	case ScreenMarketProviderManage:
 		if r, ok := msg.Result.(MarketProviderManageResult); ok {
@@ -606,6 +727,22 @@ func (a *AppModel) transition(msg ScreenDoneMsg) (tea.Model, tea.Cmd) {
 		a.managingProviders = false
 		if a.flowContext == FlowAgent && a.cfg.ActiveAIProvider != "" {
 			return a.enterAgentMode()
+		}
+		if a.flowContext == FlowSetup {
+			// Esc-back: to whichever screen led into AIProviderSelect.
+			switch a.aiSelectOrigin {
+			case ScreenDataMode:
+				a.screen = ScreenDataMode
+				a.current = newDataModeModel(a.styles)
+			case ScreenAPIKeySecondary:
+				entry, _ := findMarketEntry(a.cfg.ProviderOrder[len(a.cfg.ProviderOrder)-1])
+				a.screen = ScreenAPIKeySecondary
+				a.current = newAPIKeyModel(entry, a.styles, ScreenAPIKeySecondary, true, false)
+			default: // ScreenAPIKey
+				a.screen = ScreenAPIKey
+				a.current = newAPIKeyModel(a.selectedEntry, a.styles, ScreenAPIKey, false, true)
+			}
+			return a, a.current.Init()
 		}
 		a.screen = ScreenMenu
 		a.current = newMenuModel(a.styles, a.cfg.ActiveAIProvider != "", a.cfg.SimulationMode)
@@ -652,7 +789,7 @@ func (a *AppModel) transition(msg ScreenDoneMsg) (tea.Model, tea.Cmd) {
 					}
 				}
 				a.screen = ScreenAIDefaultModel
-				a.current = newAIDefaultModelModel(entries, a.pendingLLMModels, a.styles, false)
+				a.current = newAIDefaultModelModel(entries, a.pendingLLMModels, a.styles, true)
 			}
 		} else {
 			// nil result = cancelled via Esc — back one level to letting the
@@ -662,11 +799,24 @@ func (a *AppModel) transition(msg ScreenDoneMsg) (tea.Model, tea.Cmd) {
 				preSelected[k] = true
 			}
 			a.screen = ScreenAIProviderSelect
-			a.current = newAIProviderSelectModel(a.styles, preSelected, a.managingProviders)
+			a.current = newAIProviderSelectModel(a.styles, preSelected, a.managingProviders || a.flowContext == FlowSetup)
 		}
 
 	case ScreenAIDefaultModel:
-		if r, ok := msg.Result.(AIDefaultModelResult); ok {
+		r, resultOK := msg.Result.(AIDefaultModelResult)
+		if !resultOK && a.flowContext == FlowSetup {
+			// Esc-back: to AI provider selection, with the previously chosen
+			// providers pre-checked (same reconstruction pattern used by the
+			// ScreenAIProviderConfig cancel case).
+			preSelected := make(map[string]bool, len(a.pendingLLMProviders))
+			for _, k := range a.pendingLLMProviders {
+				preSelected[k] = true
+			}
+			a.screen = ScreenAIProviderSelect
+			a.current = newAIProviderSelectModel(a.styles, preSelected, true)
+			break
+		}
+		if resultOK {
 			a.cfg.ActiveAIProvider = r.Provider
 			a.cfg.DefaultAIModel = r.Model
 		}
@@ -1486,7 +1636,7 @@ func (a *AppModel) applyMarketProviderSelection(newKeys []string) (tea.Model, te
 		a.pendingMarketIdx = 0
 		entry, _ := findMarketEntry(toAdd[0])
 		a.screen = ScreenAPIKey
-		a.current = newAPIKeyModel(entry, a.styles, ScreenAPIKey, false)
+		a.current = newAPIKeyModel(entry, a.styles, ScreenAPIKey, false, false)
 		return a, a.current.Init()
 	}
 

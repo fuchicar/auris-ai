@@ -55,6 +55,10 @@ func (m *PassphraseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch msg.Type {
 		case tea.KeyTab, tea.KeyShiftTab:
 			return m.toggleField()
+		case tea.KeyEsc:
+			return m, func() tea.Msg {
+				return ScreenDoneMsg{From: ScreenPassphrase, Result: nil}
+			}
 		case tea.KeyEnter:
 			if m.step == 0 {
 				return m.toggleField()
@@ -119,7 +123,7 @@ func (m *PassphraseModel) View() string {
 	confirmLabel := m.styles.Unselected.Render(locale.T("setup.passphrase.confirm"))
 	f1 := m.styles.Input.Render(m.first.View())
 	f2 := m.styles.Input.Render(m.confirm.View())
-	hint := m.styles.Hint.Render(locale.T("setup.passphrase.hint"))
+	hint := m.styles.Hint.Render(locale.T("setup.passphrase.hint") + "  " + locale.T("hint.esc_back"))
 
 	parts := []string{prompt, f1, confirmLabel, f2, hint}
 	if m.err != "" {

@@ -173,6 +173,12 @@
   "profile.progress": {
     "other": "Question {{.Current}} of {{.Total}}"
   },
+  "setup.step": {
+    "other": "Step {{.Current}}/{{.Total}}"
+  },
+  "setup.step.provider_suffix": {
+    "other": " (provider {{.Current}}/{{.Total}})"
+  },
   "profile.hint.single": {
     "other": "↑↓ navigate · Enter select"
   },

@@ -38,7 +38,8 @@ func newDataModeModel(s *Styles) *DataModeModel {
 func (m *DataModeModel) Init() tea.Cmd { return nil }
 
 // Update implements [tea.Model]. Arrow keys move the cursor; Enter confirms.
-// This is a mandatory first-run step — Esc does not skip it.
+// This is a mandatory first-run step — Esc does not skip it, but does go back
+// one step (to the Profile screen).
 func (m *DataModeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if key, ok := msg.(tea.KeyMsg); ok {
 		switch key.Type {
@@ -49,6 +50,10 @@ func (m *DataModeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case tea.KeyDown:
 			if m.cursor < len(dataModeOptions)-1 {
 				m.cursor++
+			}
+		case tea.KeyEsc:
+			return m, func() tea.Msg {
+				return ScreenDoneMsg{From: ScreenDataMode, Result: nil}
 			}
 		case tea.KeyEnter:
 			chosen := dataModeOptions[m.cursor].simulation
@@ -76,7 +81,7 @@ func (m *DataModeModel) View() string {
 		rows = append(rows, row)
 	}
 
-	hint := m.styles.Hint.Render(locale.T("datamode.hint"))
+	hint := m.styles.Hint.Render(locale.T("datamode.hint") + "  " + locale.T("hint.esc_back"))
 
 	parts := []string{title}
 	parts = append(parts, rows...)

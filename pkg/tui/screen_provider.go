@@ -41,6 +41,10 @@ func (m *ProviderModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.cursor < len(m.entries)-1 {
 				m.cursor++
 			}
+		case tea.KeyEsc:
+			return m, func() tea.Msg {
+				return ScreenDoneMsg{From: ScreenProvider, Result: nil}
+			}
 		case tea.KeyEnter:
 			entry := m.entries[m.cursor]
 			return m, func() tea.Msg {
@@ -66,7 +70,7 @@ func (m *ProviderModel) View() string {
 		rows = append(rows, row)
 	}
 
-	hint := m.styles.Hint.Render(locale.T("setup.provider.hint"))
+	hint := m.styles.Hint.Render(locale.T("setup.provider.hint") + "  " + locale.T("hint.esc_back"))
 	parts := append([]string{title}, rows...)
 	parts = append(parts, hint)
 	return lipgloss.JoinVertical(lipgloss.Left, parts...)
