@@ -331,9 +331,11 @@ func buildAssistantMessage(msg llm.Message) sdk.ChatCompletionMessageParamUnion 
 				},
 			}
 		}
-		return sdk.ChatCompletionMessageParamUnion{
-			OfAssistant: &sdk.ChatCompletionAssistantMessageParam{ToolCalls: toolCalls},
+		assistant := sdk.ChatCompletionAssistantMessageParam{ToolCalls: toolCalls}
+		if msg.Content != "" {
+			assistant.Content.OfString = param.NewOpt(msg.Content)
 		}
+		return sdk.ChatCompletionMessageParamUnion{OfAssistant: &assistant}
 	}
 	return sdk.AssistantMessage(msg.Content)
 }
@@ -353,7 +355,7 @@ func mapResponse(resp *sdk.ChatCompletion) llm.CompletionResponse {
 	}
 
 	choice := resp.Choices[0]
-	msg := llm.Message{Role: llm.RoleAssistant}
+	msg := llm.Message{Role: llm.RoleAssistant, Content: choice.Message.Content}
 
 	if len(choice.Message.ToolCalls) > 0 {
 		toolCalls := make([]llm.ToolCall, len(choice.Message.ToolCalls))
@@ -367,8 +369,6 @@ func mapResponse(resp *sdk.ChatCompletion) llm.CompletionResponse {
 			}
 		}
 		msg.ToolCalls = toolCalls
-	} else {
-		msg.Content = choice.Message.Content
 	}
 
 	return llm.CompletionResponse{
