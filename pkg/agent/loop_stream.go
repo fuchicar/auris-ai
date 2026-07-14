@@ -74,7 +74,7 @@ func runLoopStream(ctx context.Context, a *Agent, messages []llm.Message, onDelt
 
 		msgs = append(msgs, respMsg)
 
-		if stopReason != "tool_calls" {
+		if stopReason != "tool_calls" || len(respMsg.ToolCalls) == 0 {
 			a.debugf("[loop] no tool calls, exiting (stream)")
 			return respMsg, nil
 		}

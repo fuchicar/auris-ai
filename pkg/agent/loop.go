@@ -42,7 +42,7 @@ func runLoop(ctx context.Context, a *Agent, messages []llm.Message) (llm.Message
 
 		msgs = append(msgs, resp.Message)
 
-		if resp.StopReason != "tool_calls" {
+		if resp.StopReason != "tool_calls" || len(resp.Message.ToolCalls) == 0 {
 			a.debugf("[loop] no tool calls, exiting")
 			return resp.Message, nil
 		}
