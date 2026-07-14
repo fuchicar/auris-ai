@@ -74,11 +74,11 @@ func newAIProviderConfigModel(entry registry.LLMEntry, s *Styles) *AIProviderCon
 		m.step = aiStepOllamaMode
 	case "openai_compatible":
 		m.step = aiStepBaseURL
-		m.input.Placeholder = "https://api.example.com/v1"
+		m.input.Placeholder = locale.T("setup.ai.config.baseurl.generic.placeholder")
 		m.input.Focus()
 	default:
 		m.step = aiStepAPIKey
-		m.input.Placeholder = "API key"
+		m.input.Placeholder = locale.T("setup.ai.config.apikey.required.placeholder")
 		m.input.EchoMode = textinput.EchoPassword
 		m.input.Focus()
 	}
@@ -167,7 +167,7 @@ func (m *AIProviderConfigModel) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd
 			}
 			// Remote: ask for server URL next
 			m.step = aiStepBaseURL
-			m.input.Placeholder = "http://my-server:11434"
+			m.input.Placeholder = locale.T("setup.ai.config.baseurl.placeholder")
 			m.input.SetValue("")
 			m.input.Focus()
 			return m, textinput.Blink
@@ -182,9 +182,9 @@ func (m *AIProviderConfigModel) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd
 			m.baseURL = m.input.Value()
 			m.step = aiStepAPIKey
 			if m.entry.Key == "ollama" {
-				m.input.Placeholder = "API key (optional)"
+				m.input.Placeholder = locale.T("setup.ai.config.apikey.placeholder")
 			} else {
-				m.input.Placeholder = "API key"
+				m.input.Placeholder = locale.T("setup.ai.config.apikey.required.placeholder")
 			}
 			m.input.EchoMode = echoModeFor(m.step)
 			m.input.SetValue("")
@@ -204,7 +204,7 @@ func (m *AIProviderConfigModel) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd
 			m.apiKey = m.input.Value()
 			if m.entry.Key == "openai_compatible" {
 				m.step = aiStepModelName
-				m.input.Placeholder = "gpt-4o-mini"
+				m.input.Placeholder = locale.T("setup.ai.config.model.placeholder")
 				m.input.EchoMode = echoModeFor(m.step)
 				m.input.SetValue("")
 				m.input.Focus()

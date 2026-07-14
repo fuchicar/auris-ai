@@ -61,7 +61,7 @@ type MenuModel struct {
 // newMenuModel constructs a [MenuModel] in nav mode.
 func newMenuModel(s *Styles, agentAvailable bool, simulationMode bool) *MenuModel {
 	ti := textinput.New()
-	ti.Placeholder = "/command [args]"
+	ti.Placeholder = locale.T("menu.command.placeholder")
 	return &MenuModel{
 		styles:         s,
 		cmdInput:       ti,

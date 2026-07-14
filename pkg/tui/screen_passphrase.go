@@ -33,13 +33,13 @@ func newPassphraseModel(s *Styles) *PassphraseModel {
 		return ti
 	}
 
-	first := newField("passphrase")
+	first := newField(locale.T("setup.passphrase.placeholder"))
 	first.Focus()
 
 	return &PassphraseModel{
 		step:    0,
 		first:   first,
-		confirm: newField("confirm passphrase"),
+		confirm: newField(locale.T("setup.passphrase.confirm_placeholder")),
 		styles:  s,
 	}
 }

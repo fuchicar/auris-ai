@@ -47,7 +47,7 @@ type APIKeyModel struct {
 // provider screen, which does not support going back).
 func newAPIKeyModel(entry registry.MarketEntry, s *Styles, from Screen, optional bool, canGoBack bool) *APIKeyModel {
 	ti := textinput.New()
-	ti.Placeholder = "api key"
+	ti.Placeholder = locale.T("setup.apikey.placeholder")
 	ti.EchoMode = textinput.EchoPassword
 	ti.Focus()
 

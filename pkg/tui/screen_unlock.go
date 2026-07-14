@@ -22,7 +22,7 @@ type UnlockModel struct {
 // newUnlockModel constructs an [UnlockModel] ready for input.
 func newUnlockModel(s *Styles) *UnlockModel {
 	ti := textinput.New()
-	ti.Placeholder = "passphrase"
+	ti.Placeholder = locale.T("unlock.placeholder")
 	ti.EchoMode = textinput.EchoPassword
 	ti.EchoCharacter = '•'
 	ti.Focus()

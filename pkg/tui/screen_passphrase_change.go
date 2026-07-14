@@ -37,14 +37,14 @@ func newChangePassphraseModel(s *Styles, expectedCurrent string, canGoBack bool)
 		return ti
 	}
 
-	current := newField("current passphrase")
+	current := newField(locale.T("changepass.current_placeholder"))
 	current.Focus()
 
 	return &ChangePassphraseModel{
 		step:            0,
 		current:         current,
-		newPass:         newField("new passphrase"),
-		confirm:         newField("confirm new passphrase"),
+		newPass:         newField(locale.T("changepass.new_placeholder")),
+		confirm:         newField(locale.T("changepass.confirm_placeholder")),
 		expectedCurrent: expectedCurrent,
 		styles:          s,
 		canGoBack:       canGoBack,
