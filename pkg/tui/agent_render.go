@@ -49,18 +49,26 @@ func persistBg(content, bgHex, fgHex string) string {
 	return content
 }
 
+// agentLabel renders the "Auris:" label shown above the agent body. It sits
+// on its own line with no painted background under it, so — unlike the
+// bg/fg pairs below, which are explicitly painted and thus keyed to the
+// theme's own s.IsLight() — its color must adapt to the real terminal
+// background (see REF-11 in TODO.md).
+func agentLabel() string {
+	return lipgloss.NewStyle().Foreground(colorAccent).Bold(true).Render("Auris:")
+}
+
 // renderAgentTinted renders agent messages with a soft tinted background block.
 func renderAgentTinted(s *Styles, content string, w int) string {
 	bgHex, fgHex := "#1A1625", "#DDD6FE"
 	if s.IsLight() {
 		bgHex, fgHex = "#F5F0FF", "#2D1B69"
 	}
-	label := lipgloss.NewStyle().Foreground(lipgloss.Color("#A78BFA")).Bold(true).Render("Auris:")
 	body := lipgloss.NewStyle().
 		Background(lipgloss.Color(bgHex)).Foreground(lipgloss.Color(fgHex)).
 		Width(w).Padding(0, 1).
 		Render(persistBg(content, bgHex, fgHex))
-	return label + "\n" + body
+	return agentLabel() + "\n" + body
 }
 
 // renderAgentBadge renders agent messages with a green role badge.
@@ -70,13 +78,13 @@ func renderAgentBadge(s *Styles, content string) string {
 		Foreground(lipgloss.Color("#FFFFFF")).
 		Bold(true).Padding(0, 1).
 		Render(" Auris ")
-	var fg lipgloss.Color
+	bgHex, fgHex := "#022C22", "#D1FAE5"
 	if s.IsLight() {
-		fg = "#064E3B"
-	} else {
-		fg = "#D1FAE5"
+		bgHex, fgHex = "#ECFDF5", "#064E3B"
 	}
-	body := lipgloss.NewStyle().Foreground(fg).Render(content)
+	body := lipgloss.NewStyle().
+		Background(lipgloss.Color(bgHex)).Foreground(lipgloss.Color(fgHex)).
+		Render(persistBg(content, bgHex, fgHex))
 	return badge + "\n" + body
 }
 
@@ -88,7 +96,6 @@ func renderAgentBox(s *Styles, content string, w int) string {
 	} else {
 		borderC, bg, fg = "#3F3F46", "#18181B", "#E4E4E7"
 	}
-	label := lipgloss.NewStyle().Foreground(lipgloss.Color("#A78BFA")).Bold(true).Render("Auris:")
 	innerW := w - 4 // border (1 each side) + padding (1 each side)
 	if innerW < 1 {
 		innerW = 1
@@ -99,5 +106,5 @@ func renderAgentBox(s *Styles, content string, w int) string {
 		Background(bg).Foreground(fg).
 		Width(innerW).Padding(0, 1).
 		Render(persistBg(content, string(bg), string(fg)))
-	return label + "\n" + box
+	return agentLabel() + "\n" + box
 }

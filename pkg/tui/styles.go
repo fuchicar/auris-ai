@@ -56,16 +56,11 @@ type Styles struct {
 }
 
 // NewStyles builds a complete [Styles] set for the given [Theme].
-// Green and Box variants share the base light/dark palette; only s.Theme differs,
-// which controls how agent messages are rendered in the chat screen.
+// All 6 themes share the same adaptive palette (see newBaseStyles); only
+// s.Theme differs, which controls how agent messages are rendered in the
+// chat screen (tinted block / green badge / rounded box, light or dark).
 func NewStyles(t Theme) *Styles {
-	var s *Styles
-	switch t {
-	case ThemeLight, ThemeGreenLight, ThemeBoxLight:
-		s = newLightStyles()
-	default:
-		s = newDarkStyles()
-	}
+	s := newBaseStyles()
 	s.Theme = t
 	return s
 }
@@ -84,64 +79,40 @@ func IsValidTheme(t string) bool {
 	return false
 }
 
-func newDarkStyles() *Styles {
-	accent := lipgloss.Color("#7C3AED")
-	selected := lipgloss.Color("#A78BFA")
-	errorC := lipgloss.Color("#F87171")
-	hint := lipgloss.Color("#6B7280")
-	url := lipgloss.Color("#60A5FA")
-	warn := lipgloss.Color("#F59E0B")
-	bull := lipgloss.Color("#10B981")
+// Adaptive color pairs shared by every theme. Each resolves against the
+// terminal's actual detected background (via lipgloss.HasDarkBackground),
+// independent of which Theme the user picked, so text stays legible
+// regardless of a mismatch between the chosen theme and the real terminal
+// (see REF-11 in TODO.md).
+var (
+	colorAccent     = lipgloss.AdaptiveColor{Light: "#5B21B6", Dark: "#7C3AED"}
+	colorSelected   = lipgloss.AdaptiveColor{Light: "#7C3AED", Dark: "#A78BFA"}
+	colorError      = lipgloss.AdaptiveColor{Light: "#DC2626", Dark: "#F87171"}
+	colorHint       = lipgloss.AdaptiveColor{Light: "#9CA3AF", Dark: "#6B7280"}
+	colorURL        = lipgloss.AdaptiveColor{Light: "#2563EB", Dark: "#60A5FA"}
+	colorWarn       = lipgloss.AdaptiveColor{Light: "#D97706", Dark: "#F59E0B"}
+	colorBull       = lipgloss.AdaptiveColor{Light: "#059669", Dark: "#10B981"}
+	colorUnselected = lipgloss.AdaptiveColor{Light: "#374151", Dark: "#D1D5DB"}
+)
 
+func newBaseStyles() *Styles {
 	return &Styles{
-		Theme:      ThemeDark,
 		PanelWidth: PanelWidth,
-		Title:      lipgloss.NewStyle().Bold(true).Foreground(accent).Padding(1, 0),
-		Subtitle:   lipgloss.NewStyle().Foreground(selected).MarginBottom(1),
-		Cursor:     lipgloss.NewStyle().Foreground(accent).Bold(true),
-		Selected:   lipgloss.NewStyle().Foreground(selected).Bold(true),
-		Unselected: lipgloss.NewStyle().Foreground(lipgloss.Color("#D1D5DB")),
-		Input:      lipgloss.NewStyle().BorderStyle(lipgloss.RoundedBorder()).BorderForeground(accent).Padding(0, 1).Width(PanelWidth - 4),
-		Error:      lipgloss.NewStyle().Foreground(errorC).Bold(true),
-		Hint:       lipgloss.NewStyle().Foreground(hint).Italic(true),
-		DocsURL:    lipgloss.NewStyle().Foreground(url).Underline(true),
-		Checkbox:   lipgloss.NewStyle().Foreground(selected),
-		Spinner:    lipgloss.NewStyle().Foreground(accent),
-		Preview:    lipgloss.NewStyle().BorderStyle(lipgloss.RoundedBorder()).BorderForeground(accent).Padding(0, 1).Width(PanelWidth - 4),
-		Warning:    lipgloss.NewStyle().Foreground(warn).Bold(true),
-		WarnBox:    lipgloss.NewStyle().BorderStyle(lipgloss.RoundedBorder()).BorderForeground(warn).Padding(0, 1).Width(PanelWidth - 4),
-		Bull:       lipgloss.NewStyle().Foreground(bull),
-		Bear:       lipgloss.NewStyle().Foreground(errorC),
-	}
-}
-
-func newLightStyles() *Styles {
-	accent := lipgloss.Color("#5B21B6")
-	selected := lipgloss.Color("#7C3AED")
-	errorC := lipgloss.Color("#DC2626")
-	hint := lipgloss.Color("#9CA3AF")
-	url := lipgloss.Color("#2563EB")
-	warn := lipgloss.Color("#D97706")
-	bull := lipgloss.Color("#059669")
-
-	return &Styles{
-		Theme:      ThemeLight,
-		PanelWidth: PanelWidth,
-		Title:      lipgloss.NewStyle().Bold(true).Foreground(accent).Padding(1, 0),
-		Subtitle:   lipgloss.NewStyle().Foreground(selected).MarginBottom(1),
-		Cursor:     lipgloss.NewStyle().Foreground(accent).Bold(true),
-		Selected:   lipgloss.NewStyle().Foreground(selected).Bold(true),
-		Unselected: lipgloss.NewStyle().Foreground(lipgloss.Color("#374151")),
-		Input:      lipgloss.NewStyle().BorderStyle(lipgloss.RoundedBorder()).BorderForeground(accent).Padding(0, 1).Width(PanelWidth - 4),
-		Error:      lipgloss.NewStyle().Foreground(errorC).Bold(true),
-		Hint:       lipgloss.NewStyle().Foreground(hint).Italic(true),
-		DocsURL:    lipgloss.NewStyle().Foreground(url).Underline(true),
-		Checkbox:   lipgloss.NewStyle().Foreground(selected),
-		Spinner:    lipgloss.NewStyle().Foreground(accent),
-		Preview:    lipgloss.NewStyle().BorderStyle(lipgloss.RoundedBorder()).BorderForeground(accent).Padding(0, 1).Width(PanelWidth - 4),
-		Warning:    lipgloss.NewStyle().Foreground(warn).Bold(true),
-		WarnBox:    lipgloss.NewStyle().BorderStyle(lipgloss.RoundedBorder()).BorderForeground(warn).Padding(0, 1).Width(PanelWidth - 4),
-		Bull:       lipgloss.NewStyle().Foreground(bull),
-		Bear:       lipgloss.NewStyle().Foreground(errorC),
+		Title:      lipgloss.NewStyle().Bold(true).Foreground(colorAccent).Padding(1, 0),
+		Subtitle:   lipgloss.NewStyle().Foreground(colorSelected).MarginBottom(1),
+		Cursor:     lipgloss.NewStyle().Foreground(colorAccent).Bold(true),
+		Selected:   lipgloss.NewStyle().Foreground(colorSelected).Bold(true),
+		Unselected: lipgloss.NewStyle().Foreground(colorUnselected),
+		Input:      lipgloss.NewStyle().BorderStyle(lipgloss.RoundedBorder()).BorderForeground(colorAccent).Padding(0, 1).Width(PanelWidth - 4),
+		Error:      lipgloss.NewStyle().Foreground(colorError).Bold(true),
+		Hint:       lipgloss.NewStyle().Foreground(colorHint).Italic(true),
+		DocsURL:    lipgloss.NewStyle().Foreground(colorURL).Underline(true),
+		Checkbox:   lipgloss.NewStyle().Foreground(colorSelected),
+		Spinner:    lipgloss.NewStyle().Foreground(colorAccent),
+		Preview:    lipgloss.NewStyle().BorderStyle(lipgloss.RoundedBorder()).BorderForeground(colorAccent).Padding(0, 1).Width(PanelWidth - 4),
+		Warning:    lipgloss.NewStyle().Foreground(colorWarn).Bold(true),
+		WarnBox:    lipgloss.NewStyle().BorderStyle(lipgloss.RoundedBorder()).BorderForeground(colorWarn).Padding(0, 1).Width(PanelWidth - 4),
+		Bull:       lipgloss.NewStyle().Foreground(colorBull),
+		Bear:       lipgloss.NewStyle().Foreground(colorError),
 	}
 }
