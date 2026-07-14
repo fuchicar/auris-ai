@@ -771,6 +771,12 @@
   "portfolio.create.cash.error_invalid": {
     "other": "Enter a valid non-negative amount."
   },
+  "portfolio.create.currency.label": {
+    "other": "Currency"
+  },
+  "portfolio.create.currency.hint": {
+    "other": "↑↓ navigate · Enter select · Esc back"
+  },
   "portfolio.create.model.label": {
     "other": "Assign AI model"
   },
@@ -822,6 +828,9 @@
   },
   "portfolio.view.price_unavailable": {
     "other": "—"
+  },
+  "portfolio.view.holdings_more": {
+    "other": "+{{.Count}} more — see Positions"
   },
   "portfolio.view.action.agent": {
     "other": "Agent mode for this portfolio"
@@ -1071,7 +1080,7 @@
     "other": "WATCHLIST"
   },
   "portfolio.instrument.lot_header": {
-    "other": "Date            Qty          Cost/unit    Value        P&L"
+    "other": "Date             Qty               Cost/unit          Value            P&L"
   },
   "portfolio.instrument.no_lots": {
     "other": "(No lots recorded)"

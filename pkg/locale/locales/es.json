@@ -771,6 +771,12 @@
   "portfolio.create.cash.error_invalid": {
     "other": "Introduce una cantidad válida no negativa."
   },
+  "portfolio.create.currency.label": {
+    "other": "Divisa"
+  },
+  "portfolio.create.currency.hint": {
+    "other": "↑↓ navegar · Enter seleccionar · Esc volver"
+  },
   "portfolio.create.model.label": {
     "other": "Modelo de IA asignado"
   },
@@ -822,6 +828,9 @@
   },
   "portfolio.view.price_unavailable": {
     "other": "—"
+  },
+  "portfolio.view.holdings_more": {
+    "other": "+{{.Count}} más — ver Instrumentos"
   },
   "portfolio.view.action.agent": {
     "other": "Modo agente en esta cartera"
@@ -1071,7 +1080,7 @@
     "other": "SEGUIMIENTO"
   },
   "portfolio.instrument.lot_header": {
-    "other": "Fecha           Cant.        Precio       Valor        P&G"
+    "other": "Fecha            Cant.                Precio          Valor            P&G"
   },
   "portfolio.instrument.no_lots": {
     "other": "(Sin lotes registrados)"

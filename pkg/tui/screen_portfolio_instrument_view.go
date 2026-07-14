@@ -12,6 +12,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
+	"auris/pkg/finance"
 	"auris/pkg/locale"
 	"auris/pkg/market"
 	"auris/pkg/portfolio"
@@ -19,7 +20,7 @@ import (
 
 // PortfolioInstrumentViewResult is emitted when the user exits the instrument view.
 type PortfolioInstrumentViewResult struct {
-	Action    string              // "back" | "deleted"
+	Action    string               // "back" | "deleted"
 	Portfolio *portfolio.Portfolio // updated copy (already saved)
 }
 
@@ -27,14 +28,14 @@ type PortfolioInstrumentViewResult struct {
 type instrumentViewMode int
 
 const (
-	ivModeMenu     instrumentViewMode = iota // main action menu
-	ivModeSellQty                           // entering sell quantity
-	ivModeSellPrice                         // entering sell price
-	ivModeAddQty                            // entering lot quantity
-	ivModeAddPrice                          // entering lot price
-	ivModeAddDate                           // entering lot date
-	ivModeConfirmDelete                     // confirming instrument removal
-	ivModeConfirmType                       // confirming type change
+	ivModeMenu          instrumentViewMode = iota // main action menu
+	ivModeSellQty                                 // entering sell quantity
+	ivModeSellPrice                               // entering sell price
+	ivModeAddQty                                  // entering lot quantity
+	ivModeAddPrice                                // entering lot price
+	ivModeAddDate                                 // entering lot date
+	ivModeConfirmDelete                           // confirming instrument removal
+	ivModeConfirmType                             // confirming type change
 )
 
 var instrumentActions = []string{
@@ -337,7 +338,7 @@ func (m *portfolioInstrumentViewModel) handleSellPrice(key tea.KeyMsg) (tea.Mode
 			m.infoIsErr = true
 		} else {
 			m.infoMsg = locale.Tp("portfolio.instrument.sell.success", map[string]any{
-				"PnL": fmt.Sprintf("%+.2f", res.RealizedPnL),
+				"PnL": finance.FormatMoneySigned(res.RealizedPnL, m.portfolio.Currency),
 			})
 			m.infoIsErr = false
 		}
@@ -585,6 +586,11 @@ func (m *portfolioInstrumentViewModel) viewChart() string {
 	return renderCandleChart(m.candles, m.styles)
 }
 
+// lotMoneyWidth is the fixed width money columns are right-aligned to in the
+// per-lot table (kept narrower than moneyColWidth since per-lot amounts are
+// smaller than portfolio-level totals).
+const lotMoneyWidth = 14
+
 func (m *portfolioInstrumentViewModel) viewLotTable() []string {
 	if len(m.instrument.Lots) == 0 {
 		return []string{m.styles.Hint.Render(locale.T("portfolio.instrument.no_lots"))}
@@ -592,25 +598,38 @@ func (m *portfolioInstrumentViewModel) viewLotTable() []string {
 	header := m.styles.Hint.Render(locale.T("portfolio.instrument.lot_header"))
 	var rows []string
 	rows = append(rows, header)
+	cur := m.portfolio.Currency
 	for _, l := range m.instrument.Lots {
 		value := locale.T("portfolio.view.price_unavailable")
-		pnlStr := locale.T("portfolio.view.price_unavailable")
+		pnlText := locale.T("portfolio.view.price_unavailable")
+		havePnL := false
+		var pnl float64
 		if m.price > 0 {
-			value = fmt.Sprintf("%.2f", l.Quantity*m.price)
-			pnl := l.Quantity * (m.price - l.Price)
-			pnlStr = formatPnL(pnl)
+			value = finance.FormatMoney(l.Quantity*m.price, cur)
+			pnl = l.Quantity * (m.price - l.Price)
+			pnlText = finance.FormatMoneySigned(pnl, cur)
+			havePnL = true
 		} else if m.loadingPx {
 			value = m.spin.View()
-			pnlStr = "…"
+			pnlText = "…"
 		}
-		row := fmt.Sprintf("%-16s %-12.6g %-12.2f %-12s %s",
+		row := fmt.Sprintf("%-16s %-12.6g %*s %*s",
 			l.Date.Format("2006-01-02"),
 			l.Quantity,
-			l.Price,
-			value,
-			pnlStr,
+			lotMoneyWidth, finance.FormatMoney(l.Price, cur),
+			lotMoneyWidth, value,
 		)
-		rows = append(rows, m.styles.Unselected.Render(row))
+		rendered := m.styles.Unselected.Render(row)
+
+		padded := fmt.Sprintf("%*s", lotMoneyWidth, pnlText)
+		pnlStyle := m.styles.Unselected
+		if havePnL {
+			pnlStyle = m.styles.Bull
+			if pnl < 0 {
+				pnlStyle = m.styles.Bear
+			}
+		}
+		rows = append(rows, rendered+" "+pnlStyle.Render(padded))
 	}
 	return rows
 }
@@ -626,17 +645,19 @@ func (m *portfolioInstrumentViewModel) viewSummary() []string {
 		avgCost = totalCost / qty
 	}
 
+	cur := m.portfolio.Currency
 	lines := []string{
 		fmt.Sprintf("  %-22s %.6g", locale.T("portfolio.instrument.summary.qty"), qty),
-		fmt.Sprintf("  %-22s %.2f", locale.T("portfolio.instrument.summary.avg_cost"), avgCost),
-		fmt.Sprintf("  %-22s %.2f", locale.T("portfolio.instrument.summary.invested"), totalCost),
+		fmt.Sprintf("  %-22s %*s", locale.T("portfolio.instrument.summary.avg_cost"), moneyColWidth, finance.FormatMoney(avgCost, cur)),
+		fmt.Sprintf("  %-22s %*s", locale.T("portfolio.instrument.summary.invested"), moneyColWidth, finance.FormatMoney(totalCost, cur)),
 	}
 	if m.price > 0 {
 		cv := qty * m.price
 		pnl := cv - totalCost
+		pnlStr := colorMoney(finance.FormatMoneySigned(pnl, cur), pnl, m.styles)
 		lines = append(lines,
-			fmt.Sprintf("  %-22s %.2f", locale.T("portfolio.instrument.summary.current"), cv),
-			fmt.Sprintf("  %-22s %s", locale.T("portfolio.instrument.summary.pnl"), formatPnL(pnl)),
+			fmt.Sprintf("  %-22s %*s", locale.T("portfolio.instrument.summary.current"), moneyColWidth, finance.FormatMoney(cv, cur)),
+			fmt.Sprintf("  %-22s %s", locale.T("portfolio.instrument.summary.pnl"), pnlStr),
 		)
 	}
 	return lines

@@ -10,6 +10,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
+	"auris/pkg/finance"
 	"auris/pkg/llm"
 	"auris/pkg/locale"
 	"auris/pkg/portfolio"
@@ -21,6 +22,7 @@ type PortfolioCreateResult struct {
 	Name        string
 	Description string
 	Cash        float64
+	Currency    string
 	AIProvider  string
 	AIModel     string
 	EditID      string // non-empty when editing an existing portfolio
@@ -30,11 +32,21 @@ type PortfolioCreateResult struct {
 type portfolioCreateStep int
 
 const (
-	pcStepName  portfolioCreateStep = iota // text input for portfolio name
-	pcStepDesc                             // text input for description (optional)
-	pcStepCash                             // text input for available cash (optional)
-	pcStepModel                            // provider/model picker (async load)
+	pcStepName     portfolioCreateStep = iota // text input for portfolio name
+	pcStepDesc                                // text input for description (optional)
+	pcStepCash                                // text input for available cash (optional)
+	pcStepCurrency                            // picker for the portfolio's display currency
+	pcStepModel                               // provider/model picker (async load)
 )
+
+// defaultCurrency returns the locale-based default currency: EUR for Spanish
+// environments, USD otherwise.
+func defaultCurrency() string {
+	if tag, _ := locale.Detect(); tag == "es" {
+		return "EUR"
+	}
+	return "USD"
+}
 
 // portfolioModelStep tracks the two-phase model picker.
 type portfolioModelStep int
@@ -55,6 +67,11 @@ type portfolioCreateModel struct {
 	cashInput textinput.Model
 	nameErr   string
 	cashErr   string
+	// currency picker state
+	currencies        []string
+	currencyCursor    int
+	currencyScrollOff int
+	selCurrency       string
 	// model picker state (same as AIDefaultModelModel)
 	entries        []registry.LLMEntry
 	modelsByProv   map[string][]llm.Model
@@ -103,6 +120,7 @@ func newPortfolioCreateModel(
 		nameInput:    nameInput,
 		descInput:    descInput,
 		cashInput:    cashInput,
+		currencies:   finance.CurrencySymbols(),
 		spin:         sp,
 		styles:       s,
 		entries:      entries,
@@ -115,12 +133,16 @@ func newPortfolioCreateModel(
 		m.allNames = append(m.allNames, p.Name)
 	}
 
+	m.selCurrency = defaultCurrency()
 	if existing != nil {
 		m.editID = existing.ID
 		nameInput.SetValue(existing.Name)
 		descInput.SetValue(existing.Description)
 		if existing.Cash != 0 {
 			cashInput.SetValue(strconv.FormatFloat(existing.Cash, 'f', -1, 64))
+		}
+		if existing.Currency != "" {
+			m.selCurrency = existing.Currency
 		}
 		// Remove the current name from uniqueness check.
 		filtered := m.allNames[:0]
@@ -133,6 +155,12 @@ func newPortfolioCreateModel(
 		// Pre-select existing provider/model.
 		m.selProvider = existing.AIProvider
 		m.selModel = existing.AIModel
+	}
+	for i, c := range m.currencies {
+		if c == m.selCurrency {
+			m.currencyCursor = i
+			break
+		}
 	}
 
 	nameInput.Focus()
@@ -206,6 +234,8 @@ func (m *portfolioCreateModel) handleKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleDescStep(key)
 	case pcStepCash:
 		return m.handleCashStep(key)
+	case pcStepCurrency:
+		return m.handleCurrencyStep(key)
 	case pcStepModel:
 		return m.handleModelStep(key)
 	}
@@ -276,16 +306,40 @@ func (m *portfolioCreateModel) handleCashStep(key tea.KeyMsg) (tea.Model, tea.Cm
 			}
 		}
 		m.cashErr = ""
-		m.step = pcStepModel
+		m.step = pcStepCurrency
 		m.cashInput.Blur()
-		if !m.modelsReady {
-			return m, m.spin.Tick
-		}
 		return m, nil
 	}
 	var cmd tea.Cmd
 	m.cashInput, cmd = m.cashInput.Update(key)
 	return m, cmd
+}
+
+func (m *portfolioCreateModel) handleCurrencyStep(key tea.KeyMsg) (tea.Model, tea.Cmd) {
+	maxVis := m.maxVisible()
+	switch key.Type {
+	case tea.KeyUp:
+		if m.currencyCursor > 0 {
+			m.currencyCursor--
+			m.currencyScrollOff = clampScrollOff(m.currencyCursor, m.currencyScrollOff, maxVis)
+		}
+	case tea.KeyDown:
+		if m.currencyCursor < len(m.currencies)-1 {
+			m.currencyCursor++
+			m.currencyScrollOff = clampScrollOff(m.currencyCursor, m.currencyScrollOff, maxVis)
+		}
+	case tea.KeyEsc:
+		m.step = pcStepCash
+		m.cashInput.Focus()
+		return m, textinput.Blink
+	case tea.KeyEnter:
+		m.selCurrency = m.currencies[m.currencyCursor]
+		m.step = pcStepModel
+		if !m.modelsReady {
+			return m, m.spin.Tick
+		}
+	}
+	return m, nil
 }
 
 func (m *portfolioCreateModel) handleModelStep(key tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -308,9 +362,8 @@ func (m *portfolioCreateModel) handleModelStep(key tea.KeyMsg) (tea.Model, tea.C
 				m.provScrollOff = clampScrollOff(m.provCursor, m.provScrollOff, maxVis)
 			}
 		case tea.KeyEsc:
-			m.step = pcStepCash
-			m.cashInput.Focus()
-			return m, textinput.Blink
+			m.step = pcStepCurrency
+			return m, nil
 		case tea.KeyEnter:
 			m.selProvider = m.entries[m.provCursor].Key
 			m.modelCursor = 0
@@ -335,9 +388,8 @@ func (m *portfolioCreateModel) handleModelStep(key tea.KeyMsg) (tea.Model, tea.C
 			if len(m.entries) > 1 {
 				m.modelStep = pmStepProvider
 			} else {
-				m.step = pcStepCash
-				m.cashInput.Focus()
-				return m, textinput.Blink
+				m.step = pcStepCurrency
+				return m, nil
 			}
 		case tea.KeyEnter:
 			if len(models) == 0 {
@@ -359,6 +411,7 @@ func (m *portfolioCreateModel) handleModelStep(key tea.KeyMsg) (tea.Model, tea.C
 						Name:        name,
 						Description: desc,
 						Cash:        cash,
+						Currency:    m.selCurrency,
 						AIProvider:  prov,
 						AIModel:     modelID,
 						EditID:      editID,
@@ -380,7 +433,7 @@ func (m *portfolioCreateModel) View() string {
 	stepNum := int(m.step) + 1
 	progress := m.styles.Hint.Render(locale.Tp("portfolio.create.progress", map[string]any{
 		"Current": stepNum,
-		"Total":   4,
+		"Total":   5,
 	}))
 
 	var body []string
@@ -408,6 +461,18 @@ func (m *portfolioCreateModel) View() string {
 		if m.cashErr != "" {
 			body = append(body, m.styles.Error.Render(fmt.Sprintf("✗ %s", m.cashErr)))
 		}
+
+	case pcStepCurrency:
+		label := m.styles.Subtitle.Render(locale.T("portfolio.create.currency.label"))
+		labels := make([]string, len(m.currencies))
+		for i, c := range m.currencies {
+			labels[i] = fmt.Sprintf("%s (%s)", c, finance.CurrencySymbol(c))
+		}
+		rows := m.renderScrollList(labels, m.currencyCursor, m.currencyScrollOff, m.maxVisible())
+		hint := m.styles.Hint.Render(locale.T("portfolio.create.currency.hint"))
+		body = append(body, label)
+		body = append(body, rows...)
+		body = append(body, hint)
 
 	case pcStepModel:
 		if m.modelErr != "" {

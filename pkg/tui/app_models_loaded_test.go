@@ -43,7 +43,7 @@ func TestModelsLoadedMsg_Err_ResetsPendingPortfolioEdit(t *testing.T) {
 	a.pendingPortfolioEdit = true
 	a.activePortfolio = portfolio.NewPortfolio("Test")
 	a.screen = ScreenPortfolioView
-	a.current = newPortfolioViewModel(a.activePortfolio, nil, a.styles)
+	a.current = newPortfolioViewModel(a.activePortfolio, nil, a.styles, 0)
 
 	updated, _ := a.Update(modelsLoadedMsg{err: errors.New("boom")})
 	a = updated.(*AppModel)

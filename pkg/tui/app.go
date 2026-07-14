@@ -903,7 +903,7 @@ func (a *AppModel) transition(msg ScreenDoneMsg) (tea.Model, tea.Cmd) {
 				a.activePortfolio = r.Portfolio
 				mp := a.buildMarketProvider()
 				a.screen = ScreenPortfolioView
-				a.current = newPortfolioViewModel(a.activePortfolio, mp, a.styles)
+				a.current = newPortfolioViewModel(a.activePortfolio, mp, a.styles, a.height)
 			}
 		}
 
@@ -921,6 +921,7 @@ func (a *AppModel) transition(msg ScreenDoneMsg) (tea.Model, tea.Cmd) {
 					p.Name = r.Name
 					p.Description = r.Description
 					p.Cash = r.Cash
+					p.Currency = r.Currency
 					p.AIProvider = r.AIProvider
 					p.AIModel = r.AIModel
 					_ = portfolio.SavePortfolio(p)
@@ -931,6 +932,7 @@ func (a *AppModel) transition(msg ScreenDoneMsg) (tea.Model, tea.Cmd) {
 				p := portfolio.NewPortfolio(r.Name)
 				p.Description = r.Description
 				p.Cash = r.Cash
+				p.Currency = r.Currency
 				p.AIProvider = r.AIProvider
 				p.AIModel = r.AIModel
 				_ = portfolio.SavePortfolio(p)
@@ -938,7 +940,7 @@ func (a *AppModel) transition(msg ScreenDoneMsg) (tea.Model, tea.Cmd) {
 			}
 			mp := a.buildMarketProvider()
 			a.screen = ScreenPortfolioView
-			a.current = newPortfolioViewModel(a.activePortfolio, mp, a.styles)
+			a.current = newPortfolioViewModel(a.activePortfolio, mp, a.styles, a.height)
 		}
 
 	case ScreenPortfolioView:
@@ -999,7 +1001,7 @@ func (a *AppModel) transition(msg ScreenDoneMsg) (tea.Model, tea.Cmd) {
 				a.activePortfolio = r.Portfolio
 				mp := a.buildMarketProvider()
 				a.screen = ScreenPortfolioView
-				a.current = newPortfolioViewModel(a.activePortfolio, mp, a.styles)
+				a.current = newPortfolioViewModel(a.activePortfolio, mp, a.styles, a.height)
 			case "view":
 				a.activePortfolio = r.Portfolio
 				a.activeInstrument = r.Instrument
@@ -1061,7 +1063,7 @@ func (a *AppModel) transition(msg ScreenDoneMsg) (tea.Model, tea.Cmd) {
 			}
 			mp := a.buildMarketProvider()
 			a.screen = ScreenPortfolioView
-			a.current = newPortfolioViewModel(a.activePortfolio, mp, a.styles)
+			a.current = newPortfolioViewModel(a.activePortfolio, mp, a.styles, a.height)
 		}
 
 	case ScreenPortfolioTransactions:
@@ -1072,7 +1074,7 @@ func (a *AppModel) transition(msg ScreenDoneMsg) (tea.Model, tea.Cmd) {
 			}
 			mp := a.buildMarketProvider()
 			a.screen = ScreenPortfolioView
-			a.current = newPortfolioViewModel(a.activePortfolio, mp, a.styles)
+			a.current = newPortfolioViewModel(a.activePortfolio, mp, a.styles, a.height)
 		}
 
 	case ScreenPortfolioWatchlist:
@@ -1083,7 +1085,7 @@ func (a *AppModel) transition(msg ScreenDoneMsg) (tea.Model, tea.Cmd) {
 			}
 			mp := a.buildMarketProvider()
 			a.screen = ScreenPortfolioView
-			a.current = newPortfolioViewModel(a.activePortfolio, mp, a.styles)
+			a.current = newPortfolioViewModel(a.activePortfolio, mp, a.styles, a.height)
 		}
 
 	case ScreenPortfolioExport:
@@ -1094,7 +1096,7 @@ func (a *AppModel) transition(msg ScreenDoneMsg) (tea.Model, tea.Cmd) {
 			}
 			mp := a.buildMarketProvider()
 			a.screen = ScreenPortfolioView
-			a.current = newPortfolioViewModel(a.activePortfolio, mp, a.styles)
+			a.current = newPortfolioViewModel(a.activePortfolio, mp, a.styles, a.height)
 		}
 	}
 
@@ -1227,7 +1229,7 @@ func (a *AppModel) handleAgentCommand(cmd CommandResult) (tea.Model, tea.Cmd) {
 			// Return to portfolio view instead of main menu.
 			mp := a.buildMarketProvider()
 			a.screen = ScreenPortfolioView
-			a.current = newPortfolioViewModel(a.activePortfolio, mp, a.styles)
+			a.current = newPortfolioViewModel(a.activePortfolio, mp, a.styles, a.height)
 			return a, a.current.Init()
 		}
 		a.screen = ScreenMenu
@@ -1748,7 +1750,7 @@ func (a *AppModel) returnFromInstrumentSearch() (tea.Model, tea.Cmd) {
 	default:
 		mp := a.buildMarketProvider()
 		a.screen = ScreenPortfolioView
-		a.current = newPortfolioViewModel(a.activePortfolio, mp, a.styles)
+		a.current = newPortfolioViewModel(a.activePortfolio, mp, a.styles, a.height)
 	}
 	return a, a.current.Init()
 }

@@ -50,9 +50,13 @@ func (ins Instrument) TotalQuantity() float64 {
 
 // Portfolio is a named collection of instruments managed by the user.
 type Portfolio struct {
-	ID              string       `json:"id"`
-	Name            string       `json:"name"`
-	Description     string       `json:"description,omitempty"`
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+	// Currency is the ISO 4217 code (e.g. "USD", "EUR") the portfolio's monetary
+	// figures are displayed in. Empty on portfolios created before this field
+	// existed — safe zero value, formatting falls back to a generic display.
+	Currency        string       `json:"currency,omitempty"`
 	AIProvider      string       `json:"ai_provider"`
 	AIModel         string       `json:"ai_model"`
 	ActiveSessionID string       `json:"active_session_id,omitempty"`

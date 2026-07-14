@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
@@ -10,10 +11,27 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
+	"auris/pkg/finance"
 	"auris/pkg/locale"
 	"auris/pkg/market"
 	"auris/pkg/portfolio"
 )
+
+// moneyColWidth is the fixed width money values are right-aligned to in the
+// portfolio/instrument summary panels, wide enough for a symbol-prefixed,
+// thousands-grouped 9-figure amount (e.g. "-$999,999,999.99").
+const moneyColWidth = 17
+
+// colorMoney right-pads s to moneyColWidth (so alignment survives the ANSI
+// escape codes Render adds) then colors it Bull/Bear by the sign of v.
+func colorMoney(s string, v float64, styles *Styles) string {
+	padded := fmt.Sprintf("%*s", moneyColWidth, s)
+	style := styles.Bull
+	if v < 0 {
+		style = styles.Bear
+	}
+	return style.Render(padded)
+}
 
 // PortfolioViewResult is emitted when the user chooses an action on the portfolio screen.
 type PortfolioViewResult struct {
@@ -61,9 +79,10 @@ type portfolioViewModel struct {
 	spin    spinner.Model
 	mp      market.ProviderAPI
 	styles  *Styles
+	height  int // terminal height (updated by WindowSizeMsg)
 }
 
-func newPortfolioViewModel(p *portfolio.Portfolio, mp market.ProviderAPI, s *Styles) *portfolioViewModel {
+func newPortfolioViewModel(p *portfolio.Portfolio, mp market.ProviderAPI, s *Styles, height int) *portfolioViewModel {
 	sp := spinner.New()
 	sp.Spinner = spinner.Dot
 	sp.Style = s.Spinner
@@ -83,6 +102,7 @@ func newPortfolioViewModel(p *portfolio.Portfolio, mp market.ProviderAPI, s *Sty
 		spin:              sp,
 		loadingPrices:     mp != nil && hasHoldings,
 		loadingSparklines: mp != nil && hasHoldings,
+		height:            height,
 	}
 }
 
@@ -172,6 +192,10 @@ func (m *portfolioViewModel) fetchSparklinesCmd() tea.Cmd {
 
 func (m *portfolioViewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.height = msg.Height
+		return m, nil
+
 	case spinner.TickMsg:
 		if m.loadingPrices || m.loadingSparklines {
 			var cmd tea.Cmd
@@ -322,9 +346,10 @@ func (m *portfolioViewModel) View() string {
 	totalCurrent += m.portfolio.Cash
 	unrealizedPnL := totalCurrent - totalInvested - m.portfolio.Cash
 
+	cur := m.portfolio.Currency
 	summaryLines = append(summaryLines,
-		fmt.Sprintf("  %-22s %.2f", locale.T("portfolio.view.summary.invested"), totalInvested),
-		fmt.Sprintf("  %-22s %.2f", locale.T("portfolio.view.summary.cash"), m.portfolio.Cash),
+		fmt.Sprintf("  %-22s %*s", locale.T("portfolio.view.summary.invested"), moneyColWidth, finance.FormatMoney(totalInvested, cur)),
+		fmt.Sprintf("  %-22s %*s", locale.T("portfolio.view.summary.cash"), moneyColWidth, finance.FormatMoney(m.portfolio.Cash, cur)),
 	)
 
 	if m.loadingPrices {
@@ -336,15 +361,16 @@ func (m *portfolioViewModel) View() string {
 			),
 		)
 	} else if len(m.prices) > 0 || holdingCount == 0 {
-		pnlStr := formatPnL(unrealizedPnL)
+		pnlStr := colorMoney(finance.FormatMoneySigned(unrealizedPnL, cur), unrealizedPnL, m.styles)
 		summaryLines = append(summaryLines,
-			fmt.Sprintf("  %-22s %.2f", locale.T("portfolio.view.summary.current_value"), totalCurrent),
+			fmt.Sprintf("  %-22s %*s", locale.T("portfolio.view.summary.current_value"), moneyColWidth, finance.FormatMoney(totalCurrent, cur)),
 			fmt.Sprintf("  %-22s %s", locale.T("portfolio.view.summary.unrealized_pnl"), pnlStr),
 		)
 	}
 
+	realizedStr := colorMoney(finance.FormatMoneySigned(m.portfolio.RealizedPnL, cur), m.portfolio.RealizedPnL, m.styles)
 	summaryLines = append(summaryLines,
-		fmt.Sprintf("  %-22s %.2f", locale.T("portfolio.view.summary.realized_pnl"), m.portfolio.RealizedPnL),
+		fmt.Sprintf("  %-22s %s", locale.T("portfolio.view.summary.realized_pnl"), realizedStr),
 	)
 
 	// AI model label.
@@ -369,31 +395,58 @@ func (m *portfolioViewModel) View() string {
 		}
 	}
 
+	// Trailing block (delete confirmation, or an info message plus the hint
+	// line) — built ahead of the holdings panel so its height can be
+	// subtracted from the holdings row budget below.
+	var trailing []string
+	if m.confirming {
+		trailing = append(trailing, m.styles.Warning.Render(locale.T("portfolio.view.delete_confirm")))
+	} else {
+		if m.infoMsg != "" {
+			trailing = append(trailing, m.styles.Error.Render(m.infoMsg))
+		}
+		trailing = append(trailing, m.styles.Hint.Render(locale.T("portfolio.view.hint")))
+	}
+
+	// How many holdings rows fit before the screen overflows the terminal.
+	// The summary panel, action menu, and trailing block always render in
+	// full; only the holdings panel shrinks. Unknown height (e.g. a screen
+	// built without ever receiving a WindowSizeMsg, as in tests) means
+	// "don't truncate".
+	holdingsBudget := math.MaxInt
+	if m.height > 0 {
+		const separators = 3           // blank lines before the holdings panel, the menu, and the trailing block
+		const holdingsBorderOverhead = 2 // Preview style's RoundedBorder top+bottom
+		const safetyMargin = 1
+		holdingsBudget = m.height - lipgloss.Height(summary) - len(rows) - len(trailing) - separators - holdingsBorderOverhead - safetyMargin
+		if holdingsBudget < 1 {
+			holdingsBudget = 1
+		}
+	}
+
 	parts := []string{summary}
-	if holdingsPanel := m.viewHoldingsSparklines(); holdingsPanel != "" {
+	if holdingsPanel := m.viewHoldingsSparklines(holdingsBudget); holdingsPanel != "" {
 		parts = append(parts, "", holdingsPanel)
 	}
 	parts = append(parts, "")
 	parts = append(parts, rows...)
 	parts = append(parts, "")
-
-	if m.confirming {
-		parts = append(parts, m.styles.Warning.Render(locale.T("portfolio.view.delete_confirm")))
-	} else {
-		if m.infoMsg != "" {
-			parts = append(parts, m.styles.Error.Render(m.infoMsg))
-		}
-		parts = append(parts, m.styles.Hint.Render(locale.T("portfolio.view.hint")))
-	}
+	parts = append(parts, trailing...)
 
 	return lipgloss.JoinVertical(lipgloss.Left, parts...)
 }
 
-// viewHoldingsSparklines renders one row per distinct held symbol with its
-// last price and a recent-price sparkline. Returns "" if there are no
-// holdings to show.
-func (m *portfolioViewModel) viewHoldingsSparklines() string {
-	var lines []string
+// viewHoldingsSparklines renders one entry per distinct held symbol with its
+// last price beside a recent-price sparkline. renderSparkline's output is
+// sparklineHeight (3) rows tall, so each entry — not each line — spans
+// several terminal rows; entries are joined horizontally (not interpolated
+// into a single %s line) so the symbol/price label stays aligned next to the
+// chart instead of being clobbered by its embedded newlines. Returns "" if
+// there are no holdings to show. If the full list would exceed maxRows
+// terminal rows, trailing entries are dropped and a final "+N more" row
+// points the user at the full-list menu action instead.
+func (m *portfolioViewModel) viewHoldingsSparklines(maxRows int) string {
+	var entries []string
 	seen := make(map[string]bool)
 	for _, ins := range m.portfolio.Instruments {
 		if ins.Type != portfolio.InstrumentHolding || seen[ins.Symbol] {
@@ -402,15 +455,32 @@ func (m *portfolioViewModel) viewHoldingsSparklines() string {
 		seen[ins.Symbol] = true
 		priceStr := locale.T("portfolio.view.price_unavailable")
 		if p, ok := m.prices[ins.Symbol]; ok {
-			priceStr = fmt.Sprintf("%.2f", p)
+			priceStr = finance.FormatMoney(p, m.portfolio.Currency)
 		}
-		spark := renderSparkline(m.sparklineData[ins.Symbol], m.styles)
-		lines = append(lines, fmt.Sprintf("  %-8s %8s  %s", ins.Symbol, priceStr, spark))
+		header := fmt.Sprintf("  %-8s %12s  ", ins.Symbol, priceStr)
+		entry := header
+		if spark := renderSparkline(m.sparklineData[ins.Symbol], m.styles); spark != "" {
+			entry = lipgloss.JoinHorizontal(lipgloss.Center, header, spark)
+		}
+		entries = append(entries, entry)
 	}
-	if len(lines) == 0 {
+	if len(entries) == 0 {
 		return ""
 	}
-	return m.styles.Preview.Render(strings.Join(lines, "\n"))
+
+	var shown []string
+	usedRows := 0
+	for i, e := range entries {
+		h := lipgloss.Height(e)
+		if usedRows+h > maxRows && len(shown) > 0 {
+			remaining := len(entries) - i
+			shown = append(shown, "  "+m.styles.Hint.Render(locale.Tp("portfolio.view.holdings_more", map[string]any{"Count": remaining})))
+			return m.styles.Preview.Render(strings.Join(shown, "\n"))
+		}
+		shown = append(shown, e)
+		usedRows += h
+	}
+	return m.styles.Preview.Render(strings.Join(shown, "\n"))
 }
 
 // formatPnL formats a P&L value with a sign prefix.

@@ -72,12 +72,28 @@ func renderCandleChart(candles []market.Candle, s *Styles) string {
 // renderSparkline renders a small single-color price sparkline from a slice
 // of closes ordered oldest-first. Returns "" when there are fewer than 2
 // points to draw a line between.
+//
+// ntcharts' sparkline scales bars from 0 up to the data's max value, not
+// from the data's min to its max — for a price series where every value is
+// within a couple of percent of the max (the common case for a one-month
+// window), that leaves every bar filling nearly the full height, rendering
+// as a solid block instead of a shape. Shifting the series down by its own
+// minimum before pushing makes the bars span the full height based on the
+// series' actual relative movement.
 func renderSparkline(closes []float64, s *Styles) string {
 	if len(closes) < 2 {
 		return ""
 	}
+	min := closes[0]
+	for _, c := range closes[1:] {
+		if c < min {
+			min = c
+		}
+	}
 	sp := sparkline.New(sparklineWidth, sparklineHeight, sparkline.WithStyle(s.Bull))
-	sp.PushAll(closes)
+	for _, c := range closes {
+		sp.Push(c - min)
+	}
 	sp.Draw()
 	return sp.View()
 }
