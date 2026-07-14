@@ -2,11 +2,14 @@ package tui
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
 	"os"
 	"path/filepath"
+	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -91,8 +94,8 @@ type agentResponseMsg struct {
 	err     error
 }
 
-// agentProgressMsg is emitted while the agent executes tools, one per unique ProgressKind.
-type agentProgressMsg struct{ kind agent.ProgressKind }
+// agentProgressMsg is emitted while the agent executes tools, one per distinct tool call.
+type agentProgressMsg struct{ name, args string }
 
 // agentChartMsg carries a chart already rendered to a string (possibly "" if
 // there wasn't enough candle data) for a market_render_price_chart call.
@@ -297,7 +300,47 @@ func listenProgressCmd(ch <-chan agent.ProgressEvent) tea.Cmd {
 		if !ok {
 			return nil
 		}
-		return agentProgressMsg{kind: ev.Kind}
+		return agentProgressMsg{name: ev.Name, args: ev.Args}
+	}
+}
+
+// formatToolCall renders a tool call for the chat log, e.g. "market_get_quote(AAPL)"
+// for a single argument, or "portfolio_add_lot(price=100, quantity=5, symbol=AAPL)"
+// for several (sorted by key for determinism — map iteration order is not stable).
+func formatToolCall(name, argsJSON string) string {
+	var args map[string]any
+	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil || len(args) == 0 {
+		return name + "()"
+	}
+	keys := make([]string, 0, len(args))
+	for k := range args {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	if len(keys) == 1 {
+		return name + "(" + formatArgValue(args[keys[0]]) + ")"
+	}
+	parts := make([]string, len(keys))
+	for i, k := range keys {
+		parts[i] = k + "=" + formatArgValue(args[k])
+	}
+	return name + "(" + strings.Join(parts, ", ") + ")"
+}
+
+func formatArgValue(v any) string {
+	switch x := v.(type) {
+	case string:
+		return x
+	case float64:
+		return strconv.FormatFloat(x, 'f', -1, 64)
+	case bool:
+		return strconv.FormatBool(x)
+	case []any:
+		return fmt.Sprintf("[%d]", len(x))
+	case nil:
+		return "null"
+	default:
+		return fmt.Sprintf("%v", x)
 	}
 }
 
@@ -364,21 +407,10 @@ func (m *AgentModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, textarea.Blink
 
 	case agentProgressMsg:
-		var text string
-		switch msg.kind {
-		case agent.ProgressFinancial:
-			text = locale.T("agent.tool_financial")
-		case agent.ProgressCalculation:
-			text = locale.T("agent.tool_calculation")
-		case agent.ProgressNews:
-			text = locale.T("agent.tool_news")
-		}
-		if text != "" {
-			m.toolLogs = append(m.toolLogs, text)
-			if m.ready {
-				m.viewport.SetContent(m.renderHistory())
-				m.viewport.GotoBottom()
-			}
+		m.toolLogs = append(m.toolLogs, formatToolCall(msg.name, msg.args))
+		if m.ready {
+			m.viewport.SetContent(m.renderHistory())
+			m.viewport.GotoBottom()
 		}
 		return m, listenProgressCmd(m.progressCh)
 

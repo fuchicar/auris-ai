@@ -12,7 +12,11 @@ import (
 
 const maxLoopIterations = 10
 
-// ProgressKind identifies the category of tool being executed.
+// ProgressKind classifies a tool call for the purpose of deciding whether it
+// should surface a ProgressEvent at all (time_* tools, for instance, never
+// do). It is also reused as the dedup key type in dispatch/dispatchInner,
+// where it holds the full "name:args" signature of the last emitted call
+// rather than a bare category — see the dedup logic in tools.go.
 type ProgressKind string
 
 const (
@@ -22,10 +26,13 @@ const (
 	ProgressPortfolio   ProgressKind = "portfolio"
 )
 
-// ProgressEvent is sent on the progress channel before each tool execution.
-// Consecutive events with the same Kind are deduplicated by the loop.
+// ProgressEvent is sent on the progress channel before each tool execution,
+// identifying the concrete call so the UI can render it (e.g.
+// "market_get_quote(AAPL)"). Only exact repeats of the same call are
+// deduplicated by the loop.
 type ProgressEvent struct {
-	Kind ProgressKind
+	Name string // tool name, e.g. "market_get_quote"
+	Args string // raw JSON arguments exactly as sent by the model
 }
 
 // ChartEvent carries the candle data for a chart the model explicitly

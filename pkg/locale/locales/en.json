@@ -685,17 +685,8 @@
   "agent.info.context_used_none": {
     "other": "Context used: no completions yet this session"
   },
-  "agent.tool_financial": {
-    "other": "Querying financial data..."
-  },
   "agent.chart_too_narrow": {
     "other": "[chart hidden — widen the terminal to see it]"
-  },
-  "agent.tool_calculation": {
-    "other": "Calculating..."
-  },
-  "agent.tool_news": {
-    "other": "Fetching news..."
   },
   "agent.cancel_hint": {
     "other": "Esc to cancel"

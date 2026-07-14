@@ -638,7 +638,10 @@ func (a *Agent) dispatch(ctx context.Context, call llm.ToolCall, lastKind *Progr
 
 // dispatchInner is the actual tool dispatch logic; dispatch wraps it with logging.
 func (a *Agent) dispatchInner(ctx context.Context, call llm.ToolCall, lastKind *ProgressKind) string {
-	// Emit a progress event for market, calculation, and portfolio tools (deduplicated).
+	// Emit a progress event for market, calculation, and portfolio tools. The
+	// dedup key is the full call signature (name+args), not just the
+	// category, so e.g. market_get_quote followed by market_get_candles both
+	// surface — only an exact repeat of the same call is suppressed.
 	var kind ProgressKind
 	switch {
 	case strings.HasPrefix(call.Function.Name, "market_"):
@@ -648,12 +651,15 @@ func (a *Agent) dispatchInner(ctx context.Context, call llm.ToolCall, lastKind *
 	case strings.HasPrefix(call.Function.Name, "portfolio_"):
 		kind = ProgressPortfolio
 	}
-	if kind != "" && kind != *lastKind {
-		*lastKind = kind
-		if a.progressCh != nil {
-			select {
-			case a.progressCh <- ProgressEvent{Kind: kind}:
-			default:
+	if kind != "" {
+		sig := ProgressKind(call.Function.Name + ":" + call.Function.Arguments)
+		if sig != *lastKind {
+			*lastKind = sig
+			if a.progressCh != nil {
+				select {
+				case a.progressCh <- ProgressEvent{Name: call.Function.Name, Args: call.Function.Arguments}:
+				default:
+				}
 			}
 		}
 	}
@@ -1081,11 +1087,12 @@ func (a *Agent) dispatchInner(ctx context.Context, call llm.ToolCall, lastKind *
 
 	// News tool — no market provider needed.
 	if call.Function.Name == news.ToolName {
-		if kind := ProgressNews; kind != *lastKind {
-			*lastKind = kind
+		sig := ProgressKind(call.Function.Name + ":" + call.Function.Arguments)
+		if sig != *lastKind {
+			*lastKind = sig
 			if a.progressCh != nil {
 				select {
-				case a.progressCh <- ProgressEvent{Kind: kind}:
+				case a.progressCh <- ProgressEvent{Name: call.Function.Name, Args: call.Function.Arguments}:
 				default:
 				}
 			}

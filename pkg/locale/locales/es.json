@@ -685,17 +685,8 @@
   "agent.info.context_used_none": {
     "other": "Contexto utilizado: aún no se ha completado ninguna consulta en esta sesión"
   },
-  "agent.tool_financial": {
-    "other": "Consultando datos financieros..."
-  },
   "agent.chart_too_narrow": {
     "other": "[gráfico oculto — ensancha la terminal para verlo]"
-  },
-  "agent.tool_calculation": {
-    "other": "Calculando..."
-  },
-  "agent.tool_news": {
-    "other": "Obteniendo noticias..."
   },
   "agent.cancel_hint": {
     "other": "Esc para cancelar"
