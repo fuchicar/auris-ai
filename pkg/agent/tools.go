@@ -37,6 +37,9 @@ func buildTools() []llm.Tool {
 	numProp := func(desc string) map[string]any {
 		return map[string]any{"type": "number", "description": desc}
 	}
+	boolProp := func(desc string) map[string]any {
+		return map[string]any{"type": "boolean", "description": desc}
+	}
 	numEnum := func(desc string, vals []any) map[string]any {
 		return map[string]any{"type": "number", "description": desc, "enum": vals}
 	}
@@ -425,15 +428,16 @@ func buildTools() []llm.Tool {
 			}, []string{}),
 		),
 		tool("portfolio_add_instrument",
-			"Add an instrument (holding or watchlist item) to a portfolio. For holdings, optionally provide quantity, price, and date to record the first lot in one step.",
+			"Add an instrument (holding or watchlist item) to a portfolio. For holdings, optionally provide quantity and price to record the first lot's cost basis in one step — this does NOT touch cash by default, since the common case is cataloging a position already owned before using Auris. Set debit_cash=true only if this specifically represents a new purchase happening now with the portfolio's cash.",
 			obj(map[string]any{
 				"portfolio_id":    str("Portfolio ID (optional; omit to use the current portfolio)"),
 				"symbol":          str("Ticker symbol, e.g. AAPL"),
 				"name":            str("Instrument full name, e.g. Apple Inc."),
 				"instrument_type": enum("Whether the user owns the instrument or is only tracking it", []any{"holding", "watchlist"}),
-				"quantity":        numProp("Units purchased (optional; only for holdings, creates the first lot)"),
-				"price":           numProp("Purchase price per unit (optional; only for holdings, creates the first lot)"),
+				"quantity":        numProp("Units purchased (optional; only for holdings, creates the first lot's cost basis)"),
+				"price":           numProp("Purchase price per unit (optional; only for holdings, creates the first lot's cost basis)"),
 				"date":            str("Purchase date ISO 8601 or YYYY-MM-DD (optional; defaults to today)"),
+				"debit_cash":      boolProp("If true, treat this as a real purchase happening now: debit quantity*price from the portfolio's cash and log a 'buy' transaction. Defaults to false — quantity/price alone only set the lot's cost basis without moving cash."),
 			}, []string{"symbol", "name", "instrument_type"}),
 		),
 		tool("portfolio_add_lot",
@@ -696,6 +700,10 @@ func (a *Agent) dispatchInner(ctx context.Context, call llm.ToolCall, lastKind *
 	}
 	numVal := func(key string) float64 {
 		v, _ := args[key].(float64)
+		return v
+	}
+	boolVal := func(key string) bool {
+		v, _ := args[key].(bool)
 		return v
 	}
 	arrNumVal := func(key string) ([]float64, bool) {
@@ -1253,10 +1261,12 @@ func (a *Agent) dispatchInner(ctx context.Context, call llm.ToolCall, lastKind *
 				if qty > 0 && price > 0 {
 					date := parseLotDate("date")
 					ins.Lots = []portfolio.Lot{portfolio.NewLot(qty, price, date)}
-					p.RecordTransaction(portfolio.Transaction{
-						Type: portfolio.TransactionBuy, Symbol: symbol,
-						Quantity: qty, Price: price, CashDelta: -qty * price, Date: date,
-					})
+					if boolVal("debit_cash") {
+						p.RecordTransaction(portfolio.Transaction{
+							Type: portfolio.TransactionBuy, Symbol: symbol,
+							Quantity: qty, Price: price, CashDelta: -qty * price, Date: date,
+						})
+					}
 				}
 			}
 			p.Instruments = append(p.Instruments, ins)

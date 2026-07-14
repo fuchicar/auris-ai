@@ -52,7 +52,45 @@ func TestDispatch_PortfolioAddLot_DebitsCash(t *testing.T) {
 	}
 }
 
-func TestDispatch_PortfolioAddInstrument_WithInitialLot_DebitsCash(t *testing.T) {
+func TestDispatch_PortfolioAddInstrument_WithInitialLot_DebitCashTrue_DebitsCash(t *testing.T) {
+	tmp := t.TempDir()
+	prev := portfolio.SetPortfoliosDirForTest(tmp)
+	t.Cleanup(func() { portfolio.SetPortfoliosDirForTest(prev) })
+
+	p := portfolio.NewPortfolio("test")
+	p.Cash = 1000
+	if err := portfolio.SavePortfolio(p); err != nil {
+		t.Fatal(err)
+	}
+
+	a := New(&mockLLM{}, &mockMarket{}, "")
+	a.currentPortfolioID = p.ID
+
+	var lk ProgressKind
+	args := toolCallArgs(t, map[string]any{
+		"symbol": "MSFT", "name": "Microsoft", "instrument_type": "holding",
+		"quantity": 2.0, "price": 300.0, "debit_cash": true,
+	})
+	result := a.dispatch(context.Background(), llm.ToolCall{
+		Function: llm.ToolCallFunction{Name: "portfolio_add_instrument", Arguments: args},
+	}, &lk)
+	if result[:6] == "error:" {
+		t.Fatalf("unexpected error: %s", result)
+	}
+
+	reloaded, err := portfolio.LoadPortfolio(p.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reloaded.Cash != 400 {
+		t.Errorf("Cash = %v, want 400", reloaded.Cash)
+	}
+	if len(reloaded.Transactions) != 1 || reloaded.Transactions[0].Type != portfolio.TransactionBuy {
+		t.Errorf("Transactions = %+v, want 1 buy transaction", reloaded.Transactions)
+	}
+}
+
+func TestDispatch_PortfolioAddInstrument_WithInitialLot_DefaultDoesNotDebitCash(t *testing.T) {
 	tmp := t.TempDir()
 	prev := portfolio.SetPortfoliosDirForTest(tmp)
 	t.Cleanup(func() { portfolio.SetPortfoliosDirForTest(prev) })
@@ -82,11 +120,18 @@ func TestDispatch_PortfolioAddInstrument_WithInitialLot_DebitsCash(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if reloaded.Cash != 400 {
-		t.Errorf("Cash = %v, want 400", reloaded.Cash)
+	if reloaded.Cash != 1000 {
+		t.Errorf("Cash = %v, want unchanged 1000 (debit_cash defaults to false)", reloaded.Cash)
 	}
-	if len(reloaded.Transactions) != 1 || reloaded.Transactions[0].Type != portfolio.TransactionBuy {
-		t.Errorf("Transactions = %+v, want 1 buy transaction", reloaded.Transactions)
+	if len(reloaded.Transactions) != 0 {
+		t.Errorf("Transactions = %+v, want 0 transactions when debit_cash is not set", reloaded.Transactions)
+	}
+	if len(reloaded.Instruments) != 1 || len(reloaded.Instruments[0].Lots) != 1 {
+		t.Fatalf("want 1 instrument with 1 lot, got %+v", reloaded.Instruments)
+	}
+	lot := reloaded.Instruments[0].Lots[0]
+	if lot.Quantity != 2 || lot.Price != 300 {
+		t.Errorf("lot = %+v, want Quantity=2 Price=300 (cost basis still recorded)", lot)
 	}
 }
 
