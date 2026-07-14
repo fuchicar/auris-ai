@@ -496,6 +496,9 @@
   "menu.exit_confirm": {
     "other": "Press Esc again to exit"
   },
+  "menu.models_load_error": {
+    "other": "Failed to load models: {{.Error}}"
+  },
   "hint.esc_back": {
     "other": "· Esc back"
   },

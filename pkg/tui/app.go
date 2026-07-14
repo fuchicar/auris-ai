@@ -314,7 +314,23 @@ func (a *AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case modelsLoadedMsg:
 		if msg.err != nil {
-			// Loading failed — stay on current screen silently.
+			// Loading failed — reset any pending portfolio create/edit flow
+			// (otherwise it stays armed forever, silently swallowing the next
+			// unrelated modelsLoadedMsg) and surface the error on whichever
+			// screen initiated the load.
+			a.pendingPortfolioCreate = false
+			a.pendingPortfolioEdit = false
+			errText := locale.Tp("menu.models_load_error", map[string]any{"Error": msg.err.Error()})
+			switch cur := a.current.(type) {
+			case *MenuModel:
+				cur.err = errText
+			case *AgentModel:
+				cur.err = errText
+			case *portfolioMenuModel:
+				cur.err = errText
+			case *portfolioViewModel:
+				cur.infoMsg = errText
+			}
 			return a, nil
 		}
 		if a.pendingPortfolioCreate {

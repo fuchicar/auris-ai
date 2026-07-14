@@ -496,6 +496,9 @@
   "menu.exit_confirm": {
     "other": "Pulse Esc otra vez para salir"
   },
+  "menu.models_load_error": {
+    "other": "Error al cargar los modelos: {{.Error}}"
+  },
   "hint.esc_back": {
     "other": "· Esc volver"
   },
