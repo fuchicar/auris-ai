@@ -23,9 +23,11 @@ go test ./pkg/drivers/fmp/... -run TestInterfaceCompliance -v
 
 Integration test credentials:
 - FMP market driver: `pkg/drivers/fmp/test_data/fmp_api_key`
-- EODHD market driver: `pkg/drivers/eodhd/test_data/eodhd_api_key`
+- EODHD market driver: `pkg/drivers/eodhd/test_data/eodhd_api_key` — only consulted by the opt-in live suite (see below); `go test ./...` never reads it.
 - Ollama LLM driver: requires a local Ollama instance running
 - Tests `t.Skip` automatically when credentials are absent.
+
+`pkg/drivers/eodhd` is the one exception to the "live integration test" pattern above (REF-10): its default `eodhd_test.go` is fully hermetic (`httptest` + `eodhd.WithBaseURL`, no network, no key needed) because the free tier's daily quota is too tight to survive a live suite running on every `go test ./...`. The real-network suite still exists for manual sanity checks, but lives in `eodhd_integration_test.go` behind `//go:build integration` — run it explicitly with `go test -tags=integration ./pkg/drivers/eodhd/... -run TestLive`; it `t.Skip`s per-test if the key file is absent, same as every other driver.
 
 ## Release process
 
