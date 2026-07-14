@@ -8,7 +8,7 @@ Registro de decisiones de diseño del proyecto Auris. Cada ADR sigue el formato:
 - **Consequences** — efectos de la decisión (positivos y negativos).
 - **Open questions** — solo si `Status == pending`.
 
-Origen histórico: las cuatro primeras ADR (`DD-1`..`DD-4`) se cerraron el **2026-07-02** y estaban marcadas `[x]` en `TODO.md` antes de la reestructuración del 2026-07-10. `DD-5` permanece `pending` desde su apertura el 2026-07-09.
+Origen histórico: las cuatro primeras ADR (`DD-1`..`DD-4`) se cerraron el **2026-07-02** y estaban marcadas `[x]` en `TODO.md` antes de la reestructuración del 2026-07-10. `DD-5` se cerró el **2026-07-14** tras verificar que los tokens de bienvenida de EODHD están agotados y el límite real del free tier es 20 calls/día.
 
 ---
 
@@ -102,8 +102,9 @@ Añadidas dos frases a la sección "Uso de herramientas" del system prompt indic
 
 ## DD-5 — Orden de cascada FMP/EODHD si el límite real de EODHD es 20 calls/día
 
-- **Status**: pending
+- **Status**: accepted
 - **Opened**: 2026-07-09
+- **Closed**: 2026-07-14
 
 ### Context
 
@@ -112,26 +113,25 @@ FEAT-7 (segundo market provider, `pkg/drivers/eodhd/`) planteó dos arquitectura
 1. **Cascada con fallback FMP→EODHD**: ambos activos, FMP primario (free tier ~250 calls/día, cobertura amplia pero con huecos BME en el plan free), EODHD secundario (rescata cuando FMP no cubre el símbolo). Probado en vivo contra la API real con el token del usuario.
 2. **Provider primario único configurable**: el usuario elige uno, sin cascada. Más simple pero pierde la resiliencia.
 
-La elección entre ambas arquitecturas depende del límite real del free tier de EODHD:
+La elección entre ambas arquitecturas dependía del límite real del free tier de EODHD:
 
-- **1200 calls/día** (lo que reporta el header HTTP `x-ratelimit-limit: 1200`): EODHD solo bastaría como primario para un usuario medio; la cascada sería opcional / para cobertura US que EODHD no tenga.
-- **20 calls/día** (lo que dice un email recibido por el usuario de EODHD: "Validity: 20 API calls per day + 500 welcome calls"): EODHD pasa de "secundario de cobertura" a "recurso escaso", y la cascada FMP→EODHD deja de ser una mejora opcional y se vuelve **obligatoria** (con 20 calls/día EODHD solo cubre un puñado de símbolos del usuario, no todo el universo; FMP free con ~250 calls/día sostiene el grueso).
+- **1200 calls/día** (lo que reportaba el header HTTP `x-ratelimit-limit: 1200`): EODHD solo bastaría como primario para un usuario medio; la cascada sería opcional / para cobertura US que EODHD no tenga.
+- **20 calls/día** (lo que decía un email recibido por el usuario de EODHD: "Validity: 20 API calls per day + 500 welcome calls"): EODHD pasa de "secundario de cobertura" a "recurso escaso", y la cascada FMP→EODHD deja de ser una mejora opcional y se vuelve **obligatoria**.
 
-### Decision (vigente hasta resolución)
+### Decision (final)
 
-Cascada con fallback FMP→EODHD, primario FMP, secundario EODHD, basada en el header HTTP verificado en la sesión 2026-07-09. Implementada tal cual en `pkg/agent/market_chain.go` y `pkg/tui/app.go::buildMarketProvider`.
+Cascada con fallback FMP→EODHD, **obligatoria** con FMP primario y EODHD secundario. FMP free (250 calls/día) sostiene el grueso del tráfico; EODHD se reserva a los huecos de cobertura que FMP free deja (BME y símbolos no-US). Implementada tal cual en `pkg/agent/market_chain.go` y `pkg/tui/app.go::buildMarketProvider`. Las reglas de cascada (`ErrNotFound`/`ErrNotSupported`/`ErrRateLimit`/`ErrSubscriptionRequired` siguen; el resto de errores no cascada) **no cambian** — la decisión es cuál de las dos arquitecturas se elige, no cómo se decide dentro del secundario.
 
 ### Consequences
 
-- Resiliencia ante huecos de cobertura (EODHD cubre BME donde FMP free falla).
-- Distribución de cuota entre dos proveedores (si EODHD tiene 1200 calls/día, la cascada es cómoda; si tiene 20, FMP lleva el grueso y EODHD se reserva para lo que FMP no cubra).
-- Si el header HTTP está desactualizado y el email es correcto, el sistema sigue funcionando pero EODHD quedará casi siempre sin cuota al final del día — no se rompe, solo se degrada silenciosamente.
+- Con 20 calls/día, EODHD se agota rápido y la cascada sigue funcionando bien con FMP solo: el usuario pierde temporalmente solo la cobertura BME puntual, no se rompe nada.
+- Distribución de cuota eficiente: FMP cubre la mayor parte del universo del usuario; EODHD solo dispara cuando FMP devuelve `ErrNotFound` o `ErrNotSupported` (no en cada llamada).
+- No se aplicó ningún endurecimiento adicional del tipo "secundario solo tras N fallos consecutivos del primario": FMP primario + EODHD secundario basta porque FMP sostiene el grueso y EODHD solo se usa para cubrir huecos. Endurecer la cascada sumaría complejidad sin ganancia observable mientras FMP siga siendo el primario.
+- Si el usuario migra en el futuro a un plan de pago de EODHD, la misma cascada sigue funcionando igual — solo cambia la frecuencia con la que el secundario rescata llamadas, no la lógica.
 
-### Open questions
+### Confirmación (2026-07-14)
 
-- Verificar el email de EODHD: ¿es phishing, bienvenida genérica de un tier distinto, o informativo real del plan free?
-- Si se confirma 20 calls/día, evaluar si la decisión debe endurecerse (p.ej. marcar el secundario como "solo a partir del segundo fallo consecutivo del primario" para racionar) o quedarse como está.
-- Acciones derivadas no resueltas: ninguna tarea abierta en `TODO.md` derivada de DD-5.
+El usuario verificó directamente que los **tokens de bienvenida** ("500 welcome calls") de EODHD **están agotados**, así que el plan free está en su límite real de 20 calls/día. Cierra la discrepancia entre el header HTTP (`x-ratelimit-limit: 1200`, aparentemente publicitado/legado) y el email — gana el email. Sin acciones derivadas abiertas.
 
 ---
 
@@ -218,3 +218,59 @@ Hasta FEAT-20 el proyecto no tenía tooling de build/CI: sin Makefile, sin `.git
 - Acoplamiento implícito: si `version`/`commit`/`date`/`builtBy` se renombran algún día, hay que añadir un `ldflags:` explícito o re-alinear nombres con GoReleaser.
 - `release.yml`/`ci.yml` quedan inactivos hasta publicar el repo en GitHub (remoto actual: Gitea/Forgejo autoalojado) — esperado, no un error de configuración.
 - Primera dependencia de *tooling* externo del repo (no toca `go.mod`); validada localmente con `goreleaser check` y `goreleaser build --snapshot --clean --single-target` (requirió `GOTOOLCHAIN=auto`, ya que GoReleaser v2 exige Go ≥ 1.26.4 y el entorno de desarrollo tenía 1.25.12 instalado — el propio `go run` descargó el toolchain necesario sin tocar `go.mod`, que sigue declarando `go 1.25.0`).
+
+---
+
+## DD-9 — Divisa a nivel de cartera, no por holding (lista curada, formato no localizado)
+
+- **Status**: accepted
+- **Opened**: 2026-07-13
+- **Closed**: 2026-07-13
+
+### Context
+
+FEAT-24 añadió formato monetario (`pkg/finance/money.go`) a las vistas de cartera, que descubrió que `portfolio.Portfolio` no tenía ningún concepto de divisa. Tres arquitecturas posibles:
+
+1. **Divisa por holding**: cada posición tiene su propia moneda; requiere agregar manualmente con tipos de cambio cuando hay mezcla y el LLM pide "valor total de la cartera".
+2. **Divisa por lot individual** (granularidad del FIFO): innecesariamente fino, complica la agregación de P&L.
+3. **Divisa por cartera** (un solo campo `Currency` en `portfolio.Portfolio`): el LLM cita valor total directamente; cash y todas las posiciones se asumen en esa moneda.
+
+Adicionalmente, el formato monetario podía ser **locale-aware** (parsing de `golang.org/x/text/currency` + formateador numérico que respete el locale del usuario) o **fijo** (símbolo siempre delante, coma millares/punto decimal independiente del locale).
+
+### Decision
+
+1. Campo `Currency string` (ISO 4217) en `portfolio.Portfolio` (`pkg/portfolio/portfolio.go`), **vacío en carteras antiguas** (fallback sin símbolo, sin necesidad de migración). Lista **curada** de 10 divisas en el wizard de creación/edición (USD, EUR, GBP, JPY, CHF, CAD, AUD, MXN, BRL, CNY) — mismo patrón `renderScrollList` ya usado en los selectores de provider / data mode / encryption. Default por `locale.Detect()` (es→EUR). No se permite código libre porque eso exigiría parsing de ISO 4217 contra el fichero del registro ISO para mostrar nombres legibles; la lista curada es la superficie completa que necesita el usuario TFM y un free tier.
+2. Formato **deliberadamente no localizado**: `FormatMoney`/`FormatMoneySigned`/`CurrencySymbol` (`pkg/finance/money.go`) ponen el símbolo siempre delante (no detrás, como muchos locale europeos) y usan coma millares / punto decimal en ambos locales (`en` y `es`). Decisión consciente de **no** introducir `golang.org/x/text/currency` ni construir un formateador locale-aware: el formato fijo es legible en los dos locales del proyecto, predecible en snapshots/coloreado de Bull/Bear y testeable sin parametrización.
+
+### Consequences
+
+- El LLM puede citar "valor total de la cartera en EUR" sin agregación manual; las posiciones heredan la divisa de la cartera.
+- Las carteras migradas desde antes de FEAT-24 siguen funcionando sin símbolo visible (sin migración destructiva — el campo es opcional).
+- Superficie de validación de input acotada a 10 entradas: sin superficie de error por "divisa desconocida" durante el alta.
+- Sin dependencia nueva (`golang.org/x/text/currency` queda fuera). Si en el futuro se quiere locale-aware real, el impacto queda localizado en `pkg/finance/money.go` y no toca los call sites de las screens.
+
+---
+
+## DD-10 — Persistencia segura: `WriteFileAtomic` + idempotencia de `ReencryptAll*`
+
+- **Status**: accepted
+- **Opened**: 2026-07-13
+- **Closed**: 2026-07-13
+
+### Context
+
+Con FEAT-16 (DD-6) cerrado quedaba sin elevar a ADR una decisión transversal sobre **cómo se persiste el contenido cifrado**: un blob AES-GCM parcial (producto de un crash a mitad de `os.WriteFile`) es irrecuperable — el tag GCM al final no puede verificarse. Adicionalmente, los dos flujos que disparan re-cifrado de muchos archivos (`setStorageEncryption` para togglear cifrado, `ScreenChangePassphrase` para rotar la passphrase con cifrado activo) podían interrumpirse a mitad, dejando un batch con archivos migrados y otros sin migrar — propiedad esperada de "reintentar es seguro" no estaba documentada como decisión.
+
+Ortogonal a DD-6 (DD-6 cubre "cómo se cifra"; este cubre "cómo se persiste de forma segura y se recupera de un fallo parcial").
+
+### Decision
+
+1. **Escrituras atómicas**: nuevo `config.WriteFileAtomic(path, data)` (escribir a `path+".tmp"` + `os.Rename` en el mismo directorio) sustituye a `os.WriteFile` en config, sesiones, carteras, export y **dentro de los bucles `ReencryptAll*`**. El `os.Rename` es atómico en el mismo filesystem (POSIX guarantee), así que un crash/disco lleno solo deja el `.tmp` huérfano; el contenido real del path está siempre en estado consistente.
+2. **Idempotencia ante reintentos**: `ReencryptAllPortfolios`/`ReencryptAllSessions` (`pkg/portfolio/` y `pkg/config/` respectivamente) prueban para cada archivo primero la clave antigua; si falla y hay clave nueva, prueban la nueva antes de darse por vencido. Esto cubre el caso "el batch anterior dejó la mitad de los archivos migrados" — el siguiente intento los migra con la clave nueva sin romper los ya migrados.
+3. **Helper compartido `reencryptAll`** en `pkg/tui/app.go` (`pkg/tui/app.go::reencryptAll`) replica el patrón de `setStorageEncryption`: en caso de error no se cambia ni clave ni passphrase, y se re-muestra la pantalla origen con el mensaje; el reintento del usuario es seguro (la idempotencia del punto 2 lo garantiza). Antes, el helper de cambio de passphrase descartaba los errores con `_ =` y activaba la clave nueva incondicionalmente — bug cerrado como **BUG-8**.
+
+### Consequences
+
+- "Reintentar es seguro" es una propiedad explícita del diseño, no un accidente feliz: un fallo de disco a mitad de batch no destruye datos; el reintento completa la migración.
+- Posibilidad de fallo parcial sin rollback transaccional: aceptable para una feature Tier C (cambio de passphrase) — desproporcionado un journal de migración. La idempotencia es la respuesta pragmática.
+- Acoplamiento implícito: cualquier path que persista datos cifrados debe pasar por `WriteFileAtomic`. Documentado en `CLAUDE.md` (sección "Adding a new encrypted persistence path"). Los call sites existentes están todos migrados tras REF-8; un futuro path nuevo debe seguir el patrón.
