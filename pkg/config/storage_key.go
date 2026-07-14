@@ -3,6 +3,7 @@ package config
 import (
 	"encoding/json"
 	"fmt"
+	"sync"
 )
 
 // storageKey is the currently active key for optional at-rest encryption of
@@ -14,12 +15,26 @@ import (
 // SavePortfolio/LoadPortfolio/SaveSession/LoadSession call site.
 var storageKey []byte
 
+// storageKeyMu protects only storageKey. It is set from the TUI's Update
+// goroutine (passphrase change / encryption toggle) while read concurrently
+// from the agent's background goroutine during tool dispatch (portfolio/
+// session save-load) — see BUG-9.
+var storageKeyMu sync.RWMutex
+
 // SetStorageKey sets the active storage-encryption key. Pass nil to disable
 // encryption for subsequent saves/loads.
-func SetStorageKey(key []byte) { storageKey = key }
+func SetStorageKey(key []byte) {
+	storageKeyMu.Lock()
+	defer storageKeyMu.Unlock()
+	storageKey = key
+}
 
 // StorageKey returns the active storage-encryption key, or nil if disabled.
-func StorageKey() []byte { return storageKey }
+func StorageKey() []byte {
+	storageKeyMu.RLock()
+	defer storageKeyMu.RUnlock()
+	return storageKey
+}
 
 // EncryptedEnvelope is the on-disk wrapper for an optionally-encrypted JSON
 // file (a portfolio or a chat session). A legacy plaintext file has no

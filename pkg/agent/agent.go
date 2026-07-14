@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"log"
+	"sync"
 
 	"auris/pkg/llm"
 	"auris/pkg/market"
@@ -49,6 +50,11 @@ type Agent struct {
 	debugLogger        *log.Logger
 	currentPortfolioID string
 	lastUsage          llm.TokenUsage
+	// usageMu protects only lastUsage. It is written from the background
+	// goroutine driving the ReAct loop (runLoop/runLoopStream) while read
+	// concurrently from the TUI's Update goroutine (/info command) — see
+	// BUG-9.
+	usageMu sync.RWMutex
 }
 
 // New creates an Agent. model selects which model to use; empty string uses the
@@ -93,7 +99,16 @@ func (a *Agent) SetNewsProvider(p news.Source) {
 // completion within this Agent's lifetime (the final ReAct iteration of the
 // last Chat/ChatStream call). Zero value if no completion has happened yet.
 func (a *Agent) LastUsage() llm.TokenUsage {
+	a.usageMu.RLock()
+	defer a.usageMu.RUnlock()
 	return a.lastUsage
+}
+
+// setLastUsage records the token usage from the most recent LLM completion.
+func (a *Agent) setLastUsage(u llm.TokenUsage) {
+	a.usageMu.Lock()
+	defer a.usageMu.Unlock()
+	a.lastUsage = u
 }
 
 // Chat runs the agentic loop and returns the final assistant message.

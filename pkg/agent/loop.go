@@ -28,7 +28,7 @@ func runLoop(ctx context.Context, a *Agent, messages []llm.Message) (llm.Message
 			a.debugf("[iter=%d] error: %v", iter, err)
 			return llm.Message{}, fmt.Errorf("agent: llm: %w", err)
 		}
-		a.lastUsage = resp.Usage
+		a.setLastUsage(resp.Usage)
 
 		a.debugf("[iter=%d] response: stop=%s tool_calls=%d [%s] content=%q usage=p=%d c=%d",
 			iter,
