@@ -135,6 +135,47 @@ func TestDispatch_PortfolioAddInstrument_WithInitialLot_DefaultDoesNotDebitCash(
 	}
 }
 
+// TestDispatch_PortfolioAddInstrument_MistypedQuantity_Errors is a REF-13
+// regression test: before the fix, a quantity sent as a JSON string (e.g.
+// the LLM emits "2" instead of 2) was silently coerced to 0 by numVal,
+// which made the "quantity > 0 && price > 0" guard skip creating any lot
+// — the call returned success with the instrument added but no holdings,
+// instead of surfacing the type mismatch.
+func TestDispatch_PortfolioAddInstrument_MistypedQuantity_Errors(t *testing.T) {
+	tmp := t.TempDir()
+	prev := portfolio.SetPortfoliosDirForTest(tmp)
+	t.Cleanup(func() { portfolio.SetPortfoliosDirForTest(prev) })
+
+	p := portfolio.NewPortfolio("test")
+	p.Cash = 1000
+	if err := portfolio.SavePortfolio(p); err != nil {
+		t.Fatal(err)
+	}
+
+	a := New(&mockLLM{}, &mockMarket{}, "")
+	a.currentPortfolioID = p.ID
+
+	var lk ProgressKind
+	args := toolCallArgs(t, map[string]any{
+		"symbol": "MSFT", "name": "Microsoft", "instrument_type": "holding",
+		"quantity": "2", "price": 300.0,
+	})
+	result := a.dispatch(context.Background(), llm.ToolCall{
+		Function: llm.ToolCallFunction{Name: "portfolio_add_instrument", Arguments: args},
+	}, &lk)
+	if len(result) < 6 || result[:6] != "error:" {
+		t.Errorf("expected error prefix for mistyped quantity, got %q", result)
+	}
+
+	reloaded, err := portfolio.LoadPortfolio(p.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(reloaded.Instruments) != 0 {
+		t.Errorf("want no instrument persisted after a rejected call, got %+v", reloaded.Instruments)
+	}
+}
+
 func TestDispatch_PortfolioAddInstrument_WatchlistNoLot_NoTransaction(t *testing.T) {
 	tmp := t.TempDir()
 	prev := portfolio.SetPortfoliosDirForTest(tmp)

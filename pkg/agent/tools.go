@@ -694,12 +694,29 @@ func (a *Agent) dispatchInner(ctx context.Context, call llm.ToolCall, lastKind *
 		return fmt.Sprintf("error: invalid arguments: %s", err)
 	}
 
+	// argTypeErr records the first "argument present but wrong JSON type"
+	// error encountered by numVal/intVal (e.g. the LLM sends "100" instead
+	// of 100). encode() surfaces it instead of silently proceeding with a
+	// value coerced to 0/def, which would otherwise look like a plausible
+	// but wrong result (REF-13). A genuinely absent key is not an error —
+	// many numeric params are legitimately optional.
+	var argTypeErr error
 	str := func(key string) string {
 		v, _ := args[key].(string)
 		return v
 	}
 	numVal := func(key string) float64 {
-		v, _ := args[key].(float64)
+		raw, present := args[key]
+		if !present || raw == nil {
+			return 0
+		}
+		v, ok := raw.(float64)
+		if !ok {
+			if argTypeErr == nil {
+				argTypeErr = fmt.Errorf("%s must be a number, got %T", key, raw)
+			}
+			return 0
+		}
 		return v
 	}
 	boolVal := func(key string) bool {
@@ -729,12 +746,23 @@ func (a *Agent) dispatchInner(ctx context.Context, call llm.ToolCall, lastKind *
 		return t, nil
 	}
 	intVal := func(key string, def int) int {
-		if v, ok := args[key].(float64); ok {
-			return int(v)
+		raw, present := args[key]
+		if !present || raw == nil {
+			return def
 		}
-		return def
+		v, ok := raw.(float64)
+		if !ok {
+			if argTypeErr == nil {
+				argTypeErr = fmt.Errorf("%s must be a number, got %T", key, raw)
+			}
+			return def
+		}
+		return int(v)
 	}
 	encode := func(v any, err error) string {
+		if argTypeErr != nil {
+			return fmt.Sprintf("error: %s", argTypeErr)
+		}
 		if err != nil {
 			return fmt.Sprintf("error: %s", err)
 		}
@@ -1258,6 +1286,14 @@ func (a *Agent) dispatchInner(ctx context.Context, call llm.ToolCall, lastKind *
 			if instType == portfolio.InstrumentHolding {
 				qty := numVal("quantity")
 				price := numVal("price")
+				// A mistyped quantity/price must reject the call before any
+				// mutation — SavePortfolio below is unconditional, so
+				// letting argTypeErr surface only at the final encode()
+				// would persist the instrument (silently minus its lot)
+				// and only then report the error (REF-13).
+				if argTypeErr != nil {
+					return encode(nil, argTypeErr)
+				}
 				if qty > 0 && price > 0 {
 					date := parseLotDate("date")
 					ins.Lots = []portfolio.Lot{portfolio.NewLot(qty, price, date)}

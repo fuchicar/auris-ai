@@ -322,3 +322,60 @@ func TestDispatch_MathTools_BadArrayArg(t *testing.T) {
 		})
 	}
 }
+
+// TestDispatch_MathTools_BadScalarArg verifies REF-13: a scalar numeric
+// argument sent with the wrong JSON type (e.g. a string instead of a
+// number) must produce an "error:" result instead of being silently
+// coerced to 0/default, which would otherwise look like a plausible but
+// wrong answer (e.g. converting 0 currency units instead of rejecting the
+// call).
+func TestDispatch_MathTools_BadScalarArg(t *testing.T) {
+	a := New(&mockLLM{}, &mockMarket{}, "")
+
+	scalarTools := []struct {
+		tool string
+		args map[string]any
+	}{
+		{"convert_currency", map[string]any{
+			"amount": "100", "from_currency": "USD",
+			"to_currency": "EUR", "exchange_rate": 0.92,
+		}},
+		{"calculate_sma", map[string]any{
+			"prices": []any{1.0, 2.0, 3.0}, "period": "20",
+		}},
+	}
+
+	for _, tc := range scalarTools {
+		t.Run(tc.tool, func(t *testing.T) {
+			result := dispatchMathErr(t, a, tc.tool, tc.args)
+			if len(result) < 6 || result[:6] != "error:" {
+				t.Errorf("expected error prefix, got %q", result)
+			}
+		})
+	}
+}
+
+// TestDispatch_MathTools_OptionalScalarAbsent verifies REF-13's flip side:
+// an omitted optional numeric argument must still fall back to its default
+// rather than error — only a present-but-wrong-type value should error.
+func TestDispatch_MathTools_OptionalScalarAbsent(t *testing.T) {
+	a := New(&mockLLM{}, &mockMarket{}, "")
+
+	r := dispatchMath(t, a, "calculate_sharpe", map[string]any{
+		"returns": []any{0.01, -0.02, 0.015},
+	})
+	if r["sharpe_ratio"] == nil {
+		t.Errorf("expected sharpe_ratio in result with omitted risk_free_rate_annual, got %v", r)
+	}
+
+	// calculate_sma defaults period to 20, so the price series must be at
+	// least that long for the omitted-period call to succeed.
+	prices := make([]any, 20)
+	for i := range prices {
+		prices[i] = float64(100 + i)
+	}
+	r = dispatchMath(t, a, "calculate_sma", map[string]any{"prices": prices})
+	if r["last"] == nil {
+		t.Errorf("expected last in result with omitted period, got %v", r)
+	}
+}
