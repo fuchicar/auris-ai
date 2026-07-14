@@ -15,6 +15,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"time"
+
+	"auris/pkg/config"
 )
 
 // PortfolioExport is the full-fidelity JSON export shape: the raw portfolio
@@ -64,7 +66,7 @@ func writeJSON(path string, v any) error {
 	if err != nil {
 		return fmt.Errorf("portfolio: ExportFiles: marshal json: %w", err)
 	}
-	if err := os.WriteFile(path, data, 0o600); err != nil {
+	if err := config.WriteFileAtomic(path, data, 0o600); err != nil {
 		return fmt.Errorf("portfolio: ExportFiles: write json: %w", err)
 	}
 	return nil

@@ -3,6 +3,7 @@ package portfolio
 import (
 	"errors"
 	"math"
+	"strings"
 	"testing"
 	"time"
 )
@@ -164,6 +165,11 @@ func TestComputeMetrics_DividendYieldWeighted(t *testing.T) {
 	// Stored as percent.
 	if !approxEqualP(m.DividendYield, 1.25, 1e-6) {
 		t.Errorf("weighted dividend yield: want 1.25%%, got %v", m.DividendYield)
+	}
+	// The summary must quote the same percent value as the field (BUG-7:
+	// it used to render the raw fraction, "div_yield=0.0125%").
+	if !strings.Contains(m.Summary, "div_yield=1.2500%") {
+		t.Errorf("summary should contain div_yield=1.2500%%, got %q", m.Summary)
 	}
 }
 

@@ -241,7 +241,7 @@ func summarise(weights []SymbolWeight, hhi, divYield, beta, currentValue, realis
 	}
 	return fmt.Sprintf("value=%.2f, realised=%.2f, unrealised=%.2f, HHI=%.4f (%s), div_yield=%.4f%%, β=%.4f across %d holdings%s",
 		currentValue, realised, unrealised, hhi,
-		hhiBucket(hhi), divYield, beta, len(weights), cashSuffix)
+		hhiBucket(hhi), divYield*100, beta, len(weights), cashSuffix)
 }
 
 // hhiBucket returns the same label summarise uses, exposed as a helper so

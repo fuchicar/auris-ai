@@ -49,7 +49,7 @@ func ReencryptAllSessions(oldKey, newKey []byte) error {
 		if err != nil {
 			return fmt.Errorf("config: ReencryptAllSessions: marshal %s: %w", e.Name(), err)
 		}
-		if err := os.WriteFile(path, out, 0o600); err != nil {
+		if err := WriteFileAtomic(path, out, 0o600); err != nil {
 			return fmt.Errorf("config: ReencryptAllSessions: write %s: %w", e.Name(), err)
 		}
 	}
@@ -102,7 +102,7 @@ func SaveSession(s *Session) error {
 		return fmt.Errorf("config: SaveSession: marshal: %w", err)
 	}
 	p := filepath.Join(dir, s.ID+".json")
-	if err := os.WriteFile(p, data, 0o600); err != nil {
+	if err := WriteFileAtomic(p, data, 0o600); err != nil {
 		return fmt.Errorf("config: SaveSession: write: %w", err)
 	}
 	return nil

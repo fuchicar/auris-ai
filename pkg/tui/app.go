@@ -437,8 +437,18 @@ func (a *AppModel) transition(msg ScreenDoneMsg) (tea.Model, tea.Cmd) {
 			if a.cfg.EncryptStorage {
 				oldKey := config.StorageKey()
 				newKey := config.DeriveStorageKey(r.NewPassphrase, a.cfg.StorageSalt)
-				_ = portfolio.ReencryptAllPortfolios(oldKey, newKey)
-				_ = config.ReencryptAllSessions(oldKey, newKey)
+				// On failure, keep the old passphrase and key active and
+				// surface the error: files already migrated stay readable
+				// only under newKey, but ReencryptAll* is idempotent, so
+				// retrying the change with the same new passphrase finishes
+				// the migration (same recovery contract as setStorageEncryption).
+				if err := reencryptAll(oldKey, newKey); err != nil {
+					m := newChangePassphraseModel(a.styles, a.passphrase, true)
+					m.err = err.Error()
+					a.screen = ScreenChangePassphrase
+					a.current = m
+					return a, a.current.Init()
+				}
 				config.SetStorageKey(newKey)
 			}
 			a.passphrase = r.NewPassphrase
@@ -1262,16 +1272,24 @@ func (a *AppModel) setStorageEncryption(enable bool) error {
 		}
 		newKey = config.DeriveStorageKey(a.passphrase, a.cfg.StorageSalt)
 	}
-	if err := portfolio.ReencryptAllPortfolios(oldKey, newKey); err != nil {
-		return err
-	}
-	if err := config.ReencryptAllSessions(oldKey, newKey); err != nil {
+	if err := reencryptAll(oldKey, newKey); err != nil {
 		return err
 	}
 	config.SetStorageKey(newKey)
 	a.cfg.EncryptStorage = enable
 	a.saveConfig()
 	return nil
+}
+
+// reencryptAll re-keys every portfolio and chat session from oldKey to newKey.
+// Shared by the encryption toggle and the change-passphrase flow, which rely
+// on the same partial-failure contract: whatever migrated stays migrated, and
+// a retry with the same key pair completes the rest.
+func reencryptAll(oldKey, newKey []byte) error {
+	if err := portfolio.ReencryptAllPortfolios(oldKey, newKey); err != nil {
+		return err
+	}
+	return config.ReencryptAllSessions(oldKey, newKey)
 }
 
 // applyStoredTheme rebuilds the style set using the theme persisted in the

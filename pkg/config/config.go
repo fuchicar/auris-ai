@@ -318,7 +318,7 @@ func Save(cfg *AurisConfig, passphrase string) error {
 		return fmt.Errorf("config: Save: marshal: %w", err)
 	}
 
-	if err := os.WriteFile(p, data, 0o600); err != nil {
+	if err := WriteFileAtomic(p, data, 0o600); err != nil {
 		return fmt.Errorf("config: Save: write file: %w", err)
 	}
 	return nil

@@ -2,8 +2,8 @@
 
 **Auris** is a terminal-based AI financial advisor. It combines real-time market data with conversational AI so you can analyse instruments, run financial calculations, and manage portfolios — entirely from your terminal.
 
-Supported LLM backends: **Ollama** (local), **Google Gemini**, and **Anthropic Claude**.  
-Supported market data: **Financial Modeling Prep (FMP)**.
+Supported LLM backends: **Ollama** (local), **Google Gemini**, **Anthropic Claude**, **OpenAI**, and **MiniMax**.  
+Supported market data: **Financial Modeling Prep (FMP)** and **EOD Historical Data (EODHD)**, combined in a fallback cascade.
 
 ---
 
@@ -28,7 +28,7 @@ Supported market data: **Financial Modeling Prep (FMP)**.
 |---|---|
 | Go | ≥ 1.25 |
 | FMP API key | [financialmodelingprep.com](https://financialmodelingprep.com) |
-| LLM provider | Ollama (local) or an API key for Gemini / Claude |
+| LLM provider | Ollama (local) or an API key for Gemini / Claude / OpenAI / MiniMax |
 
 ---
 
@@ -70,7 +70,7 @@ On first launch, Auris runs a guided setup wizard:
 3. **Passphrase** — used to encrypt your API keys at rest
 4. **Financial profile** — 10 questions that personalise the AI's advice
 5. **Market provider** — select FMP and enter your API key
-6. **AI providers** — select one or more (Ollama, Gemini, Claude) and configure each
+6. **AI providers** — select one or more (Ollama, Gemini, Claude, OpenAI, MiniMax) and configure each
 7. **Default model** — choose the provider/model pair used by default in chat
 
 On subsequent launches, you are only asked for your passphrase to unlock the configuration.
@@ -112,12 +112,15 @@ Flags:
 | **Ollama** | Local inference. Default endpoint: `http://localhost:11434`. Supports custom base URL and API key for remote instances. |
 | **Google Gemini** | Requires a Gemini API key. |
 | **Anthropic Claude** | Requires an Anthropic API key. Supports custom base URL. |
+| **OpenAI** | Requires an OpenAI API key. Also usable against any OpenAI-compatible endpoint via custom base URL. |
+| **MiniMax** | Requires a MiniMax API key. |
 
 ### Market data providers
 
 | Provider | Notes |
 |---|---|
-| **Financial Modeling Prep** | Requires a free or paid FMP API key. Free tier covers most features. |
+| **Financial Modeling Prep** | Requires a free or paid FMP API key. Free tier covers most features (mainly US coverage). |
+| **EOD Historical Data (EODHD)** | Optional second provider used as fallback in the cascade; adds non-US coverage (e.g. BME/Madrid). |
 
 ---
 

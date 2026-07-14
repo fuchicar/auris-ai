@@ -2,8 +2,8 @@
 
 **Auris** es un asesor financiero con IA para la terminal. Combina datos de mercado en tiempo real con IA conversacional para que puedas analizar instrumentos, ejecutar cálculos financieros y gestionar carteras — todo desde tu terminal.
 
-Backends LLM soportados: **Ollama** (local), **Google Gemini** y **Anthropic Claude**.  
-Datos de mercado: **Financial Modeling Prep (FMP)**.
+Backends LLM soportados: **Ollama** (local), **Google Gemini**, **Anthropic Claude**, **OpenAI** y **MiniMax**.  
+Datos de mercado: **Financial Modeling Prep (FMP)** y **EOD Historical Data (EODHD)**, combinados en cascada con fallback.
 
 ---
 
@@ -28,7 +28,7 @@ Datos de mercado: **Financial Modeling Prep (FMP)**.
 |---|---|
 | Go | ≥ 1.25 |
 | Clave API de FMP | [financialmodelingprep.com](https://financialmodelingprep.com) |
-| Proveedor LLM | Ollama (local) o clave API para Gemini / Claude |
+| Proveedor LLM | Ollama (local) o clave API para Gemini / Claude / OpenAI / MiniMax |
 
 ---
 
@@ -70,7 +70,7 @@ En el primer arranque, Auris ejecuta un asistente de configuración guiado:
 3. **Contraseña** — usada para cifrar tus claves API en disco
 4. **Perfil financiero** — 10 preguntas que personalizan los consejos de la IA
 5. **Proveedor de mercado** — selecciona FMP e introduce tu clave API
-6. **Proveedores de IA** — selecciona uno o más (Ollama, Gemini, Claude) y configura cada uno
+6. **Proveedores de IA** — selecciona uno o más (Ollama, Gemini, Claude, OpenAI, MiniMax) y configura cada uno
 7. **Modelo por defecto** — elige el par proveedor/modelo usado por defecto en el chat
 
 En los arranques posteriores, solo se solicita la contraseña para desbloquear la configuración.
@@ -112,12 +112,15 @@ Opciones:
 | **Ollama** | Inferencia local. Endpoint por defecto: `http://localhost:11434`. Admite URL base y clave API personalizadas para instancias remotas. |
 | **Google Gemini** | Requiere una clave API de Gemini. |
 | **Anthropic Claude** | Requiere una clave API de Anthropic. Admite URL base personalizada. |
+| **OpenAI** | Requiere una clave API de OpenAI. También utilizable contra cualquier endpoint compatible con OpenAI mediante URL base personalizada. |
+| **MiniMax** | Requiere una clave API de MiniMax. |
 
 ### Proveedores de datos de mercado
 
 | Proveedor | Notas |
 |---|---|
-| **Financial Modeling Prep** | Requiere una clave API de FMP (gratuita o de pago). El plan gratuito cubre la mayoría de funcionalidades. |
+| **Financial Modeling Prep** | Requiere una clave API de FMP (gratuita o de pago). El plan gratuito cubre la mayoría de funcionalidades (cobertura principalmente US). |
+| **EOD Historical Data (EODHD)** | Segundo proveedor opcional usado como fallback en la cascada; añade cobertura no-US (p. ej. BME/Madrid). |
 
 ---
 

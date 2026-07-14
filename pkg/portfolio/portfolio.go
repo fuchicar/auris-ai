@@ -218,7 +218,7 @@ func SavePortfolio(p *Portfolio) error {
 		return fmt.Errorf("portfolio: SavePortfolio: marshal: %w", err)
 	}
 	path := filepath.Join(dir, p.ID+".json")
-	if err := os.WriteFile(path, data, 0o600); err != nil {
+	if err := config.WriteFileAtomic(path, data, 0o600); err != nil {
 		return fmt.Errorf("portfolio: SavePortfolio: write: %w", err)
 	}
 	return nil
@@ -330,7 +330,7 @@ func ReencryptAllPortfolios(oldKey, newKey []byte) error {
 		if err != nil {
 			return fmt.Errorf("portfolio: ReencryptAllPortfolios: marshal %s: %w", e.Name(), err)
 		}
-		if err := os.WriteFile(path, out, 0o600); err != nil {
+		if err := config.WriteFileAtomic(path, out, 0o600); err != nil {
 			return fmt.Errorf("portfolio: ReencryptAllPortfolios: write %s: %w", e.Name(), err)
 		}
 	}
