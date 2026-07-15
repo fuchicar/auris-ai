@@ -1,3 +1,21 @@
+# Compiled binaries
+auris
+cmd/auris/auris
+!cmd/auris/*.go
+*.exe
+
+# Test/build artifacts
+*.test
+*.out
+coverage.out
+coverage.html
+dist/
+
+# Nix
+result
+result-*
+
+# Local API keys (per-driver test fixtures — never commit)
 pkg/drivers/fmp/test_data/fmp_api_key
 pkg/drivers/gemini/test_data/google_api_key
 pkg/drivers/anthropic/test_data/anthropic_api_key
@@ -5,12 +23,35 @@ pkg/drivers/minimax/test_data/minimax_api_key
 pkg/drivers/eodhd/test_data/eodhd_api_key
 pkg/drivers/openai/test_data/openai_api_key
 pkg/drivers/openai/test_data/openai_base_url
-auris
-!cmd/auris/
 
-# Nix build artifacts
-result
-result-*
+# IDE / editor
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
 
-# GoReleaser local build/snapshot output
-dist/
+# Local config (encrypted or not, never commit user's)
+config.json
+*.config.json
+.portfolios/
+sessions/
+*.session.json
+
+# Secrets in general
+.env
+.env.*
+*.pem
+*.key
+
+# Local AI-agent / IDE configuration (never project-scoped)
+.claude/
+.antigravitycli/
+.envrc
+
+# Personal notes (author keeps locally, never publishes)
+TODO.md
+
+# Go workspace files (when using go work)
+go.work
+go.work.sum
