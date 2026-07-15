@@ -306,12 +306,12 @@
           <div class="arrow">↓&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;↓</div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:.8rem">
             <div class="box" style="border-color:var(--border)"><span class="mut">drivers:</span> anthropic · gemini · ollama · minimax · openai</div>
-            <div class="box" style="border-color:var(--border)"><span class="mut">drivers:</span> fmp · eodhd <small>cascada con fallback</small></div>
+            <div class="box" style="border-color:var(--border)"><span class="mut">drivers:</span> fmp · eodhd · simulation <small>cascada con fallback · datos sintéticos</small></div>
           </div>
         </div>
         <div style="display:flex;flex-direction:column;gap:.9rem">
           <div class="tile"><div class="v">Go 1.25</div><div class="l">sin frameworks pesados: stdlib + Charm + SDKs oficiales</div></div>
-          <div class="tile"><div class="v">~22.800</div><div class="l">líneas de Go en 20 paquetes desacoplados</div></div>
+          <div class="tile"><div class="v">~23.400</div><div class="l">líneas de Go en 20 paquetes desacoplados</div></div>
           <div class="tile"><div class="l" style="margin-top:0">servicios transversales</div><div class="l" style="color:var(--text)">portfolio · news (RSS) · config cifrada · locale (es/en)</div></div>
         </div>
       </div>
@@ -344,15 +344,15 @@
         <div style="display:flex;flex-direction:column;gap:1rem">
           <div class="card">
             <h3>5 drivers de IA</h3>
-            <p><span class="bright">Anthropic · Gemini · Ollama · MiniMax · OpenAI</span> — nube de frontera o inferencia local, elegibles por caso de uso.</p>
+            <p><span class="bright">Anthropic · Gemini · Ollama · MiniMax · OpenAI</span> — nube de frontera o inferencia local, elegibles por caso de uso; el de OpenAI sirve además cualquier endpoint compatible (DeepSeek, Groq, OpenRouter…).</p>
           </div>
           <div class="card">
-            <h3>1 driver de mercado</h3>
-            <p><span class="bright">Financial Modeling Prep</span>: cotizaciones, velas EOD e intradía, fundamentales, dividendos, splits y streaming por sondeo.</p>
+            <h3>2 drivers de mercado</h3>
+            <p><span class="bright">FMP · EODHD</span> en cascada con fallback: cotizaciones, velas, fundamentales, dividendos y cobertura no-US (BME/Madrid). Más un <span class="bright">driver de simulación</span> con datos sintéticos para probar sin claves.</p>
           </div>
           <div class="card" style="border-color:var(--accent)">
             <h3 class="acc">Añadir un proveedor</h3>
-            <p>= 1 paquete que implementa la interfaz + <span class="bright">1 línea en el registry</span>. Ni la TUI ni el agente cambian. Así se integraron 5 LLMs sin tocar el núcleo.</p>
+            <p>= 1 paquete que implementa la interfaz + <span class="bright">1 línea en el registry</span>. Ni la TUI ni el agente cambian. Así se integraron 5 LLMs y 2 mercados sin tocar el núcleo.</p>
           </div>
         </div>
       </div>
@@ -516,7 +516,7 @@
         </div>
         <div class="card"><span class="ico ok">✓</span>
           <h3>Tus datos, en tu máquina</h3>
-          <p>Perfil, carteras y sesiones de chat viven como ficheros locales en la ruta estándar del sistema. Sin cuentas, sin telemetría, sin nube obligatoria.</p>
+          <p>Perfil, carteras y sesiones de chat viven como ficheros locales en la ruta estándar del sistema — carteras y sesiones también cifradas, activado por defecto. Sin cuentas, sin telemetría, sin nube obligatoria.</p>
         </div>
         <div class="card"><span class="ico ok">✓</span>
           <h3>Modo 100 % offline</h3>
@@ -533,8 +533,8 @@
     <hr class="rule">
     <div class="body">
       <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:1rem">
-        <div class="tile"><div class="v">692</div><div class="l">funciones de test en el repositorio</div></div>
-        <div class="tile"><div class="v">171</div><div class="l">tests solo en pkg/finance: el motor de cálculo es la pieza más blindada</div></div>
+        <div class="tile"><div class="v">740</div><div class="l">funciones de test en el repositorio</div></div>
+        <div class="tile"><div class="v">175</div><div class="l">tests solo en pkg/finance: el motor de cálculo es la pieza más blindada</div></div>
         <div class="tile"><div class="v">2</div><div class="l">idiomas completos (es/en) con detección automática del locale</div></div>
         <div class="tile"><div class="v">6</div><div class="l">temas visuales con previsualización en vivo</div></div>
       </div>
@@ -582,7 +582,7 @@
       <div class="cards" style="grid-template-columns:repeat(2,1fr)">
         <div class="card">
           <h3><span class="acc">›</span> Más mercados y brókers</h3>
-          <p>El patrón driver hace que integrar un nuevo proveedor de datos —o la API de un bróker para operar— sea un paquete aislado, sin tocar el núcleo.</p>
+          <p>El patrón driver hace que integrar un nuevo proveedor de datos —o la API de un bróker para operar— sea un paquete aislado, sin tocar el núcleo. Así se añadió EODHD como segundo mercado.</p>
         </div>
         <div class="card">
           <h3><span class="acc">›</span> Streaming en el chat</h3>
