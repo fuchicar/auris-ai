@@ -231,3 +231,9 @@ Integration test credentials are read from files in each driver's `test_data/` d
 | macOS | `~/Library/Application Support/auris/auris.json` |
 
 API keys are encrypted at rest. The `sessions/` subdirectory alongside the config file stores conversation history.
+
+---
+
+## Acknowledgements
+
+This project was developed with AI coding assistance from multiple models, including Claude Sonnet 4.6, Claude Sonnet 5, Claude Opus 4.6, Claude Opus 4.7, Fable 5, Gemini Pro 3.1, and MiniMax M3. Specific per-commit attribution is not preserved — AI assistance was used for code review, refactoring, documentation, and test generation. All architectural decisions, implementation choices, and final code authorship remain with the human contributor.

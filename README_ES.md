@@ -231,3 +231,9 @@ Las credenciales para los tests de integración se leen desde ficheros en el dir
 | macOS | `~/Library/Application Support/auris/auris.json` |
 
 Las claves API se cifran en disco. El subdirectorio `sessions/` junto al fichero de configuración almacena el historial de conversaciones.
+
+---
+
+## Acknowledgements
+
+This project was developed with AI coding assistance from multiple models, including Claude Sonnet 4.6, Claude Sonnet 5, Claude Opus 4.6, Claude Opus 4.7, Fable 5, Gemini Pro 3.1, and MiniMax M3. Specific per-commit attribution is not preserved — AI assistance was used for code review, refactoring, documentation, and test generation. All architectural decisions, implementation choices, and final code authorship remain with the human contributor.
