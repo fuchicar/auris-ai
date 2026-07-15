@@ -59,6 +59,4 @@ snapshot:
 release:
   draft: false
   # No `github: owner/name:` override — GoReleaser infers the repo from
-  # `git remote get-url origin`. Today that remote is a self-hosted
-  # Gitea/Forgejo instance, so this section is inert until the repo is
-  # pushed to GitHub with a github.com origin remote.
+  # `git remote get-url origin`, which points at github.com/fuchicar/auris-ai.
