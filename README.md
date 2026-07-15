@@ -5,6 +5,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
 > 🇪🇸 [Leer en castellano](README_ES.md)
+> 📖 [Full documentation & guides on the Wiki](https://github.com/fuchicar/auris-ai/wiki)
 
 **Auris** is a terminal-based AI financial advisor. It combines real-time market data with conversational AI so you can analyse instruments, run financial calculations, and manage portfolios — entirely from your terminal.
 
@@ -13,6 +14,7 @@
 ## Table of contents
 
 - [Overview](#overview)
+- [Documentation](#documentation)
 - [Main features](#main-features)
 - [Architecture](#architecture)
 - [Technology stack](#technology-stack)
@@ -34,6 +36,22 @@ Three design principles drive the project:
 3. **Local-first and private by default.** Auris runs as a single static binary, supports fully local inference via Ollama, and encrypts credentials — and optionally portfolios and chat history — at rest with Argon2id + AES-256-GCM.
 
 > **Disclaimer:** Auris is a decision-support and educational tool, not regulated financial advice. The application shows this disclaimer on first run.
+> See [AI Disclaimer & Responsible Use](https://github.com/fuchicar/auris-ai/wiki/AI-Disclaimer-and-Responsible-Use) on the wiki for the full explanation, with good/bad practice examples.
+
+## Documentation
+
+This README covers the essentials. The [wiki](https://github.com/fuchicar/auris-ai/wiki) goes deeper on each topic, in English:
+
+| Page | What you'll find there |
+|---|---|
+| 🚀 [Using the Agent](https://github.com/fuchicar/auris-ai/wiki/Using-the-Agent) | First steps, the setup wizard, recommended first prompts, and a full portfolio-creation walkthrough. |
+| ⚠️ [AI Disclaimer & Responsible Use](https://github.com/fuchicar/auris-ai/wiki/AI-Disclaimer-and-Responsible-Use) | What Auris's numbers can and can't responsibly be used for, with good/bad practice examples. |
+| ❓ [FAQ & Troubleshooting](https://github.com/fuchicar/auris-ai/wiki/FAQ-and-Troubleshooting) | Common questions, provider errors, and what to do when something looks stuck. |
+| 🤝 [Contributing](https://github.com/fuchicar/auris-ai/wiki/Contributing) | Fork, branch, commit convention, local checks, and how to open a PR. |
+| 🛠️ [Building from Source](https://github.com/fuchicar/auris-ai/wiki/Building-from-Source) | Requirements, `go build`, Nix, running the test suite, and how releases are built. |
+| 🏛️ [Architecture & Design Decisions](https://github.com/fuchicar/auris-ai/wiki/Architecture-and-Design-Decisions) | The ports & adapters shape of the codebase and the reasoning behind ten key design decisions. |
+| 🔒 [Security & Privacy](https://github.com/fuchicar/auris-ai/wiki/Security-and-Privacy) | Exactly how credentials, portfolios, and sessions are encrypted at rest, and what that protects against (and what it doesn't). |
+| 🗺️ [Roadmap & Future Work](https://github.com/fuchicar/auris-ai/wiki/Roadmap-and-Future-Work) | What's shipped, what's genuinely still open, and what's aspirational. |
 
 ## Main features
 
@@ -124,7 +142,7 @@ Key decisions (full rationale in the [Architecture Decision Records](doc/adr.md)
 
 | Category | Technology | Why |
 |---|---|---|
-| Language | [Go 1.25](https://go.dev) | Single static binary, `CGO_ENABLED=0`, trivial cross-compilation for Linux/macOS/Windows |
+| Language | [Go 1.25](https://go.dev) | Single static binary, `CGO_ENABLED=0`, trivial cross-compilation for Linux/macOS/FreeBSD |
 | TUI framework | [Bubble Tea](https://github.com/charmbracelet/bubbletea) + Bubbles + [Lip Gloss](https://github.com/charmbracelet/lipgloss) | Elm-architecture TUI: predictable state, testable screens |
 | Rendering | [Glamour](https://github.com/charmbracelet/glamour) · [ntcharts](https://github.com/NimbleMarkets/ntcharts) | Markdown rendering and charts inside the terminal |
 | AI SDKs | [anthropic-sdk-go](https://github.com/anthropics/anthropic-sdk-go) · [openai-go](https://github.com/openai/openai-go) · [google.golang.org/genai](https://pkg.go.dev/google.golang.org/genai) | Official SDKs; Ollama and MiniMax via their REST APIs |
@@ -190,7 +208,7 @@ go install github.com/fuchicar/auris-ai/cmd/auris@latest
 
 ### Prebuilt binaries
 
-Tagged releases (`vX.Y.Z`) publish prebuilt Linux, macOS, and Windows binaries (amd64/arm64) on [GitHub Releases](https://github.com/fuchicar/auris-ai/releases), built with GoReleaser. Run `auris -version` to check what a given binary was built from.
+Tagged releases (`vX.Y.Z`) publish prebuilt Linux and macOS binaries (amd64/arm64), plus FreeBSD (amd64), on [GitHub Releases](https://github.com/fuchicar/auris-ai/releases), built with GoReleaser. Run `auris -version` to check what a given binary was built from.
 
 ### Nix & NixOS
 
@@ -235,6 +253,8 @@ On first launch, Auris runs a guided setup wizard:
 8. **Default model** — the provider/model pair used by default in chat
 
 On subsequent launches, you are only asked for your passphrase to unlock the configuration.
+
+> New to Auris? [Using the Agent](https://github.com/fuchicar/auris-ai/wiki/Using-the-Agent) on the wiki has recommended first prompts and a full portfolio-creation walkthrough.
 
 ### Flags
 

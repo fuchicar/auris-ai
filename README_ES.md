@@ -5,6 +5,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
 > 🇬🇧 [Read in English](README.md)
+> 📖 [Documentación completa y guías en la Wiki](https://github.com/fuchicar/auris-ai/wiki) (en inglés)
 
 **Auris** es un asesor financiero con IA para la terminal. Combina datos de mercado en tiempo real con IA conversacional para que puedas analizar instrumentos, ejecutar cálculos financieros y gestionar carteras — todo desde tu terminal.
 
@@ -13,6 +14,7 @@
 ## Índice
 
 - [Descripción general](#descripción-general)
+- [Documentación](#documentación)
 - [Funcionalidades principales](#funcionalidades-principales)
 - [Arquitectura](#arquitectura)
 - [Stack tecnológico](#stack-tecnológico)
@@ -34,6 +36,22 @@ Tres principios de diseño guían el proyecto:
 3. **Local primero y privado por defecto.** Auris se ejecuta como un único binario estático, admite inferencia totalmente local vía Ollama y cifra las credenciales — y opcionalmente carteras e historial de chat — en disco con Argon2id + AES-256-GCM.
 
 > **Aviso:** Auris es una herramienta educativa y de apoyo a la decisión, no asesoramiento financiero regulado. La aplicación muestra este aviso en el primer arranque.
+> Consulta [AI Disclaimer & Responsible Use](https://github.com/fuchicar/auris-ai/wiki/AI-Disclaimer-and-Responsible-Use) en la wiki (en inglés) para la explicación completa, con ejemplos de buenas y malas prácticas.
+
+## Documentación
+
+Este README cubre lo esencial. La [wiki](https://github.com/fuchicar/auris-ai/wiki) (en inglés) profundiza en cada tema:
+
+| Página | Qué encontrarás |
+|---|---|
+| 🚀 [Using the Agent](https://github.com/fuchicar/auris-ai/wiki/Using-the-Agent) | Primeros pasos, el asistente de configuración, prompts recomendados y un recorrido completo de creación de carteras. |
+| ⚠️ [AI Disclaimer & Responsible Use](https://github.com/fuchicar/auris-ai/wiki/AI-Disclaimer-and-Responsible-Use) | Para qué pueden usarse responsablemente los números de Auris y para qué no, con ejemplos de buenas y malas prácticas. |
+| ❓ [FAQ & Troubleshooting](https://github.com/fuchicar/auris-ai/wiki/FAQ-and-Troubleshooting) | Preguntas frecuentes, errores de los proveedores y qué hacer si algo parece bloqueado. |
+| 🤝 [Contributing](https://github.com/fuchicar/auris-ai/wiki/Contributing) | Fork, ramas, convención de commits, comprobaciones locales y cómo abrir una PR. |
+| 🛠️ [Building from Source](https://github.com/fuchicar/auris-ai/wiki/Building-from-Source) | Requisitos, `go build`, Nix, ejecución de la suite de tests y cómo se generan los releases. |
+| 🏛️ [Architecture & Design Decisions](https://github.com/fuchicar/auris-ai/wiki/Architecture-and-Design-Decisions) | La forma de puertos y adaptadores del código y el razonamiento tras diez decisiones de diseño clave. |
+| 🔒 [Security & Privacy](https://github.com/fuchicar/auris-ai/wiki/Security-and-Privacy) | Cómo se cifran exactamente credenciales, carteras y sesiones en disco, y qué protege eso (y qué no). |
+| 🗺️ [Roadmap & Future Work](https://github.com/fuchicar/auris-ai/wiki/Roadmap-and-Future-Work) | Qué está implementado, qué queda genuinamente pendiente y qué es aspiracional. |
 
 ## Funcionalidades principales
 
@@ -124,7 +142,7 @@ Decisiones clave (justificación completa en los [Architecture Decision Records]
 
 | Categoría | Tecnología | Por qué |
 |---|---|---|
-| Lenguaje | [Go 1.25](https://go.dev) | Binario estático único, `CGO_ENABLED=0`, compilación cruzada trivial para Linux/macOS/Windows |
+| Lenguaje | [Go 1.25](https://go.dev) | Binario estático único, `CGO_ENABLED=0`, compilación cruzada trivial para Linux/macOS/FreeBSD |
 | Framework TUI | [Bubble Tea](https://github.com/charmbracelet/bubbletea) + Bubbles + [Lip Gloss](https://github.com/charmbracelet/lipgloss) | TUI con arquitectura Elm: estado predecible, pantallas testeables |
 | Renderizado | [Glamour](https://github.com/charmbracelet/glamour) · [ntcharts](https://github.com/NimbleMarkets/ntcharts) | Renderizado de markdown y gráficos dentro de la terminal |
 | SDKs de IA | [anthropic-sdk-go](https://github.com/anthropics/anthropic-sdk-go) · [openai-go](https://github.com/openai/openai-go) · [google.golang.org/genai](https://pkg.go.dev/google.golang.org/genai) | SDKs oficiales; Ollama y MiniMax vía sus APIs REST |
@@ -190,7 +208,7 @@ go install github.com/fuchicar/auris-ai/cmd/auris@latest
 
 ### Binarios precompilados
 
-Los releases etiquetados (`vX.Y.Z`) publican binarios precompilados para Linux, macOS y Windows (amd64/arm64) en [GitHub Releases](https://github.com/fuchicar/auris-ai/releases), generados con GoReleaser. Ejecuta `auris -version` para comprobar de qué build proviene un binario concreto.
+Los releases etiquetados (`vX.Y.Z`) publican binarios precompilados para Linux y macOS (amd64/arm64), además de FreeBSD (amd64), en [GitHub Releases](https://github.com/fuchicar/auris-ai/releases), generados con GoReleaser. Ejecuta `auris -version` para comprobar de qué build proviene un binario concreto.
 
 ### Nix y NixOS
 
@@ -235,6 +253,8 @@ En el primer arranque, Auris ejecuta un asistente de configuración guiado:
 8. **Modelo por defecto** — el par proveedor/modelo usado por defecto en el chat
 
 En los arranques posteriores, solo se solicita la contraseña para desbloquear la configuración.
+
+> ¿Primera vez con Auris? [Using the Agent](https://github.com/fuchicar/auris-ai/wiki/Using-the-Agent) en la wiki (en inglés) tiene prompts recomendados y un recorrido completo de creación de carteras.
 
 ### Opciones de línea de comandos
 
