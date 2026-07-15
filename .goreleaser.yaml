@@ -11,10 +11,13 @@ builds:
     goos:
       - linux
       - darwin
-      - windows
+      - freebsd
     goarch:
       - amd64
       - arm64
+    ignore:
+      - goos: freebsd
+        goarch: arm64
     # No custom ldflags: here — GoReleaser's own default template
     # (-s -w -X main.version={{.Version}} -X main.commit={{.Commit}}
     #  -X main.date={{.Date}} -X main.builtBy=goreleaser) already matches
@@ -25,9 +28,6 @@ archives:
     ids:
       - auris
     formats: [tar.gz]
-    format_overrides:
-      - goos: windows
-        formats: [zip]
     files:
       - README.md
       - README_ES.md
