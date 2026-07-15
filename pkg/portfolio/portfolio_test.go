@@ -372,9 +372,9 @@ func TestReencryptAllPortfolios(t *testing.T) {
 	// only second resolution, so assign distinct IDs explicitly to avoid a
 	// collision between p1 and p2 created in the same test.
 	config.SetStorageKey(nil)
-	p1 := NewPortfolio("P1")
+	p1 := NewPortfolio("Portfolio One")
 	p1.ID = "20260101-000001"
-	p2 := NewPortfolio("P2")
+	p2 := NewPortfolio("Portfolio Two")
 	p2.ID = "20260101-000002"
 	if err := SavePortfolio(p1); err != nil {
 		t.Fatalf("SavePortfolio p1: %v", err)
@@ -392,7 +392,7 @@ func TestReencryptAllPortfolios(t *testing.T) {
 	}
 	config.SetStorageKey(keyA)
 	loaded, err := LoadPortfolio(p1.ID)
-	if err != nil || loaded == nil || loaded.Name != "P1" {
+	if err != nil || loaded == nil || loaded.Name != "Portfolio One" {
 		t.Fatalf("LoadPortfolio after migration to keyA: %v, %+v", err, loaded)
 	}
 
@@ -400,7 +400,7 @@ func TestReencryptAllPortfolios(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read raw: %v", err)
 	}
-	if strings.Contains(string(raw), "P1") {
+	if strings.Contains(string(raw), "Portfolio One") {
 		t.Error("portfolio name found in plaintext after migration to keyA")
 	}
 
@@ -419,7 +419,7 @@ func TestReencryptAllPortfolios(t *testing.T) {
 	}
 	config.SetStorageKey(keyB)
 	loaded, err = LoadPortfolio(p2.ID)
-	if err != nil || loaded == nil || loaded.Name != "P2" {
+	if err != nil || loaded == nil || loaded.Name != "Portfolio Two" {
 		t.Fatalf("LoadPortfolio after migration to keyB: %v, %+v", err, loaded)
 	}
 
@@ -435,7 +435,7 @@ func TestReencryptAllPortfolios(t *testing.T) {
 	}
 	config.SetStorageKey(nil)
 	loaded, err = LoadPortfolio(p1.ID)
-	if err != nil || loaded == nil || loaded.Name != "P1" {
+	if err != nil || loaded == nil || loaded.Name != "Portfolio One" {
 		t.Fatalf("LoadPortfolio after decrypt: %v, %+v", err, loaded)
 	}
 }

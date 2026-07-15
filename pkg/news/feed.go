@@ -39,13 +39,7 @@ var DefaultFeeds = []FeedConfig{
 	// Investing.com ES
 	{Name: "Investing.com ES", URL: "https://es.investing.com/rss/news.rss", Language: "es"},
 	{Name: "Investing.com ES Economy", URL: "https://es.investing.com/rss/news_95.rss", Language: "es"},
-	// --- English (40) -----------------------------------------------------
-	// Bloomberg
-	{Name: "Bloomberg Markets", URL: "https://feeds.bloomberg.com/markets/news.rss", Language: "en"},
-	{Name: "Bloomberg Economics", URL: "https://feeds.bloomberg.com/economics/news.rss", Language: "en"},
-	{Name: "Bloomberg Politics", URL: "https://feeds.bloomberg.com/politics/news.rss", Language: "en"},
-	{Name: "Bloomberg Technology", URL: "https://feeds.bloomberg.com/technology/news.rss", Language: "en"},
-	{Name: "Bloomberg Businessweek", URL: "https://feeds.bloomberg.com/businessweek/news.rss", Language: "en"},
+	// --- English (35) -----------------------------------------------------
 	// Financial Times
 	{Name: "Financial Times", URL: "https://www.ft.com/rss/home", Language: "en"},
 	{Name: "FT Companies", URL: "https://www.ft.com/companies?format=rss", Language: "en"},
