@@ -39,8 +39,8 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"auris/pkg/locale"
-	"auris/pkg/tui"
+	"github.com/fuchicar/auris-ai/pkg/locale"
+	"github.com/fuchicar/auris-ai/pkg/tui"
 )
 
 func main() {

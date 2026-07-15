@@ -9,15 +9,15 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"auris/pkg/agent"
-	"auris/pkg/config"
-	"auris/pkg/drivers/simulation"
-	"auris/pkg/llm"
-	"auris/pkg/locale"
-	"auris/pkg/market"
-	"auris/pkg/news"
-	"auris/pkg/portfolio"
-	"auris/pkg/registry"
+	"github.com/fuchicar/auris-ai/pkg/agent"
+	"github.com/fuchicar/auris-ai/pkg/config"
+	"github.com/fuchicar/auris-ai/pkg/drivers/simulation"
+	"github.com/fuchicar/auris-ai/pkg/llm"
+	"github.com/fuchicar/auris-ai/pkg/locale"
+	"github.com/fuchicar/auris-ai/pkg/market"
+	"github.com/fuchicar/auris-ai/pkg/news"
+	"github.com/fuchicar/auris-ai/pkg/portfolio"
+	"github.com/fuchicar/auris-ai/pkg/registry"
 )
 
 // Screen identifies which screen is currently rendered by the [AppModel].

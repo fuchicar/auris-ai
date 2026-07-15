@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"auris/pkg/drivers/fmp"
-	"auris/pkg/market"
+	"github.com/fuchicar/auris-ai/pkg/drivers/fmp"
+	"github.com/fuchicar/auris-ai/pkg/market"
 )
 
 // ─────────────────────────────────────────────────────────────────────────────

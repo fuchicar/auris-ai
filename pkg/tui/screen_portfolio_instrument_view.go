@@ -12,10 +12,10 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"auris/pkg/finance"
-	"auris/pkg/locale"
-	"auris/pkg/market"
-	"auris/pkg/portfolio"
+	"github.com/fuchicar/auris-ai/pkg/finance"
+	"github.com/fuchicar/auris-ai/pkg/locale"
+	"github.com/fuchicar/auris-ai/pkg/market"
+	"github.com/fuchicar/auris-ai/pkg/portfolio"
 )
 
 // PortfolioInstrumentViewResult is emitted when the user exits the instrument view.

@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"auris/pkg/llm"
+	"github.com/fuchicar/auris-ai/pkg/llm"
 )
 
 // ---- ProgressEvent emission (FEAT-21) ----------------------------------------

@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"auris/pkg/config"
-	"auris/pkg/llm"
+	"github.com/fuchicar/auris-ai/pkg/config"
+	"github.com/fuchicar/auris-ai/pkg/llm"
 )
 
 // ---- BuildSystemMessage ------------------------------------------------------

@@ -7,7 +7,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"auris/pkg/locale"
+	"github.com/fuchicar/auris-ai/pkg/locale"
 )
 
 // menuItem represents a single navigable entry in the menu. If subItems is

@@ -4,9 +4,9 @@ import (
 	"strings"
 	"testing"
 
-	"auris/pkg/locale"
-	"auris/pkg/market"
-	"auris/pkg/portfolio"
+	"github.com/fuchicar/auris-ai/pkg/locale"
+	"github.com/fuchicar/auris-ai/pkg/market"
+	"github.com/fuchicar/auris-ai/pkg/portfolio"
 )
 
 func TestNewPortfolioWatchlistModel_FiltersToWatchlistOnly(t *testing.T) {

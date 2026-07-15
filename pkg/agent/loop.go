@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"auris/pkg/llm"
+	"github.com/fuchicar/auris-ai/pkg/llm"
 )
 
 func runLoop(ctx context.Context, a *Agent, messages []llm.Message) (llm.Message, error) {

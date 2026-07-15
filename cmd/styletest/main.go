@@ -10,7 +10,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"auris/pkg/tui"
+	"github.com/fuchicar/auris-ai/pkg/tui"
 )
 
 // ── sample conversation ───────────────────────────────────────────────────────

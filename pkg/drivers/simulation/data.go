@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"auris/pkg/config"
+	"github.com/fuchicar/auris-ai/pkg/config"
 )
 
 // dataFileName is the name of the simulation universe file, looked up (in

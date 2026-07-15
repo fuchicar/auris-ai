@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"strings"
 
-	"auris/pkg/config"
-	"auris/pkg/llm"
-	"auris/pkg/portfolio"
+	"github.com/fuchicar/auris-ai/pkg/config"
+	"github.com/fuchicar/auris-ai/pkg/llm"
+	"github.com/fuchicar/auris-ai/pkg/portfolio"
 )
 
 var systemPrompts = map[llm.TaskType]string{

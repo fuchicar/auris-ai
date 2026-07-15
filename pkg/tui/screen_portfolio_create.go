@@ -10,11 +10,11 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"auris/pkg/finance"
-	"auris/pkg/llm"
-	"auris/pkg/locale"
-	"auris/pkg/portfolio"
-	"auris/pkg/registry"
+	"github.com/fuchicar/auris-ai/pkg/finance"
+	"github.com/fuchicar/auris-ai/pkg/llm"
+	"github.com/fuchicar/auris-ai/pkg/locale"
+	"github.com/fuchicar/auris-ai/pkg/portfolio"
+	"github.com/fuchicar/auris-ai/pkg/registry"
 )
 
 // PortfolioCreateResult is emitted when a portfolio has been created or edited.

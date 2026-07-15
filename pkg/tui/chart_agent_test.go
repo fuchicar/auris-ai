@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"auris/pkg/config"
+	"github.com/fuchicar/auris-ai/pkg/config"
 )
 
 func TestRenderHistory_SplicesChartBlock(t *testing.T) {

@@ -4,7 +4,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"auris/pkg/locale"
+	"github.com/fuchicar/auris-ai/pkg/locale"
 )
 
 // WelcomeModel is the first screen shown on every launch.

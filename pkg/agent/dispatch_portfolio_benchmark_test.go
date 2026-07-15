@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"auris/pkg/llm"
-	"auris/pkg/market"
-	"auris/pkg/portfolio"
+	"github.com/fuchicar/auris-ai/pkg/llm"
+	"github.com/fuchicar/auris-ai/pkg/market"
+	"github.com/fuchicar/auris-ai/pkg/portfolio"
 )
 
 // ---- alignedDailyReturns -----------------------------------------------------

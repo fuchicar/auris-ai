@@ -21,13 +21,13 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 
-	"auris/pkg/agent"
-	"auris/pkg/config"
-	"auris/pkg/drivers/simulation"
-	"auris/pkg/llm"
-	"auris/pkg/locale"
-	"auris/pkg/market"
-	"auris/pkg/news"
+	"github.com/fuchicar/auris-ai/pkg/agent"
+	"github.com/fuchicar/auris-ai/pkg/config"
+	"github.com/fuchicar/auris-ai/pkg/drivers/simulation"
+	"github.com/fuchicar/auris-ai/pkg/llm"
+	"github.com/fuchicar/auris-ai/pkg/locale"
+	"github.com/fuchicar/auris-ai/pkg/market"
+	"github.com/fuchicar/auris-ai/pkg/news"
 )
 
 // agentTitleMsg carries an AI-generated session title back to the agent model.

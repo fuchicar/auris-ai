@@ -9,7 +9,7 @@ import (
 	"sort"
 	"time"
 
-	"auris/pkg/config"
+	"github.com/fuchicar/auris-ai/pkg/config"
 )
 
 // InstrumentType distinguishes between confirmed holdings and tracked watchlist items.

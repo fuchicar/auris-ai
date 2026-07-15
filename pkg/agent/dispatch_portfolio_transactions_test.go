@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"auris/pkg/llm"
-	"auris/pkg/portfolio"
+	"github.com/fuchicar/auris-ai/pkg/llm"
+	"github.com/fuchicar/auris-ai/pkg/portfolio"
 )
 
 // ---- portfolio_add_lot / portfolio_add_instrument: cash debit ----------------

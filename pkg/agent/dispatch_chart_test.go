@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"testing"
 
-	"auris/pkg/llm"
-	"auris/pkg/market"
+	"github.com/fuchicar/auris-ai/pkg/llm"
+	"github.com/fuchicar/auris-ai/pkg/market"
 )
 
 func TestDispatch_RenderPriceChart_OK_SendsChartEvent(t *testing.T) {

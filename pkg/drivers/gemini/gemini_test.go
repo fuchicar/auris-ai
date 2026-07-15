@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"auris/pkg/drivers/gemini"
-	"auris/pkg/llm"
+	"github.com/fuchicar/auris-ai/pkg/drivers/gemini"
+	"github.com/fuchicar/auris-ai/pkg/llm"
 )
 
 // skipIfRateLimited calls t.Skip when the error is ErrRateLimit.

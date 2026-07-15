@@ -13,7 +13,7 @@ import (
 	"github.com/openai/openai-go/packages/param"
 	"github.com/openai/openai-go/shared"
 
-	"auris/pkg/llm"
+	"github.com/fuchicar/auris-ai/pkg/llm"
 )
 
 // Option configures a Driver.

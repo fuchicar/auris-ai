@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"auris/pkg/drivers/anthropic"
-	"auris/pkg/llm"
+	"github.com/fuchicar/auris-ai/pkg/drivers/anthropic"
+	"github.com/fuchicar/auris-ai/pkg/llm"
 )
 
 var _ llm.AIProvider = (*anthropic.Driver)(nil)

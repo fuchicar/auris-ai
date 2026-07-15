@@ -6,7 +6,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"auris/pkg/portfolio"
+	"github.com/fuchicar/auris-ai/pkg/portfolio"
 )
 
 func TestNewPortfolioExportModel_NilProviderDoesNotLoad(t *testing.T) {

@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"auris/pkg/drivers/ollama"
-	"auris/pkg/llm"
+	"github.com/fuchicar/auris-ai/pkg/drivers/ollama"
+	"github.com/fuchicar/auris-ai/pkg/llm"
 )
 
 // ── Compile-time interface compliance ────────────────────────────────────────

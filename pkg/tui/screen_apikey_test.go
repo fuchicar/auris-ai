@@ -5,7 +5,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"auris/pkg/registry"
+	"github.com/fuchicar/auris-ai/pkg/registry"
 )
 
 func TestAPIKeyModel_OptionalEscSkips(t *testing.T) {

@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"auris/pkg/drivers/minimax"
-	"auris/pkg/llm"
+	"github.com/fuchicar/auris-ai/pkg/drivers/minimax"
+	"github.com/fuchicar/auris-ai/pkg/llm"
 )
 
 var _ llm.AIProvider = (*minimax.Driver)(nil)

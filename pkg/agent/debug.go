@@ -4,7 +4,7 @@ import (
 	"log"
 	"strings"
 
-	"auris/pkg/llm"
+	"github.com/fuchicar/auris-ai/pkg/llm"
 )
 
 // Option configures an Agent at construction time.

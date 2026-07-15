@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	"auris/pkg/llm"
+	"github.com/fuchicar/auris-ai/pkg/llm"
 )
 
 const (

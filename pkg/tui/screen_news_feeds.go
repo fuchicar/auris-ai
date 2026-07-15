@@ -8,8 +8,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"auris/pkg/locale"
-	"auris/pkg/news"
+	"github.com/fuchicar/auris-ai/pkg/locale"
+	"github.com/fuchicar/auris-ai/pkg/news"
 )
 
 // newsFeedEntry is one row in the merged catalog shown by [NewsFeedsModel]:

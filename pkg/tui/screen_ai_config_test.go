@@ -6,8 +6,8 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"auris/pkg/llm"
-	"auris/pkg/registry"
+	"github.com/fuchicar/auris-ai/pkg/llm"
+	"github.com/fuchicar/auris-ai/pkg/registry"
 )
 
 // fakeAIProvider is a minimal llm.AIProvider stub used to test aiConnectCmd

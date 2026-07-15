@@ -12,7 +12,7 @@ import (
 
 	"google.golang.org/genai"
 
-	"auris/pkg/llm"
+	"github.com/fuchicar/auris-ai/pkg/llm"
 )
 
 // Driver implements llm.AIProvider using the official google.golang.org/genai SDK.

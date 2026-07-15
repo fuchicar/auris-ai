@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"auris/pkg/market"
-	"auris/pkg/news"
+	"github.com/fuchicar/auris-ai/pkg/market"
+	"github.com/fuchicar/auris-ai/pkg/news"
 )
 
 var _ market.ProviderAPI = (*Driver)(nil)

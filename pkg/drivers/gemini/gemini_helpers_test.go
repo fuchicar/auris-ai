@@ -3,7 +3,7 @@ package gemini
 import (
 	"testing"
 
-	"auris/pkg/llm"
+	"github.com/fuchicar/auris-ai/pkg/llm"
 )
 
 func TestMsgToContent_ToolRole_JSONArray(t *testing.T) {

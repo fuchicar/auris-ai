@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"auris/pkg/news"
+	"github.com/fuchicar/auris-ai/pkg/news"
 )
 
 // NewsSource implements news.Source with synthetic headlines derived from

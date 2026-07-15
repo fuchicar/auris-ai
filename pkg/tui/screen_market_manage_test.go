@@ -5,8 +5,8 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"auris/pkg/locale"
-	"auris/pkg/registry"
+	"github.com/fuchicar/auris-ai/pkg/locale"
+	"github.com/fuchicar/auris-ai/pkg/registry"
 )
 
 func testMarketEntries() []registry.MarketEntry {

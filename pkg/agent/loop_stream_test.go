@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"auris/pkg/llm"
-	"auris/pkg/market"
+	"github.com/fuchicar/auris-ai/pkg/llm"
+	"github.com/fuchicar/auris-ai/pkg/market"
 )
 
 func TestChatStream_DirectAnswer(t *testing.T) {

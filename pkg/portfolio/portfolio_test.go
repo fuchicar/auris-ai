@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"auris/pkg/config"
+	"github.com/fuchicar/auris-ai/pkg/config"
 )
 
 // ─── FIFO tests ───────────────────────────────────────────────────────────────

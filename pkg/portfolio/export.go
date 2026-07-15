@@ -16,7 +16,7 @@ import (
 	"strconv"
 	"time"
 
-	"auris/pkg/config"
+	"github.com/fuchicar/auris-ai/pkg/config"
 )
 
 // PortfolioExport is the full-fidelity JSON export shape: the raw portfolio

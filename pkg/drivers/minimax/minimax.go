@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"strings"
 
-	"auris/pkg/drivers/anthropic"
-	"auris/pkg/llm"
+	"github.com/fuchicar/auris-ai/pkg/drivers/anthropic"
+	"github.com/fuchicar/auris-ai/pkg/llm"
 )
 
 const defaultBaseURL = "https://api.minimax.io/anthropic"

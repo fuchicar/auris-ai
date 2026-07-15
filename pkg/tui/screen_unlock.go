@@ -7,8 +7,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"auris/pkg/config"
-	"auris/pkg/locale"
+	"github.com/fuchicar/auris-ai/pkg/config"
+	"github.com/fuchicar/auris-ai/pkg/locale"
 )
 
 // UnlockModel prompts the user for their master passphrase to decrypt an

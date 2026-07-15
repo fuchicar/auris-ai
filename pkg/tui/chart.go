@@ -8,8 +8,8 @@ import (
 	tslc "github.com/NimbleMarkets/ntcharts/linechart/timeserieslinechart"
 	"github.com/NimbleMarkets/ntcharts/sparkline"
 
-	"auris/pkg/finance"
-	"auris/pkg/market"
+	"github.com/fuchicar/auris-ai/pkg/finance"
+	"github.com/fuchicar/auris-ai/pkg/market"
 )
 
 const (

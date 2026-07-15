@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"auris/pkg/market"
+	"github.com/fuchicar/auris-ai/pkg/market"
 )
 
 func TestRenderCandleChart_InsufficientData(t *testing.T) {

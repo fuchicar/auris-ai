@@ -5,7 +5,7 @@ import (
 
 	sdk "github.com/openai/openai-go"
 
-	"auris/pkg/llm"
+	"github.com/fuchicar/auris-ai/pkg/llm"
 )
 
 // BUG-11: Complete (via mapResponse) used to discard the assistant's text

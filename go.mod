@@ -1,4 +1,4 @@
-module auris
+module github.com/fuchicar/auris-ai
 
 go 1.25.0
 

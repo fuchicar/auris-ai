@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	"auris/pkg/finance"
+	"github.com/fuchicar/auris-ai/pkg/finance"
 )
 
 // --- Benchmark comparison --------------------------------------------------

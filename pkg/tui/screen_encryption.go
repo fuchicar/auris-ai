@@ -6,7 +6,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"auris/pkg/locale"
+	"github.com/fuchicar/auris-ai/pkg/locale"
 )
 
 // encryptionOptions lists the two states in display order.

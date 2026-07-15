@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"auris/pkg/market"
+	"github.com/fuchicar/auris-ai/pkg/market"
 )
 
 // marketChain wraps an ordered list of market.ProviderAPI and cascades through

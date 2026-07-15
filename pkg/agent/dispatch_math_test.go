@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"auris/pkg/llm"
+	"github.com/fuchicar/auris-ai/pkg/llm"
 )
 
 // dispatch_math_test.go exercises the dispatch() handler for every math tool,

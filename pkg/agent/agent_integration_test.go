@@ -11,12 +11,12 @@ import (
 	"testing"
 	"time"
 
-	"auris/pkg/agent"
-	"auris/pkg/drivers/fmp"
-	"auris/pkg/drivers/gemini"
-	"auris/pkg/drivers/ollama"
-	"auris/pkg/llm"
-	"auris/pkg/market"
+	"github.com/fuchicar/auris-ai/pkg/agent"
+	"github.com/fuchicar/auris-ai/pkg/drivers/fmp"
+	"github.com/fuchicar/auris-ai/pkg/drivers/gemini"
+	"github.com/fuchicar/auris-ai/pkg/drivers/ollama"
+	"github.com/fuchicar/auris-ai/pkg/llm"
+	"github.com/fuchicar/auris-ai/pkg/market"
 )
 
 // loggingTransport logs each Gemini REST request/response to help diagnose

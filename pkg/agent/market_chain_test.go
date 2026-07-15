@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"auris/pkg/market"
+	"github.com/fuchicar/auris-ai/pkg/market"
 )
 
 // stubMarket is a minimal, fully error-injectable market.ProviderAPI used only

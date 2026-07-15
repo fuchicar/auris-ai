@@ -4,9 +4,9 @@
 package registry
 
 import (
-	"auris/pkg/drivers/eodhd"
-	"auris/pkg/drivers/fmp"
-	"auris/pkg/market"
+	"github.com/fuchicar/auris-ai/pkg/drivers/eodhd"
+	"github.com/fuchicar/auris-ai/pkg/drivers/fmp"
+	"github.com/fuchicar/auris-ai/pkg/market"
 )
 
 // MarketEntry describes a registered market data provider.

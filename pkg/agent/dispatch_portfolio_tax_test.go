@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"auris/pkg/llm"
-	"auris/pkg/portfolio"
+	"github.com/fuchicar/auris-ai/pkg/llm"
+	"github.com/fuchicar/auris-ai/pkg/portfolio"
 )
 
 func TestDispatch_PortfolioCalculateTaxPnL_OK(t *testing.T) {

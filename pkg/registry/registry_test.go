@@ -3,7 +3,7 @@ package registry_test
 import (
 	"testing"
 
-	"auris/pkg/registry"
+	"github.com/fuchicar/auris-ai/pkg/registry"
 )
 
 func TestAllMarket_NonEmpty(t *testing.T) {

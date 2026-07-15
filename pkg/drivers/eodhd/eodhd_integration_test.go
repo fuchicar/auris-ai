@@ -18,8 +18,8 @@ import (
 	"testing"
 	"time"
 
-	"auris/pkg/drivers/eodhd"
-	"auris/pkg/market"
+	"github.com/fuchicar/auris-ai/pkg/drivers/eodhd"
+	"github.com/fuchicar/auris-ai/pkg/market"
 )
 
 // ─────────────────────────────────────────────────────────────────────────────

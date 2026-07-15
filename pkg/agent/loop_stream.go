@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"auris/pkg/llm"
+	"github.com/fuchicar/auris-ai/pkg/llm"
 )
 
 // runLoopStream mirrors runLoop but drives the ReAct loop via a.llm.Stream

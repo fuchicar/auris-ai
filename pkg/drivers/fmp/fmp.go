@@ -15,7 +15,7 @@ import (
 	"sync"
 	"time"
 
-	"auris/pkg/market"
+	"github.com/fuchicar/auris-ai/pkg/market"
 )
 
 const (

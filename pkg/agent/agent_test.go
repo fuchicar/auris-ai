@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"auris/pkg/llm"
-	"auris/pkg/market"
+	"github.com/fuchicar/auris-ai/pkg/llm"
+	"github.com/fuchicar/auris-ai/pkg/market"
 )
 
 // ---- mock LLM ---------------------------------------------------------------

@@ -3,7 +3,7 @@ package locale_test
 import (
 	"testing"
 
-	"auris/pkg/locale"
+	"github.com/fuchicar/auris-ai/pkg/locale"
 )
 
 func TestDetect_Spanish(t *testing.T) {

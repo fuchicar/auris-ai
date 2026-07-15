@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"auris/pkg/llm"
+	"github.com/fuchicar/auris-ai/pkg/llm"
 )
 
 // TestBuildChatRequest_NumCtxDefault verifies that the driver passes its

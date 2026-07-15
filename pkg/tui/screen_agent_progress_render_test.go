@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"auris/pkg/config"
+	"github.com/fuchicar/auris-ai/pkg/config"
 )
 
 // TestRenderHistory_ToolLogs_ShowsConcreteCall exercises the actual render path

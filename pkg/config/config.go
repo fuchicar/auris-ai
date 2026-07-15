@@ -8,7 +8,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"auris/pkg/news"
+	"github.com/fuchicar/auris-ai/pkg/news"
 )
 
 // AurisConfig is the in-memory representation of the agent configuration.

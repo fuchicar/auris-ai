@@ -7,7 +7,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"auris/pkg/locale"
+	"github.com/fuchicar/auris-ai/pkg/locale"
 )
 
 // DisclaimerModel is shown once during first-run setup.

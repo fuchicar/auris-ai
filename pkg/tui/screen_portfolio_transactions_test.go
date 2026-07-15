@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"auris/pkg/locale"
-	"auris/pkg/portfolio"
+	"github.com/fuchicar/auris-ai/pkg/locale"
+	"github.com/fuchicar/auris-ai/pkg/portfolio"
 )
 
 func TestNewPortfolioTransactionsModel_NewestFirst(t *testing.T) {

@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"auris/pkg/drivers/openai"
-	"auris/pkg/llm"
+	"github.com/fuchicar/auris-ai/pkg/drivers/openai"
+	"github.com/fuchicar/auris-ai/pkg/llm"
 )
 
 var _ llm.AIProvider = (*openai.Driver)(nil)

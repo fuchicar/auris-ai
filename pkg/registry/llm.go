@@ -4,12 +4,12 @@ import (
 	"os"
 	"strconv"
 
-	"auris/pkg/drivers/anthropic"
-	"auris/pkg/drivers/gemini"
-	"auris/pkg/drivers/minimax"
-	"auris/pkg/drivers/ollama"
-	"auris/pkg/drivers/openai"
-	"auris/pkg/llm"
+	"github.com/fuchicar/auris-ai/pkg/drivers/anthropic"
+	"github.com/fuchicar/auris-ai/pkg/drivers/gemini"
+	"github.com/fuchicar/auris-ai/pkg/drivers/minimax"
+	"github.com/fuchicar/auris-ai/pkg/drivers/ollama"
+	"github.com/fuchicar/auris-ai/pkg/drivers/openai"
+	"github.com/fuchicar/auris-ai/pkg/llm"
 )
 
 // envOllamaNumCtx, if set to a positive integer, overrides the Ollama driver's
