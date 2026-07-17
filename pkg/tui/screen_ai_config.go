@@ -313,6 +313,7 @@ func (m *AIProviderConfigModel) View() string {
 
 	switch m.step {
 	case aiStepOllamaMode:
+		explain := m.styles.Help.Render(locale.T("setup.ai.config.ollama.explain"))
 		label := m.styles.Unselected.Render(locale.T("setup.ai.config.ollama.mode"))
 		options := []string{
 			locale.T("setup.ai.config.ollama.local"),
@@ -330,39 +331,44 @@ func (m *AIProviderConfigModel) View() string {
 			}
 		}
 		hint := m.styles.Hint.Render(locale.T("setup.ai.model.hint") + "  " + escHint)
-		parts := append([]string{title, "", label}, rows...)
+		parts := append([]string{title, explain, "", label}, rows...)
 		parts = append(parts, hint)
 		return lipgloss.JoinVertical(lipgloss.Left, parts...)
 
 	case aiStepBaseURL:
-		labelKey, hintKey := "setup.ai.config.baseurl.label", "setup.ai.config.baseurl.hint"
+		labelKey, hintKey, explainKey := "setup.ai.config.baseurl.label", "setup.ai.config.baseurl.hint", "setup.ai.config.baseurl.explain"
 		if m.entry.Key != "ollama" {
-			labelKey, hintKey = "setup.ai.config.baseurl.generic.label", "setup.ai.config.baseurl.generic.hint"
+			labelKey, hintKey, explainKey = "setup.ai.config.baseurl.generic.label", "setup.ai.config.baseurl.generic.hint", "setup.ai.config.baseurl.generic.explain"
 		}
+		explain := m.styles.Help.Render(locale.T(explainKey))
 		label := m.styles.Unselected.Render(locale.T(labelKey))
 		inp := m.styles.Input.Render(m.input.View())
 		hint := m.styles.Hint.Render(locale.T(hintKey) + "  " + escHint)
-		return lipgloss.JoinVertical(lipgloss.Left, title, "", label, inp, hint)
+		return lipgloss.JoinVertical(lipgloss.Left, title, explain, "", label, inp, hint)
 
 	case aiStepAPIKey:
-		var labelKey, hintKey string
+		var labelKey, hintKey, explainKey string
 		if m.entry.Key == "ollama" {
 			labelKey = "setup.ai.config.apikey.label"
 			hintKey = "setup.ai.config.apikey.hint"
+			explainKey = "setup.ai.config.apikey.explain"
 		} else {
 			labelKey = "setup.ai.config.apikey.required.label"
 			hintKey = "setup.ai.config.apikey.required.hint"
+			explainKey = "setup.ai.config.apikey.required.explain"
 		}
+		explain := m.styles.Help.Render(locale.T(explainKey))
 		label := m.styles.Unselected.Render(locale.T(labelKey))
 		inp := m.styles.Input.Render(m.input.View())
 		hint := m.styles.Hint.Render(locale.T(hintKey) + "  " + escHint)
-		return lipgloss.JoinVertical(lipgloss.Left, title, "", label, inp, hint)
+		return lipgloss.JoinVertical(lipgloss.Left, title, explain, "", label, inp, hint)
 
 	case aiStepModelName:
+		explain := m.styles.Help.Render(locale.T("setup.ai.config.model.explain"))
 		label := m.styles.Unselected.Render(locale.T("setup.ai.config.model.label"))
 		inp := m.styles.Input.Render(m.input.View())
 		hint := m.styles.Hint.Render(locale.T("setup.ai.config.model.hint") + "  " + escHint)
-		return lipgloss.JoinVertical(lipgloss.Left, title, "", label, inp, hint)
+		return lipgloss.JoinVertical(lipgloss.Left, title, explain, "", label, inp, hint)
 
 	case aiStepConnecting:
 		status := m.styles.Hint.Render(

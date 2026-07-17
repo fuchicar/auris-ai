@@ -83,6 +83,12 @@
   "setup.passphrase.hint": {
     "other": "Escriba la contraseña · Tab para el campo de confirmación"
   },
+  "setup.passphrase.explain": {
+    "other": "Auris usa esta contraseña para cifrar su configuración, carteras y sesiones en disco. Deberá introducirla cada vez que abra la aplicación."
+  },
+  "setup.passphrase.warning": {
+    "other": "⚠ No hay recuperación posible: si olvida esta contraseña, sus datos cifrados no podrán descifrarse nunca más."
+  },
 
   "changepass.title": {
     "other": "Cambie su contraseña maestra:"
@@ -419,6 +425,9 @@
   "setup.provider.hint": {
     "other": "↑↓ navegar · Enter seleccionar"
   },
+  "setup.provider.explain": {
+    "other": "El proveedor de datos de mercado es de donde Auris obtiene cotizaciones, velas y fundamentales. Financial Modeling Prep (FMP) es la opción recomendada por defecto — mayor cobertura gratuita de mercados de EE. UU. Elija EODHD si necesita sobre todo valores españoles (BME), que el plan gratuito de FMP no cubre; más adelante podrá añadir el otro como segundo proveedor."
+  },
 
   "setup.apikey.label": {
     "other": "Introduzca su clave de API"
@@ -438,11 +447,17 @@
   "setup.apikey.hint": {
     "other": "Escriba la clave de API · Enter para validar"
   },
+  "setup.apikey.explain": {
+    "other": "Auris necesita esta clave para obtener datos de mercado reales de este proveedor. Se guarda cifrada de forma local y solo se envía al propio proveedor."
+  },
   "setup.apikey.optional_label": {
     "other": "Clave API (opcional — amplía la cobertura de datos de mercado)"
   },
   "setup.apikey.optional_hint": {
     "other": "Escriba la clave de API · Enter para validar · Esc para omitir"
+  },
+  "setup.apikey.optional_explain": {
+    "other": "Un segundo proveedor de datos de mercado es opcional. Auris recurre a él automáticamente cuando el proveedor principal no cubre un símbolo (p. ej. bolsas fuera de EE. UU.) o agota su límite de peticiones."
   },
 
   "menu.title": {
@@ -540,6 +555,9 @@
   "setup.ai.select.hint": {
     "other": "↑↓ navegar · Espacio marcar · Enter confirmar · selecciona ninguno para omitir"
   },
+  "setup.ai.select.explain": {
+    "other": "Estos proveedores de IA son los que dan vida al modo agente — el chat que responde preguntas y usa herramientas sobre tus datos. Selecciona los que quieras y elige un valor por defecto después, o no selecciones ninguno para omitir la configuración de IA (el seguimiento de cartera sigue funcionando sin ella)."
+  },
   "setup.ai.config.ollama.mode": {
     "other": "¿Cómo quieres conectar a Ollama?"
   },
@@ -548,6 +566,9 @@
   },
   "setup.ai.config.ollama.remote": {
     "other": "Remota (URL personalizada)"
+  },
+  "setup.ai.config.ollama.explain": {
+    "other": "Ollama ejecuta modelos de IA de forma local en tu máquina o en un servidor que controlas — tus datos nunca salen de tu red. Local espera que Ollama esté corriendo en esta máquina en su puerto por defecto; Remota te permite apuntar a otro host."
   },
   "setup.ai.config.baseurl.label": {
     "other": "URL del servidor Ollama"
@@ -558,6 +579,9 @@
   "setup.ai.config.baseurl.placeholder": {
     "other": "http://mi-servidor:11434"
   },
+  "setup.ai.config.baseurl.explain": {
+    "other": "La dirección del servidor Ollama al que conectarte — p. ej. otra máquina de tu red o una instancia autoalojada."
+  },
   "setup.ai.config.baseurl.generic.label": {
     "other": "URL base"
   },
@@ -566,6 +590,9 @@
   },
   "setup.ai.config.baseurl.generic.placeholder": {
     "other": "https://api.ejemplo.com/v1"
+  },
+  "setup.ai.config.baseurl.generic.explain": {
+    "other": "La URL base de tu endpoint compatible con OpenAI (autoalojado o de terceros). Esto permite a Auris hablar con proveedores que no soporta de forma nativa, siempre que implementen la misma API."
   },
   "setup.ai.config.apikey.label": {
     "other": "Clave API (opcional — Enter o Esc para omitir)"
@@ -576,6 +603,9 @@
   "setup.ai.config.apikey.placeholder": {
     "other": "clave API (opcional)"
   },
+  "setup.ai.config.apikey.explain": {
+    "other": "Solo hace falta si esta instancia de Ollama requiere autenticación (p. ej. un servidor remoto protegido). Déjala vacía para una instalación local típica."
+  },
   "setup.ai.config.apikey.required.label": {
     "other": "Clave API"
   },
@@ -585,6 +615,9 @@
   "setup.ai.config.apikey.required.placeholder": {
     "other": "clave API"
   },
+  "setup.ai.config.apikey.required.explain": {
+    "other": "Auris necesita esta clave para enviar peticiones al proveedor en tu nombre. Se guarda cifrada de forma local y solo se usa para las llamadas a este proveedor."
+  },
   "setup.ai.config.model.label": {
     "other": "ID del modelo por defecto"
   },
@@ -593,6 +626,9 @@
   },
   "setup.ai.config.model.placeholder": {
     "other": "gpt-4o-mini"
+  },
+  "setup.ai.config.model.explain": {
+    "other": "El identificador exacto del modelo que espera tu endpoint (p. ej. gpt-4o-mini). Auris no puede descubrir automáticamente los modelos de un endpoint genérico compatible con OpenAI, así que este será el modelo por defecto usado en el chat."
   },
   "setup.ai.config.connecting": {
     "other": "Conectando y listando modelos…"
@@ -606,8 +642,14 @@
   "setup.ai.model.provider.label": {
     "other": "Selecciona el proveedor de IA por defecto"
   },
+  "setup.ai.model.provider.explain": {
+    "other": "Elige qué proveedor de IA configurado debe usar Auris por defecto al abrir el modo agente. Puedes cambiarlo más adelante desde el menú."
+  },
   "setup.ai.model.model.label": {
     "other": "Selecciona el modelo por defecto"
+  },
+  "setup.ai.model.model.explain": {
+    "other": "Elige el modelo por defecto de este proveedor. Los modelos más grandes suelen seguir mejor las instrucciones de uso de herramientas — puedes cambiarlo más adelante."
   },
   "setup.ai.model.hint": {
     "other": "↑↓ navegar · Enter seleccionar"

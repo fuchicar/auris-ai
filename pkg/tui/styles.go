@@ -45,6 +45,7 @@ type Styles struct {
 	Input      lipgloss.Style
 	Error      lipgloss.Style
 	Hint       lipgloss.Style // keyboard shortcut hints
+	Help       lipgloss.Style // wrapped explanatory text shown before a field
 	DocsURL    lipgloss.Style // clickable-looking URL
 	Checkbox   lipgloss.Style // "[x]" / "[ ]" for multi-select
 	Spinner    lipgloss.Style
@@ -106,6 +107,7 @@ func newBaseStyles() *Styles {
 		Input:      lipgloss.NewStyle().BorderStyle(lipgloss.RoundedBorder()).BorderForeground(colorAccent).Padding(0, 1).Width(PanelWidth - 4),
 		Error:      lipgloss.NewStyle().Foreground(colorError).Bold(true),
 		Hint:       lipgloss.NewStyle().Foreground(colorHint).Italic(true),
+		Help:       lipgloss.NewStyle().Foreground(colorHint).Width(PanelWidth),
 		DocsURL:    lipgloss.NewStyle().Foreground(colorURL).Underline(true),
 		Checkbox:   lipgloss.NewStyle().Foreground(colorSelected),
 		Spinner:    lipgloss.NewStyle().Foreground(colorAccent),

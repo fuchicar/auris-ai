@@ -134,12 +134,13 @@ func connectCmd(entry registry.MarketEntry, apiKey string) tea.Cmd {
 
 // View implements [tea.Model].
 func (m *APIKeyModel) View() string {
-	labelKey, hintKey := "setup.apikey.label", "setup.apikey.hint"
+	labelKey, hintKey, explainKey := "setup.apikey.label", "setup.apikey.hint", "setup.apikey.explain"
 	if m.optional {
-		labelKey, hintKey = "setup.apikey.optional_label", "setup.apikey.optional_hint"
+		labelKey, hintKey, explainKey = "setup.apikey.optional_label", "setup.apikey.optional_hint", "setup.apikey.optional_explain"
 	}
 
 	providerName := m.styles.Subtitle.Render(m.entry.DisplayName)
+	explain := m.styles.Help.Render(locale.T(explainKey))
 	docsLabel := m.styles.Hint.Render(locale.T("setup.apikey.docs_hint"))
 	docsLink := m.styles.DocsURL.Render(m.entry.DocsURL)
 	inputLabel := m.styles.Unselected.Render(locale.T(labelKey))
@@ -162,6 +163,8 @@ func (m *APIKeyModel) View() string {
 	inp := m.styles.Input.Render(m.input.View())
 	return lipgloss.JoinVertical(lipgloss.Left,
 		providerName,
+		explain,
+		"",
 		docsLabel+" "+docsLink,
 		"",
 		inputLabel,

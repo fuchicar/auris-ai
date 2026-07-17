@@ -58,6 +58,7 @@ func (m *ProviderModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // View implements [tea.Model].
 func (m *ProviderModel) View() string {
 	title := m.styles.Subtitle.Render(locale.T("setup.provider.label"))
+	explain := m.styles.Help.Render(locale.T("setup.provider.explain"))
 
 	var rows []string
 	for i, e := range m.entries {
@@ -71,7 +72,7 @@ func (m *ProviderModel) View() string {
 	}
 
 	hint := m.styles.Hint.Render(locale.T("setup.provider.hint") + "  " + locale.T("hint.esc_back"))
-	parts := append([]string{title}, rows...)
+	parts := append([]string{title, explain, ""}, rows...)
 	parts = append(parts, hint)
 	return lipgloss.JoinVertical(lipgloss.Left, parts...)
 }
