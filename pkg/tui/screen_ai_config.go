@@ -21,12 +21,13 @@ const aiConnectTimeout = 15 * time.Second
 type aiConfigStep int
 
 const (
-	aiStepOllamaMode aiConfigStep = iota // Ollama only: local vs remote selection
-	aiStepBaseURL                        // Ollama remote, or openai_compatible: enter server URL
-	aiStepAPIKey                         // API key (required for most providers, optional for Ollama)
-	aiStepModelName                      // openai_compatible only: free-text default model ID
-	aiStepConnecting                     // async connect + list models
-	aiStepError                          // show error; Enter returns to the failed step to edit it, Esc cancels
+	aiStepOllamaMode   aiConfigStep = iota // Ollama only: local vs remote selection
+	aiStepInstanceName                     // openai_compatible only: free-text display name (e.g. "DeepSeek")
+	aiStepBaseURL                          // Ollama remote, or openai_compatible: enter server URL
+	aiStepAPIKey                           // API key (required for most providers, optional for Ollama)
+	aiStepModelName                        // openai_compatible only: free-text default model ID
+	aiStepConnecting                       // async connect + list models
+	aiStepError                            // show error; Enter returns to the failed step to edit it, Esc cancels
 )
 
 // aiConnectResultMsg carries the outcome of an async connect + ListModels call.
@@ -38,17 +39,18 @@ type aiConnectResultMsg struct {
 // AIProviderConfigModel collects configuration for a single AI provider,
 // connects to it, lists its available models, and emits [ScreenDoneMsg] on success.
 type AIProviderConfigModel struct {
-	entry      registry.LLMEntry
-	step       aiConfigStep
-	errStep    aiConfigStep // step to return to for editing after a connect error
-	modeSelect int          // cursor for local/remote option (Ollama only)
-	baseURL    string
-	apiKey     string
-	modelName  string // openai_compatible only: user-typed default model ID
-	input      textinput.Model
-	spin       spinner.Model
-	err        string
-	styles     *Styles
+	entry        registry.LLMEntry
+	step         aiConfigStep
+	errStep      aiConfigStep // step to return to for editing after a connect error
+	modeSelect   int          // cursor for local/remote option (Ollama only)
+	instanceName string       // openai_compatible only: user-typed display name (e.g. "DeepSeek")
+	baseURL      string
+	apiKey       string
+	modelName    string // openai_compatible only: user-typed default model ID
+	input        textinput.Model
+	spin         spinner.Model
+	err          string
+	styles       *Styles
 }
 
 // newAIProviderConfigModel constructs an [AIProviderConfigModel] for the given
@@ -73,8 +75,8 @@ func newAIProviderConfigModel(entry registry.LLMEntry, s *Styles) *AIProviderCon
 	case "ollama":
 		m.step = aiStepOllamaMode
 	case "openai_compatible":
-		m.step = aiStepBaseURL
-		m.input.Placeholder = locale.T("setup.ai.config.baseurl.generic.placeholder")
+		m.step = aiStepInstanceName
+		m.input.Placeholder = locale.T("setup.ai.config.instancename.placeholder")
 		m.input.Focus()
 	default:
 		m.step = aiStepAPIKey
@@ -97,7 +99,7 @@ func echoModeFor(step aiConfigStep) textinput.EchoMode {
 
 // Init implements [tea.Model].
 func (m *AIProviderConfigModel) Init() tea.Cmd {
-	if m.step == aiStepAPIKey || m.step == aiStepBaseURL {
+	if m.step == aiStepAPIKey || m.step == aiStepBaseURL || m.step == aiStepInstanceName {
 		return textinput.Blink
 	}
 	return nil
@@ -115,6 +117,7 @@ func (m *AIProviderConfigModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		result := AIProviderConfigResult{
 			Key:     m.entry.Key,
+			Name:    m.instanceName,
 			BaseURL: m.baseURL,
 			APIKey:  m.apiKey,
 			Models:  msg.models,
@@ -136,7 +139,7 @@ func (m *AIProviderConfigModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	// Non-key messages (blink timer, etc.) go to the text input when active.
-	if m.step == aiStepBaseURL || m.step == aiStepAPIKey || m.step == aiStepModelName {
+	if m.step == aiStepInstanceName || m.step == aiStepBaseURL || m.step == aiStepAPIKey || m.step == aiStepModelName {
 		in, cmd := m.input.Update(msg)
 		m.input = in
 		return m, cmd
@@ -146,6 +149,25 @@ func (m *AIProviderConfigModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m *AIProviderConfigModel) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch m.step {
+
+	case aiStepInstanceName:
+		switch msg.Type {
+		case tea.KeyEsc:
+			return m, cancelConfigCmd()
+		case tea.KeyEnter:
+			if m.input.Value() == "" {
+				return m, nil // a display name is required
+			}
+			m.instanceName = m.input.Value()
+			m.step = aiStepBaseURL
+			m.input.Placeholder = locale.T("setup.ai.config.baseurl.generic.placeholder")
+			m.input.SetValue("")
+			m.input.Focus()
+			return m, textinput.Blink
+		}
+		in, cmd := m.input.Update(msg)
+		m.input = in
+		return m, cmd
 
 	case aiStepOllamaMode:
 		switch msg.Type {
@@ -251,7 +273,7 @@ func (m *AIProviderConfigModel) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd
 			// they typed, instead of blindly resubmitting the same value.
 			m.err = ""
 			m.step = m.errStep
-			if m.step == aiStepBaseURL || m.step == aiStepAPIKey || m.step == aiStepModelName {
+			if m.step == aiStepInstanceName || m.step == aiStepBaseURL || m.step == aiStepAPIKey || m.step == aiStepModelName {
 				m.input.EchoMode = echoModeFor(m.step)
 				m.input.Focus()
 				return m, textinput.Blink
@@ -312,6 +334,13 @@ func (m *AIProviderConfigModel) View() string {
 	escHint := locale.T("hint.esc_back")
 
 	switch m.step {
+	case aiStepInstanceName:
+		explain := m.styles.Help.Render(locale.T("setup.ai.config.instancename.explain"))
+		label := m.styles.Unselected.Render(locale.T("setup.ai.config.instancename.label"))
+		inp := m.styles.Input.Render(m.input.View())
+		hint := m.styles.Hint.Render(locale.T("setup.ai.config.instancename.hint") + "  " + escHint)
+		return lipgloss.JoinVertical(lipgloss.Left, title, explain, "", label, inp, hint)
+
 	case aiStepOllamaMode:
 		explain := m.styles.Help.Render(locale.T("setup.ai.config.ollama.explain"))
 		label := m.styles.Unselected.Render(locale.T("setup.ai.config.ollama.mode"))

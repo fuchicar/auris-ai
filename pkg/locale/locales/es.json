@@ -556,7 +556,7 @@
     "other": "↑↓ navegar · Espacio marcar · Enter confirmar · selecciona ninguno para omitir"
   },
   "setup.ai.select.explain": {
-    "other": "Estos proveedores de IA son los que dan vida al modo agente — el chat que responde preguntas y usa herramientas sobre tus datos. Selecciona los que quieras y elige un valor por defecto después, o no selecciones ninguno para omitir la configuración de IA (el seguimiento de cartera sigue funcionando sin ella)."
+    "other": "Estos proveedores de IA son los que dan vida al modo agente — el chat que responde preguntas y usa herramientas sobre tus datos. Selecciona los que quieras y elige un valor por defecto después, o no selecciones ninguno para omitir la configuración de IA (el seguimiento de cartera sigue funcionando sin ella). Marcar OpenAI-Compatible siempre añade un nuevo endpoint con nombre propio — vuelve a marcarlo cuando quieras para añadir otro (p. ej. DeepSeek y luego Groq)."
   },
   "setup.ai.config.ollama.mode": {
     "other": "¿Cómo quieres conectar a Ollama?"
@@ -581,6 +581,18 @@
   },
   "setup.ai.config.baseurl.explain": {
     "other": "La dirección del servidor Ollama al que conectarte — p. ej. otra máquina de tu red o una instancia autoalojada."
+  },
+  "setup.ai.config.instancename.label": {
+    "other": "Nombre del proveedor"
+  },
+  "setup.ai.config.instancename.hint": {
+    "other": "p. ej. DeepSeek, Groq, OpenRouter · Enter confirmar"
+  },
+  "setup.ai.config.instancename.placeholder": {
+    "other": "p. ej. DeepSeek"
+  },
+  "setup.ai.config.instancename.explain": {
+    "other": "Ponle un nombre a este endpoint compatible con OpenAI para poder distinguirlo de otros que añadas más adelante (p. ej. \"DeepSeek\", \"Groq\"). Puedes añadir tantos proveedores OpenAI-Compatible como quieras, cada uno con su propio nombre."
   },
   "setup.ai.config.baseurl.generic.label": {
     "other": "URL base"

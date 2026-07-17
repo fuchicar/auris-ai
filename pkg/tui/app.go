@@ -2,9 +2,13 @@ package tui
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"os"
+	"sort"
+	"strings"
 	"sync"
+	"unicode"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -158,7 +162,10 @@ type MarketProviderManageResult struct {
 // AIProviderConfigResult is the payload emitted after one AI provider has been
 // configured and its models listed.
 type AIProviderConfigResult struct {
-	Key     string
+	Key string
+	// Name is the user-chosen display label for a new OpenAI-Compatible
+	// instance (e.g. "DeepSeek"); empty for every other provider.
+	Name    string
 	BaseURL string
 	APIKey  string
 	Models  []llm.Model
@@ -618,7 +625,7 @@ func (a *AppModel) transition(msg ScreenDoneMsg) (tea.Model, tea.Cmd) {
 			a.cfg.SimulationMode = true
 			a.aiSelectOrigin = ScreenDataMode
 			a.screen = ScreenAIProviderSelect
-			a.current = newAIProviderSelectModel(a.styles, nil, true)
+			a.current = newAIProviderSelectModel(a.styles, nil, dynamicLLMEntries(a.cfg), true)
 		} else {
 			a.cfg.SimulationMode = false
 			a.screen = ScreenProvider
@@ -692,7 +699,7 @@ func (a *AppModel) transition(msg ScreenDoneMsg) (tea.Model, tea.Cmd) {
 		} else {
 			a.aiSelectOrigin = ScreenAPIKey
 			a.screen = ScreenAIProviderSelect
-			a.current = newAIProviderSelectModel(a.styles, nil, true)
+			a.current = newAIProviderSelectModel(a.styles, nil, dynamicLLMEntries(a.cfg), true)
 		}
 
 	case ScreenAPIKeySecondary:
@@ -704,7 +711,7 @@ func (a *AppModel) transition(msg ScreenDoneMsg) (tea.Model, tea.Cmd) {
 		}
 		a.aiSelectOrigin = ScreenAPIKeySecondary
 		a.screen = ScreenAIProviderSelect
-		a.current = newAIProviderSelectModel(a.styles, nil, true)
+		a.current = newAIProviderSelectModel(a.styles, nil, dynamicLLMEntries(a.cfg), true)
 
 	case ScreenMarketProviderManage:
 		if r, ok := msg.Result.(MarketProviderManageResult); ok {
@@ -768,11 +775,22 @@ func (a *AppModel) transition(msg ScreenDoneMsg) (tea.Model, tea.Cmd) {
 			if a.cfg.AIProviders == nil {
 				a.cfg.AIProviders = make(map[string]*config.AIProviderConfig)
 			}
-			a.cfg.AIProviders[r.Key] = &config.AIProviderConfig{
+			key := r.Key
+			if r.Name != "" {
+				// A newly named OpenAI-Compatible instance: mint a unique
+				// instance key and resolve the placeholder queued at
+				// selection time (the generic "openai_compatible" key) to
+				// it, so every downstream lookup by a.pendingLLMProviders
+				// sees the real key.
+				key = newOpenAICompatibleKey(a.cfg.AIProviders, r.Name)
+				a.pendingLLMProviders[a.pendingLLMIdx] = key
+			}
+			a.cfg.AIProviders[key] = &config.AIProviderConfig{
 				BaseURL: r.BaseURL,
 				APIKey:  r.APIKey,
+				Name:    r.Name,
 			}
-			a.pendingLLMModels[r.Key] = r.Models
+			a.pendingLLMModels[key] = r.Models
 			a.pendingLLMIdx++
 
 			if a.pendingLLMIdx < len(a.pendingLLMProviders) {
@@ -785,8 +803,8 @@ func (a *AppModel) transition(msg ScreenDoneMsg) (tea.Model, tea.Cmd) {
 				a.managingProviders = false
 				if a.cfg.ActiveAIProvider == "" {
 					var entries []registry.LLMEntry
-					for _, key := range a.pendingLLMProviders {
-						if e, ok := findLLMEntry(key); ok {
+					for _, k := range a.pendingLLMProviders {
+						if e, ok := llmEntryFor(a.cfg, k); ok {
 							entries = append(entries, e)
 						}
 					}
@@ -799,8 +817,8 @@ func (a *AppModel) transition(msg ScreenDoneMsg) (tea.Model, tea.Cmd) {
 			} else {
 				// Setup flow: pick a default model from the newly configured providers.
 				var entries []registry.LLMEntry
-				for _, key := range a.pendingLLMProviders {
-					if e, ok := findLLMEntry(key); ok {
+				for _, k := range a.pendingLLMProviders {
+					if e, ok := llmEntryFor(a.cfg, k); ok {
 						entries = append(entries, e)
 					}
 				}
@@ -809,13 +827,21 @@ func (a *AppModel) transition(msg ScreenDoneMsg) (tea.Model, tea.Cmd) {
 			}
 		} else {
 			// nil result = cancelled via Esc — back one level to letting the
-			// user re-pick which AI providers to configure.
-			preSelected := make(map[string]bool, len(a.pendingLLMProviders))
+			// user re-pick which AI providers to configure. Union already-
+			// committed providers (a.cfg.AIProviders) with the in-flight queue
+			// (a.pendingLLMProviders may hold only the "toAdd" subset when
+			// managingProviders — see applyProviderSelection — so relying on
+			// it alone would show an already-configured provider as
+			// unchecked, and a bare re-confirm would then delete it).
+			preSelected := make(map[string]bool, len(a.cfg.AIProviders)+len(a.pendingLLMProviders))
+			for k := range a.cfg.AIProviders {
+				preSelected[k] = true
+			}
 			for _, k := range a.pendingLLMProviders {
 				preSelected[k] = true
 			}
 			a.screen = ScreenAIProviderSelect
-			a.current = newAIProviderSelectModel(a.styles, preSelected, a.managingProviders || a.flowContext == FlowSetup)
+			a.current = newAIProviderSelectModel(a.styles, preSelected, dynamicLLMEntries(a.cfg), a.managingProviders || a.flowContext == FlowSetup)
 		}
 
 	case ScreenAIDefaultModel:
@@ -824,12 +850,15 @@ func (a *AppModel) transition(msg ScreenDoneMsg) (tea.Model, tea.Cmd) {
 			// Esc-back: to AI provider selection, with the previously chosen
 			// providers pre-checked (same reconstruction pattern used by the
 			// ScreenAIProviderConfig cancel case).
-			preSelected := make(map[string]bool, len(a.pendingLLMProviders))
+			preSelected := make(map[string]bool, len(a.cfg.AIProviders)+len(a.pendingLLMProviders))
+			for k := range a.cfg.AIProviders {
+				preSelected[k] = true
+			}
 			for _, k := range a.pendingLLMProviders {
 				preSelected[k] = true
 			}
 			a.screen = ScreenAIProviderSelect
-			a.current = newAIProviderSelectModel(a.styles, preSelected, true)
+			a.current = newAIProviderSelectModel(a.styles, preSelected, dynamicLLMEntries(a.cfg), true)
 			break
 		}
 		if resultOK {
@@ -1208,7 +1237,7 @@ func (a *AppModel) handleCommand(cmd CommandResult) (tea.Model, tea.Cmd) {
 		a.flowContext = FlowMenu
 		a.managingProviders = true
 		a.screen = ScreenAIProviderSelect
-		a.current = newAIProviderSelectModel(a.styles, preSelected, true)
+		a.current = newAIProviderSelectModel(a.styles, preSelected, dynamicLLMEntries(a.cfg), true)
 
 	case "portfolios":
 		portfolios, _ := portfolio.ListPortfolios()
@@ -1304,7 +1333,7 @@ func (a *AppModel) handleAgentCommand(cmd CommandResult) (tea.Model, tea.Cmd) {
 		a.flowContext = FlowAgent
 		a.managingProviders = true
 		a.screen = ScreenAIProviderSelect
-		a.current = newAIProviderSelectModel(a.styles, preSelected, true)
+		a.current = newAIProviderSelectModel(a.styles, preSelected, dynamicLLMEntries(a.cfg), true)
 		return a, a.current.Init()
 
 	case "marketproviders":
@@ -1541,14 +1570,101 @@ func (a *AppModel) returnFromProviderManagement() (tea.Model, tea.Cmd) {
 	return a, a.current.Init()
 }
 
-// findLLMEntry looks up a registered LLM provider by its stable key.
+// findLLMEntry looks up a registered LLM provider by its stable key. It also
+// resolves dynamic per-instance keys of the form "<registryKey>:<slug>" (e.g.
+// "openai_compatible:deepseek", created when a user names a new
+// OpenAI-Compatible instance — see newOpenAICompatibleKey) by matching the
+// prefix against the registry and returning a synthetic entry that carries
+// the instance key but the base driver's New func and DisplayName.
 func findLLMEntry(key string) (registry.LLMEntry, bool) {
 	for _, e := range registry.AllLLM() {
 		if e.Key == key {
 			return e, true
 		}
 	}
+	if baseKey, _, ok := strings.Cut(key, ":"); ok {
+		if e, ok := findLLMEntry(baseKey); ok {
+			return registry.LLMEntry{Key: key, DisplayName: e.DisplayName, New: e.New}, true
+		}
+	}
 	return registry.LLMEntry{}, false
+}
+
+// llmEntryFor resolves key like findLLMEntry, but overrides DisplayName with
+// cfg.AIProviders[key].Name when the user gave that instance a custom label
+// (dynamic OpenAI-Compatible instances only; singleton providers never set
+// Name, so this is a no-op for them).
+func llmEntryFor(cfg *config.AurisConfig, key string) (registry.LLMEntry, bool) {
+	e, ok := findLLMEntry(key)
+	if !ok {
+		return e, false
+	}
+	if aiCfg, exists := cfg.AIProviders[key]; exists && aiCfg.Name != "" {
+		e.DisplayName = aiCfg.Name
+	}
+	return e, true
+}
+
+// dynamicLLMEntries returns registry.LLMEntry values for every dynamically
+// named provider instance already present in cfg.AIProviders (i.e. any key
+// that isn't itself one of registry.AllLLM()'s static keys), sorted by key
+// for a stable display order. Used to extend the static provider list
+// (AIProviderSelectModel, loadModelsCmd, AIDefaultModelModel) with instances
+// like "openai_compatible:deepseek".
+func dynamicLLMEntries(cfg *config.AurisConfig) []registry.LLMEntry {
+	staticKeys := make(map[string]bool)
+	for _, e := range registry.AllLLM() {
+		staticKeys[e.Key] = true
+	}
+	var keys []string
+	for k := range cfg.AIProviders {
+		if !staticKeys[k] {
+			keys = append(keys, k)
+		}
+	}
+	sort.Strings(keys)
+	var out []registry.LLMEntry
+	for _, k := range keys {
+		if e, ok := llmEntryFor(cfg, k); ok {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
+// slugify lowercases s and collapses any run of non-alphanumeric characters
+// into a single "-", trimming leading/trailing dashes. Used to derive a
+// stable, readable key fragment from a user-typed instance name.
+func slugify(s string) string {
+	var b strings.Builder
+	prevDash := false
+	for _, r := range strings.ToLower(s) {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			b.WriteRune(r)
+			prevDash = false
+		} else if !prevDash {
+			b.WriteRune('-')
+			prevDash = true
+		}
+	}
+	return strings.Trim(b.String(), "-")
+}
+
+// newOpenAICompatibleKey generates a unique cfg.AIProviders key for a newly
+// named OpenAI-Compatible instance, of the form "openai_compatible:<slug>",
+// appending a numeric suffix on collision (e.g. "-2") so re-adding a
+// same-named instance never clobbers an existing one.
+func newOpenAICompatibleKey(existing map[string]*config.AIProviderConfig, name string) string {
+	slug := slugify(name)
+	if slug == "" {
+		slug = "instance"
+	}
+	base := "openai_compatible:" + slug
+	key := base
+	for i := 2; existing[key] != nil; i++ {
+		key = fmt.Sprintf("%s-%d", base, i)
+	}
+	return key
 }
 
 // findMarketEntry looks up a registered market provider by its stable key.
@@ -1767,6 +1883,11 @@ func (a *AppModel) loadModelsCmd() tea.Cmd {
 	// Snapshot provider configs in registry order before entering the goroutine.
 	var cfgs []provCfg
 	for _, e := range registry.AllLLM() {
+		if aiCfg, ok := a.cfg.AIProviders[e.Key]; ok {
+			cfgs = append(cfgs, provCfg{entry: e, baseURL: aiCfg.BaseURL, apiKey: aiCfg.APIKey})
+		}
+	}
+	for _, e := range dynamicLLMEntries(a.cfg) {
 		if aiCfg, ok := a.cfg.AIProviders[e.Key]; ok {
 			cfgs = append(cfgs, provCfg{entry: e, baseURL: aiCfg.BaseURL, apiKey: aiCfg.APIKey})
 		}

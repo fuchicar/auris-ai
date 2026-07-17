@@ -556,7 +556,7 @@
     "other": "↑↓ navigate · Space toggle · Enter confirm · select none to skip"
   },
   "setup.ai.select.explain": {
-    "other": "These AI providers power agent mode — the chat that answers questions and calls tools on your data. Select as many as you like and pick a default afterwards, or select none to skip AI setup (portfolio tracking still works without it)."
+    "other": "These AI providers power agent mode — the chat that answers questions and calls tools on your data. Select as many as you like and pick a default afterwards, or select none to skip AI setup (portfolio tracking still works without it). Checking OpenAI-Compatible always adds a new named endpoint — check it again any time to add another (e.g. DeepSeek, then Groq)."
   },
   "setup.ai.config.ollama.mode": {
     "other": "How do you want to connect to Ollama?"
@@ -581,6 +581,18 @@
   },
   "setup.ai.config.baseurl.explain": {
     "other": "The address of the Ollama server to connect to — e.g. another machine on your network or a self-hosted instance."
+  },
+  "setup.ai.config.instancename.label": {
+    "other": "Provider name"
+  },
+  "setup.ai.config.instancename.hint": {
+    "other": "e.g. DeepSeek, Groq, OpenRouter · Enter confirm"
+  },
+  "setup.ai.config.instancename.placeholder": {
+    "other": "e.g. DeepSeek"
+  },
+  "setup.ai.config.instancename.explain": {
+    "other": "Give this OpenAI-compatible endpoint a name so you can tell it apart from others you add later (e.g. \"DeepSeek\", \"Groq\"). You can add as many OpenAI-Compatible providers as you like, each under its own name."
   },
   "setup.ai.config.baseurl.generic.label": {
     "other": "Base URL"

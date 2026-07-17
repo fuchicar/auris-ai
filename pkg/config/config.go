@@ -111,6 +111,10 @@ type ProviderConfig struct {
 type AIProviderConfig struct {
 	BaseURL string // e.g. "http://localhost:11434"; empty means provider default
 	APIKey  string // optional; empty for local providers like Ollama
+	// Name is a user-chosen display label, set only for dynamically-named
+	// provider instances (e.g. multiple OpenAI-Compatible endpoints keyed
+	// "openai_compatible:<slug>"); empty for every singleton provider.
+	Name string
 }
 
 // AITaskRoute maps a TaskType string to a specific provider key and model ID.
@@ -144,6 +148,7 @@ type diskConfig struct {
 type diskAIProvider struct {
 	BaseURL string `json:"base_url,omitempty"` // plaintext; not a secret
 	APIKey  string `json:"api_key,omitempty"`  // base64(nonce[12]+ciphertext) or ""
+	Name    string `json:"name,omitempty"`     // plaintext; user-chosen instance label
 }
 
 type diskKDF struct {
@@ -243,7 +248,7 @@ func Load(passphrase string) (*AurisConfig, error) {
 		if err != nil {
 			return nil, fmt.Errorf("config: Load: ai provider %q: %w", name, err)
 		}
-		cfg.AIProviders[name] = &AIProviderConfig{BaseURL: dp.BaseURL, APIKey: apiKey}
+		cfg.AIProviders[name] = &AIProviderConfig{BaseURL: dp.BaseURL, APIKey: apiKey, Name: dp.Name}
 	}
 	return cfg, nil
 }
@@ -309,7 +314,7 @@ func Save(cfg *AurisConfig, passphrase string) error {
 			if err != nil {
 				return fmt.Errorf("config: Save: ai provider %q: %w", name, err)
 			}
-			disk.AIProviders[name] = &diskAIProvider{BaseURL: pc.BaseURL, APIKey: encKey}
+			disk.AIProviders[name] = &diskAIProvider{BaseURL: pc.BaseURL, APIKey: encKey, Name: pc.Name}
 		}
 	}
 

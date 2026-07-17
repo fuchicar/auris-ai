@@ -68,11 +68,35 @@ func TestAIProviderConfigModel_OllamaMode_EscCancels(t *testing.T) {
 	assertCancelled(t, cmd)
 }
 
+func TestAIProviderConfigModel_InstanceNameStep_EscCancels(t *testing.T) {
+	entry := registry.LLMEntry{Key: "openai_compatible", DisplayName: "OpenAI-Compatible"}
+	m := newAIProviderConfigModel(entry, NewStyles(ThemeDark))
+	if m.step != aiStepInstanceName {
+		t.Fatalf("expected initial step aiStepInstanceName for openai_compatible, got %v", m.step)
+	}
+
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	assertCancelled(t, cmd)
+}
+
+func TestAIProviderConfigModel_InstanceNameStep_EmptyValueDoesNotAdvance(t *testing.T) {
+	entry := registry.LLMEntry{Key: "openai_compatible", DisplayName: "OpenAI-Compatible"}
+	m := newAIProviderConfigModel(entry, NewStyles(ThemeDark))
+	m.input.SetValue("")
+
+	m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if m.step != aiStepInstanceName {
+		t.Errorf("step = %v, want aiStepInstanceName (empty name must not advance)", m.step)
+	}
+}
+
 func TestAIProviderConfigModel_BaseURLStep_EscCancels(t *testing.T) {
 	entry := registry.LLMEntry{Key: "openai_compatible", DisplayName: "OpenAI-Compatible"}
 	m := newAIProviderConfigModel(entry, NewStyles(ThemeDark))
+	m.input.SetValue("DeepSeek")
+	m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	if m.step != aiStepBaseURL {
-		t.Fatalf("expected initial step aiStepBaseURL for openai_compatible, got %v", m.step)
+		t.Fatalf("expected step aiStepBaseURL after naming the instance, got %v", m.step)
 	}
 
 	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
@@ -157,14 +181,23 @@ func TestAIProviderConfigModel_ErrorStep_EnterReturnsToFailedStepForEditing(t *t
 	}
 }
 
-// --- openai_compatible: base_url -> api_key -> model name, all in the wizard ---
+// --- openai_compatible: instance name -> base_url -> api_key -> model name, all in the wizard ---
 
 func TestAIProviderConfigModel_OpenAICompatible_FullStepFlow(t *testing.T) {
 	entry := registry.LLMEntry{Key: "openai_compatible", DisplayName: "OpenAI-Compatible"}
 	m := newAIProviderConfigModel(entry, NewStyles(ThemeDark))
 
+	if m.step != aiStepInstanceName {
+		t.Fatalf("initial step = %v, want aiStepInstanceName", m.step)
+	}
+
+	m.input.SetValue("MiniMax")
+	m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	if m.step != aiStepBaseURL {
-		t.Fatalf("initial step = %v, want aiStepBaseURL", m.step)
+		t.Fatalf("step after instance name = %v, want aiStepBaseURL", m.step)
+	}
+	if m.instanceName != "MiniMax" {
+		t.Errorf("instanceName = %q", m.instanceName)
 	}
 
 	m.input.SetValue("https://api.minimax.io/v1")
