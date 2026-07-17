@@ -105,7 +105,7 @@ func newBaseStyles() *Styles {
 		Selected:   lipgloss.NewStyle().Foreground(colorSelected).Bold(true),
 		Unselected: lipgloss.NewStyle().Foreground(colorUnselected),
 		Input:      lipgloss.NewStyle().BorderStyle(lipgloss.RoundedBorder()).BorderForeground(colorAccent).Padding(0, 1).Width(PanelWidth - 4),
-		Error:      lipgloss.NewStyle().Foreground(colorError).Bold(true),
+		Error:      lipgloss.NewStyle().Foreground(colorError).Bold(true).Width(PanelWidth),
 		Hint:       lipgloss.NewStyle().Foreground(colorHint).Italic(true),
 		Help:       lipgloss.NewStyle().Foreground(colorHint).Width(PanelWidth),
 		DocsURL:    lipgloss.NewStyle().Foreground(colorURL).Underline(true),
