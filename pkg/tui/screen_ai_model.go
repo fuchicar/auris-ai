@@ -193,6 +193,7 @@ func (m *AIDefaultModelModel) View() string {
 	switch m.step {
 	case aiModelStepProvider:
 		title := m.styles.Subtitle.Render(locale.T("setup.ai.model.provider.label"))
+		explain := m.styles.Help.Render(locale.T("setup.ai.model.provider.explain"))
 		labels := make([]string, len(m.entries))
 		for i, e := range m.entries {
 			labels[i] = e.DisplayName
@@ -203,7 +204,7 @@ func (m *AIDefaultModelModel) View() string {
 			hintText += "  " + locale.T("hint.esc_back")
 		}
 		hint := m.styles.Hint.Render(hintText)
-		parts := append([]string{title}, rows...)
+		parts := append([]string{title, explain, ""}, rows...)
 		parts = append(parts, hint)
 		return lipgloss.JoinVertical(lipgloss.Left, parts...)
 
@@ -220,6 +221,7 @@ func (m *AIDefaultModelModel) View() string {
 			titleText = fmt.Sprintf("%s — %s", titleText, provName)
 		}
 		title := m.styles.Subtitle.Render(titleText)
+		explain := m.styles.Help.Render(locale.T("setup.ai.model.model.explain"))
 		models := m.modelsByProv[m.selProvider]
 
 		var rows []string
@@ -247,7 +249,7 @@ func (m *AIDefaultModelModel) View() string {
 			}
 		}
 		hint := m.styles.Hint.Render(hintText)
-		parts := append([]string{title}, rows...)
+		parts := append([]string{title, explain, ""}, rows...)
 		parts = append(parts, hint)
 		return lipgloss.JoinVertical(lipgloss.Left, parts...)
 	}

@@ -120,12 +120,14 @@ func (m *PassphraseModel) validate() (tea.Model, tea.Cmd) {
 // View implements [tea.Model].
 func (m *PassphraseModel) View() string {
 	prompt := m.styles.Subtitle.Render(locale.T("setup.passphrase.prompt"))
+	explain := m.styles.Help.Render(locale.T("setup.passphrase.explain"))
+	warning := m.styles.Warning.Width(PanelWidth).Render(locale.T("setup.passphrase.warning"))
 	confirmLabel := m.styles.Unselected.Render(locale.T("setup.passphrase.confirm"))
 	f1 := m.styles.Input.Render(m.first.View())
 	f2 := m.styles.Input.Render(m.confirm.View())
 	hint := m.styles.Hint.Render(locale.T("setup.passphrase.hint") + "  " + locale.T("hint.esc_back"))
 
-	parts := []string{prompt, f1, confirmLabel, f2, hint}
+	parts := []string{prompt, explain, warning, "", f1, confirmLabel, f2, hint}
 	if m.err != "" {
 		parts = append(parts, m.styles.Error.Render(fmt.Sprintf("✗ %s", m.err)))
 	}
