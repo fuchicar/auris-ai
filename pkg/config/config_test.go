@@ -415,6 +415,45 @@ func TestRoundtrip_AITaskRoutes(t *testing.T) {
 	}
 }
 
+// TestRoundtrip_AIProviderName covers issue #3: a dynamically-named
+// OpenAI-Compatible instance (keyed "openai_compatible:<slug>") must
+// round-trip its user-chosen Name label, alongside the usual BaseURL/APIKey,
+// through an encrypted Save/Load cycle.
+func TestRoundtrip_AIProviderName(t *testing.T) {
+	withTempConfig(t)
+
+	original := &AurisConfig{
+		AIProviders: map[string]*AIProviderConfig{
+			"openai_compatible:deepseek": {BaseURL: "https://api.deepseek.com/v1", APIKey: "sk-test", Name: "DeepSeek"},
+			"ollama":                     {BaseURL: "http://localhost:11434"},
+		},
+	}
+	if err := Save(original, "pass"); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	loaded, err := Load("pass")
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	got, ok := loaded.AIProviders["openai_compatible:deepseek"]
+	if !ok {
+		t.Fatal("expected the dynamic instance key to round-trip")
+	}
+	if got.Name != "DeepSeek" {
+		t.Errorf("Name = %q, want %q", got.Name, "DeepSeek")
+	}
+	if got.APIKey != "sk-test" {
+		t.Errorf("APIKey = %q, want %q", got.APIKey, "sk-test")
+	}
+	if got.BaseURL != "https://api.deepseek.com/v1" {
+		t.Errorf("BaseURL = %q, want %q", got.BaseURL, "https://api.deepseek.com/v1")
+	}
+	if loaded.AIProviders["ollama"].Name != "" {
+		t.Errorf("ollama Name = %q, want empty (singleton provider)", loaded.AIProviders["ollama"].Name)
+	}
+}
+
 func TestRoundtrip_NewFields(t *testing.T) {
 	withTempConfig(t)
 
