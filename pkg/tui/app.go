@@ -1255,7 +1255,13 @@ func (a *AppModel) handleAgentCommand(cmd CommandResult) (tea.Model, tea.Cmd) {
 	case "menu":
 		a.saveConfig()
 		if a.flowContext == FlowPortfolio && a.activePortfolio != nil {
-			// Return to portfolio view instead of main menu.
+			// Return to portfolio view instead of main menu. Reload from disk first —
+			// the agent's portfolio tools write directly to disk (pkg/agent/tools.go)
+			// without updating this in-memory pointer, so a stale reuse here would
+			// show pre-transaction data (issue #10).
+			if p, err := portfolio.LoadPortfolio(a.activePortfolio.ID); err == nil && p != nil {
+				a.activePortfolio = p
+			}
 			mp := a.buildMarketProvider()
 			a.screen = ScreenPortfolioView
 			a.current = newPortfolioViewModel(a.activePortfolio, mp, a.styles, a.height)
