@@ -31,7 +31,7 @@ Integration test credentials:
 
 ## Release process
 
-- **Versioning**: `cmd/auris/version.go` declares `version`/`commit`/`date`/`builtBy` (defaults `"dev"`/`"none"`/`"unknown"`/`"unknown"`). These names are load-bearing — they're populated at link time by GoReleaser's own **default** ldflags template (`-X main.version=... -X main.commit=... -X main.date=... -X main.builtBy=goreleaser`), so `.goreleaser.yaml` doesn't need a custom `ldflags:` block as long as they stay in sync. Renaming any of them requires adding an explicit `ldflags:` override. See DD-8 in `doc/adr.md`.
+- **Versioning**: `cmd/auris/version.go` declares `version`/`commit`/`date`/`builtBy` (defaults `"dev"`/`"none"`/`"unknown"`/`"unknown"`). These names are load-bearing — they're populated at link time by GoReleaser's own **default** ldflags template (`-X main.version=... -X main.commit=... -X main.date=... -X main.builtBy=goreleaser`), so `.goreleaser.yaml` doesn't need a custom `ldflags:` block as long as they stay in sync. Renaming any of them requires adding an explicit `ldflags:` override. See DD-8 in `docs/adr.md`.
 - A plain `go build`/`go install` (no GoReleaser) leaves the vars at their defaults; `auris -version` then falls back to Go's automatic VCS stamping (`runtime/debug.ReadBuildInfo()`) to still show the real commit hash (and a `-dirty` suffix if the tree has uncommitted changes) instead of a bare `dev`.
 - **`.goreleaser.yaml`** (v2 schema) builds `./cmd/auris` for linux/darwin/windows × amd64/arm64, `CGO_ENABLED=0`. `.github/workflows/release.yml` runs it on every `git push --tags`, publishing a GitHub Release with archives + checksums + changelog. `.github/workflows/ci.yml` runs `go build ./...` / `go vet ./...` / `go test ./... -timeout 120s` on every push/PR to `main`. Both workflows are inert until this repo's remote is on GitHub with Actions enabled.
 
@@ -103,13 +103,13 @@ Implements `llm.AIProvider` using `google.golang.org/genai`. `Connect` validates
 
 ### Registry (`pkg/registry/`)
 
-- `market.go` — `AllMarket() []MarketEntry` — ordered list of market providers: FMP, then EODHD. This order defines the fallback priority of the market chain built by `agent.NewMarketChain` (FMP primary, EODHD secondary — see FEAT-7 in `doc/task_completed.md`, DD-5 in `doc/adr.md`).
+- `market.go` — `AllMarket() []MarketEntry` — ordered list of market providers: FMP, then EODHD. This order defines the fallback priority of the market chain built by `agent.NewMarketChain` (FMP primary, EODHD secondary — see FEAT-7 in `docs/task_completed.md`, DD-5 in `docs/adr.md`).
 - `llm.go` — `AllLLM() []LLMEntry` — ordered list of LLM providers; currently Ollama and Gemini.
 - Each entry carries a `Key` (stable config identifier), `DisplayName`, and a `New` factory function.
 
 ### Finance (`pkg/finance/`)
 
-Pure numeric finance/valuation/risk/indicator functions with no dependency on `Agent`, `a.market`, or any other agent/market-only symbol. Used both by the agent's calculation tools (`pkg/agent/tools.go` dispatch, via `finance.CalcXxx(...)`) and directly by the TUI (`pkg/tui`), so the TUI can compute metrics/indicators without going through the LLM (see REF-7 in `doc/task_completed.md`).
+Pure numeric finance/valuation/risk/indicator functions with no dependency on `Agent`, `a.market`, or any other agent/market-only symbol. Used both by the agent's calculation tools (`pkg/agent/tools.go` dispatch, via `finance.CalcXxx(...)`) and directly by the TUI (`pkg/tui`), so the TUI can compute metrics/indicators without going through the LLM (see REF-7 in `docs/task_completed.md`).
 
 - `types.go` — `Float`/`FloatSlice`, JSON wrapper types that marshal NaN/±Inf as `null` (used by indicator series with a warm-up period).
 - `util.go` — `Round2`/`Round4` (also used directly by `pkg/agent/tools.go`'s portfolio dispatch code, not just by `Calc*` functions) plus unexported numeric helpers (`meanFloat`, `sampleStddev`, `percentileInterp`).
@@ -125,7 +125,7 @@ Pure numeric finance/valuation/risk/indicator functions with no dependency on `A
 
 `Agent` combines an `llm.AIProvider` and a `market.ProviderAPI`, exposing market operations as tools the LLM can call. Created with `agent.New(llmProvider, marketProvider, model)`.
 
-- `market_chain.go` — `NewMarketChain(providers ...market.ProviderAPI) market.ProviderAPI` wraps an ordered list of providers (`providers[0]` primary) into a single `market.ProviderAPI`. Each call is tried against providers in order; it falls back to the next only on `ErrNotFound`/`ErrNotSupported`/`ErrRateLimit`/`ErrSubscriptionRequired` — other errors (`ErrUnauthorized`, `ErrNotConnected`, ...) surface immediately rather than being masked by a fallback. If none resolve the call, the **primary's** error is returned (never the last-tried provider's). `pkg/tui/app.go`'s `buildMarketProvider` constructs this chain from every market provider the user configured, in `registry.AllMarket()` order (see FEAT-7 in `doc/task_completed.md`).
+- `market_chain.go` — `NewMarketChain(providers ...market.ProviderAPI) market.ProviderAPI` wraps an ordered list of providers (`providers[0]` primary) into a single `market.ProviderAPI`. Each call is tried against providers in order; it falls back to the next only on `ErrNotFound`/`ErrNotSupported`/`ErrRateLimit`/`ErrSubscriptionRequired` — other errors (`ErrUnauthorized`, `ErrNotConnected`, ...) surface immediately rather than being masked by a fallback. If none resolve the call, the **primary's** error is returned (never the last-tried provider's). `pkg/tui/app.go`'s `buildMarketProvider` constructs this chain from every market provider the user configured, in `registry.AllMarket()` order (see FEAT-7 in `docs/task_completed.md`).
 - `loop.go` — `runLoop` drives the ReAct loop up to `maxLoopIterations` (10). Exits when `StopReason != "tool_calls"`.
 - `tools.go` — `buildTools()` declares all tool schemas (always the full set, provider-independent); `filterTools()` removes tools by name; `dispatch()` routes tool calls to `finance.CalcXxx` functions, market methods, or built-in time tools (`time_now`, `time_today`, `time_yesterday`).
 - **Capability filtering** (FEAT-8): `agent.New` calls `buildTools()` and then, if the `market.ProviderAPI` passed in also implements the optional `market.CapabilityReporter` interface (`UnsupportedTools() []string`), filters out any tool named in that list before building `Agent.tools` — e.g. `market_get_order_book`/`market_get_ticks`, which both FMP and EODHD always return `ErrNotSupported` for, so the LLM never burns a `maxLoopIterations` iteration calling something that can't work. `fmp.Driver`/`eodhd.Driver` implement it with a static slice; `marketChain` implements it as the **intersection** of its providers' declared-unsupported sets (a tool is excluded only if *every* provider in the chain lacks it) and returns `nil` (nothing filtered) if any provider in the chain doesn't implement `CapabilityReporter` at all — capability-unknown is the conservative default, never over-filtering.
@@ -160,7 +160,7 @@ Each screen emits a typed `ScreenDoneMsg.Result` (e.g. `UnlockResult`, `APIKeyRe
 4. Add compile-time check in tests: `var _ market.ProviderAPI = (*Driver)(nil)`.
 5. Register in `pkg/registry/market.go`.
 6. Integration tests must `t.Skip` if credentials are absent.
-7. If any method **always** returns `ErrNotSupported` regardless of symbol or account tier (not a plan/subscription restriction — see `market.ErrSubscriptionRequired` for that case), implement `market.CapabilityReporter.UnsupportedTools() []string` returning the corresponding agent tool name(s) (e.g. `market.ToolGetOrderBook`), so `agent.New` excludes them from the LLM's tool list instead of letting it burn a loop iteration on a call that can never succeed (see FEAT-8 in `doc/task_completed.md`).
+7. If any method **always** returns `ErrNotSupported` regardless of symbol or account tier (not a plan/subscription restriction — see `market.ErrSubscriptionRequired` for that case), implement `market.CapabilityReporter.UnsupportedTools() []string` returning the corresponding agent tool name(s) (e.g. `market.ToolGetOrderBook`), so `agent.New` excludes them from the LLM's tool list instead of letting it burn a loop iteration on a call that can never succeed (see FEAT-8 in `docs/task_completed.md`).
 
 ### Adding a new LLM driver
 
@@ -190,9 +190,9 @@ Pick the helper by the parameter's real-world domain — don't inline ad hoc `ma
 
 When adding a new `Calc*` function, its dispatch `case` in `tools.go` needs no additional validation — the function itself is the enforcement point.
 
-### Keeping the TFM presentation in sync (`doc/presentacion.html`)
+### Keeping the TFM presentation in sync (`docs/presentacion.html`)
 
-`doc/presentacion.html` is the TFM defense deck. It quotes real numbers from this codebase, so when a change alters one of them, update **only the affected figure(s)** in the HTML — edit the text in place; do not restructure slides, rewrite copy, rename CSS classes, or touch the styling/layout/JS. The deck's look and feel deliberately mirrors the TUI dark theme and must stay intact.
+`docs/presentacion.html` is the TFM defense deck. It quotes real numbers from this codebase, so when a change alters one of them, update **only the affected figure(s)** in the HTML — edit the text in place; do not restructure slides, rewrite copy, rename CSS classes, or touch the styling/layout/JS. The deck's look and feel deliberately mirrors the TUI dark theme and must stay intact.
 
 Code-derived figures the deck quotes (and where the truth lives):
 

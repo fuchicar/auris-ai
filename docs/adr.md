@@ -68,7 +68,7 @@ La herramienta `monte_carlo_simulation` (MATH-14) necesita `drift_annual` y `vol
 
 ### Decision
 
-El LLM los calcula (encadenando, p.ej., `calculate_volatility` sobre los retornos diarios) y los pasa como `drift_annual`/`volatility_annual`. La tool solo ejecuta el motor GBM (`S(T) = S(0)·exp((μ-½σ²)T + σ√T·Z)`, solución cerrada, no simulación paso a paso). Implementada y cerrada: ver nota de sesión 2026-07-05 (MATH-14) en `doc/task_completed.md`.
+El LLM los calcula (encadenando, p.ej., `calculate_volatility` sobre los retornos diarios) y los pasa como `drift_annual`/`volatility_annual`. La tool solo ejecuta el motor GBM (`S(T) = S(0)·exp((μ-½σ²)T + σ√T·Z)`, solución cerrada, no simulación paso a paso). Implementada y cerrada: ver nota de sesión 2026-07-05 (MATH-14) en `docs/task_completed.md`.
 
 ### Consequences
 

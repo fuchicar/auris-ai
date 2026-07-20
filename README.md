@@ -9,7 +9,7 @@
 
 **Auris** is a terminal-based AI financial advisor. It combines real-time market data with conversational AI so you can analyse instruments, run financial calculations, and manage portfolios — entirely from your terminal.
 
-![Auris agent chat](doc/img/agent-en.png)
+![Auris agent chat](docs/img/agent-en.png)
 
 ## Table of contents
 
@@ -130,7 +130,7 @@ flowchart TB
 
 ¹ The OpenAI driver also serves any OpenAI-compatible endpoint, registered as a separate provider entry.
 
-Key decisions (full rationale in the [Architecture Decision Records](doc/adr.md)):
+Key decisions (full rationale in the [Architecture Decision Records](docs/adr.md)):
 
 - **Driver pattern with static registry.** `pkg/registry` holds the ordered list of all providers. Adding a provider means implementing one interface in a new package and adding one registry entry — the agent, TUI, and config layers are untouched.
 - **Fallback cascade with sentinel errors.** All drivers wrap a shared set of sentinel errors (`ErrNotFound`, `ErrRateLimit`, `ErrSubscriptionRequired`, …) with `%w`. The market chain tries providers in priority order and falls through **only** on errors that mean "this provider can't answer" — an authentication failure surfaces immediately instead of being masked by a fallback.
@@ -178,7 +178,7 @@ auris-ai/
 │   ├── portfolio/        # Portfolios: FIFO lots, transactions, metrics, tax, export
 │   ├── registry/         # Static registration of all market & LLM providers
 │   └── tui/              # Bubble Tea UI: setup wizard, agent chat, portfolio screens
-└── doc/                  # Architecture Decision Records (adr.md) and assets
+└── docs/                  # Architecture Decision Records (adr.md) and assets
 ```
 
 ## Installation

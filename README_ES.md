@@ -9,7 +9,7 @@
 
 **Auris** es un asesor financiero con IA para la terminal. Combina datos de mercado en tiempo real con IA conversacional para que puedas analizar instrumentos, ejecutar cálculos financieros y gestionar carteras — todo desde tu terminal.
 
-![Chat del agente de Auris](doc/img/agent-es.png)
+![Chat del agente de Auris](docs/img/agent-es.png)
 
 ## Índice
 
@@ -130,7 +130,7 @@ flowchart TB
 
 ¹ El driver de OpenAI también sirve cualquier endpoint compatible con OpenAI, registrado como entrada de proveedor independiente.
 
-Decisiones clave (justificación completa en los [Architecture Decision Records](doc/adr.md)):
+Decisiones clave (justificación completa en los [Architecture Decision Records](docs/adr.md)):
 
 - **Patrón de drivers con registro estático.** `pkg/registry` mantiene la lista ordenada de todos los proveedores. Añadir un proveedor consiste en implementar una interfaz en un paquete nuevo y añadir una entrada al registro — las capas de agente, TUI y configuración no se tocan.
 - **Cascada con fallback mediante errores sentinela.** Todos los drivers envuelven con `%w` un conjunto compartido de errores sentinela (`ErrNotFound`, `ErrRateLimit`, `ErrSubscriptionRequired`, …). La market chain prueba los proveedores en orden de prioridad y solo pasa al siguiente ante errores que significan "este proveedor no puede responder" — un fallo de autenticación aflora inmediatamente en lugar de quedar enmascarado por un fallback.
@@ -178,7 +178,7 @@ auris-ai/
 │   ├── portfolio/        # Carteras: lotes FIFO, transacciones, métricas, fiscalidad, exportación
 │   ├── registry/         # Registro estático de todos los proveedores de mercado y LLM
 │   └── tui/              # UI Bubble Tea: asistente de configuración, chat del agente, pantallas de cartera
-└── doc/                  # Architecture Decision Records (adr.md) y recursos
+└── docs/                  # Architecture Decision Records (adr.md) y recursos
 ```
 
 ## Instalación
