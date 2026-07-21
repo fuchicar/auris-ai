@@ -84,7 +84,7 @@ func IsValidTheme(t string) bool {
 // terminal's actual detected background (via lipgloss.HasDarkBackground),
 // independent of which Theme the user picked, so text stays legible
 // regardless of a mismatch between the chosen theme and the real terminal
-// (see REF-11 in TODO.md).
+// (see REF-11 — commit 79dfc56).
 var (
 	colorAccent     = lipgloss.AdaptiveColor{Light: "#5B21B6", Dark: "#7C3AED"}
 	colorSelected   = lipgloss.AdaptiveColor{Light: "#7C3AED", Dark: "#A78BFA"}

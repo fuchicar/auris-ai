@@ -8,7 +8,7 @@ Registro de decisiones de diseño del proyecto Auris. Cada ADR sigue el formato:
 - **Consequences** — efectos de la decisión (positivos y negativos).
 - **Open questions** — solo si `Status == pending`.
 
-Origen histórico: las cuatro primeras ADR (`DD-1`..`DD-4`) se cerraron el **2026-07-02** y estaban marcadas `[x]` en `TODO.md` antes de la reestructuración del 2026-07-10. `DD-5` se cerró el **2026-07-14** tras verificar que los tokens de bienvenida de EODHD están agotados y el límite real del free tier es 20 calls/día.
+Origen histórico: las cuatro primeras ADR (`DD-1`..`DD-4`) se cerraron el **2026-07-02** y estaban marcadas `[x]` en el antiguo `TODO.md` antes de la reestructuración del 2026-07-10 (los pendientes abiertos hoy viven como issues de GitHub). `DD-5` se cerró el **2026-07-14** tras verificar que los tokens de bienvenida de EODHD están agotados y el límite real del free tier es 20 calls/día.
 
 ---
 

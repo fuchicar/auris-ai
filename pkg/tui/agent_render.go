@@ -53,7 +53,7 @@ func persistBg(content, bgHex, fgHex string) string {
 // on its own line with no painted background under it, so — unlike the
 // bg/fg pairs below, which are explicitly painted and thus keyed to the
 // theme's own s.IsLight() — its color must adapt to the real terminal
-// background (see REF-11 in TODO.md).
+// background (see REF-11 — commit 79dfc56).
 func agentLabel() string {
 	return lipgloss.NewStyle().Foreground(colorAccent).Bold(true).Render("Auris:")
 }
