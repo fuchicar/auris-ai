@@ -4,11 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/fuchicar/auris-ai/pkg/llm"
 	"github.com/fuchicar/auris-ai/pkg/market"
+	"github.com/fuchicar/auris-ai/pkg/news"
 )
 
 // ---- mock LLM ---------------------------------------------------------------
@@ -408,6 +410,43 @@ func TestDispatch_FetchNews_NoProvider(t *testing.T) {
 	if result != `{"error":"no news provider configured"}` {
 		t.Errorf("unexpected result when news provider is nil: %q", result)
 	}
+}
+
+// mockNewsSource returns a fixed set of articles, used to check that the
+// fetch_news dispatch wraps external RSS content with an untrusted-content
+// reminder (the injection vector for this tool: article text comes from
+// third-party feeds, not from the user or the system prompt).
+type mockNewsSource struct {
+	items []news.NewsItem
+}
+
+func (m *mockNewsSource) HandleFetchNews(_ context.Context, _ news.FetchNewsParams) ([]news.NewsItem, error) {
+	return m.items, nil
+}
+
+func TestDispatch_FetchNews_WarnsUntrustedContent(t *testing.T) {
+	a := New(&mockLLM{}, &mockMarket{}, "")
+	a.SetNewsProvider(&mockNewsSource{items: []news.NewsItem{
+		{Title: "Markets rally on rate-cut hopes", Summary: "Stocks rose today."},
+	}})
+	var lk ProgressKind
+	result := a.dispatch(context.Background(), llm.ToolCall{
+		Function: llm.ToolCallFunction{
+			Name:      "fetch_news",
+			Arguments: `{"keywords":[]}`,
+		},
+	}, &lk)
+
+	if !containsFold(result, "not instructions") {
+		t.Errorf("expected untrusted-content reminder in result, got %q", result)
+	}
+	if !containsFold(result, "Markets rally on rate-cut hopes") {
+		t.Errorf("expected article data to still be present in result, got %q", result)
+	}
+}
+
+func containsFold(s, substr string) bool {
+	return strings.Contains(strings.ToLower(s), strings.ToLower(substr))
 }
 
 func TestDispatch_GetCandles_InvalidTime(t *testing.T) {

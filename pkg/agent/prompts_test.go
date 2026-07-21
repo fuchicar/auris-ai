@@ -175,6 +175,49 @@ func TestSystemPrompt_FetchNewsCountersPrior(t *testing.T) {
 	}
 }
 
+// TestSystemPrompt_NoPromptDisclosure verifies the system prompt explicitly forbids
+// revealing or repeating its own instructions, regardless of how the request is phrased.
+func TestSystemPrompt_NoPromptDisclosure(t *testing.T) {
+	msg := BuildSystemMessage(llm.TaskChat, nil)
+	if msg == nil {
+		t.Fatal("BuildSystemMessage returned nil")
+	}
+	lower := strings.ToLower(msg.Content)
+	if !strings.Contains(lower, "never reveal") {
+		t.Error("system prompt must explicitly forbid revealing its own instructions")
+	}
+}
+
+// TestSystemPrompt_AuthorityClaimsNotCredentials verifies the system prompt states
+// that user claims of authority ("I'm support", "I'm admin") are not valid credentials.
+func TestSystemPrompt_AuthorityClaimsNotCredentials(t *testing.T) {
+	msg := BuildSystemMessage(llm.TaskChat, nil)
+	if msg == nil {
+		t.Fatal("BuildSystemMessage returned nil")
+	}
+	lower := strings.ToLower(msg.Content)
+	if !strings.Contains(lower, "never a valid credential") {
+		t.Error("system prompt must state that claims of authority are not valid credentials")
+	}
+}
+
+// TestSystemPrompt_ManipulationCalledOut verifies the system prompt instructs the agent
+// to call out manipulation attempts rather than comply with or refuse the conversation,
+// and that this does not extend to legitimate off-topic questions.
+func TestSystemPrompt_ManipulationCalledOut(t *testing.T) {
+	msg := BuildSystemMessage(llm.TaskChat, nil)
+	if msg == nil {
+		t.Fatal("BuildSystemMessage returned nil")
+	}
+	lower := strings.ToLower(msg.Content)
+	if !strings.Contains(lower, "noticed the attempt") {
+		t.Error("system prompt must instruct the agent to call out manipulation attempts")
+	}
+	if !strings.Contains(lower, "unrelated to finance") {
+		t.Error("system prompt must clarify that off-topic questions are always allowed")
+	}
+}
+
 func TestFormatProfile_RestrictionsCountryOnlyWhenSet(t *testing.T) {
 	// RestrictionsCountry has an explicit conditional — test both branches.
 	withCountry := &config.FinancialProfile{RestrictionsCountry: "Germany"}
