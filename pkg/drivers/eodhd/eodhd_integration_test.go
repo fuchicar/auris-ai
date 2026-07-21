@@ -5,7 +5,7 @@
 // de `test_data/eodhd_api_key` (t.Skip si falta). Uso previsto: comprobación
 // manual puntual contra la API real; el free tier tiene cuota diaria muy
 // ajustada, así que estos tests NO forman parte de la suite por defecto (ver
-// REF-10 en TODO.md). La cobertura funcional equivalente y hermética vive en
+// REF-10 — commit ecc275a). La cobertura funcional equivalente y hermética vive en
 // eodhd_test.go, vía httptest + eodhd.WithBaseURL.
 package eodhd_test
 
