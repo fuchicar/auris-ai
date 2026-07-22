@@ -17,6 +17,15 @@ func WithDebugLogger(l *log.Logger) Option {
 	return func(a *Agent) { a.debugLogger = l }
 }
 
+// WithToolTrace attaches a callback invoked once per completed tool dispatch,
+// in call order, with the exact name/arguments/result/duration. Pass nil to
+// disable (the default). Unlike WithDebugLogger this is structured and fires
+// for every tool including time_*, making it suitable for programmatically
+// asserting on a run's tool-call sequence (see cmd/promptlab).
+func WithToolTrace(fn func(ToolTraceEvent)) Option {
+	return func(a *Agent) { a.toolTrace = fn }
+}
+
 // WithPortfolioID sets the default portfolio ID used by portfolio tools when
 // no explicit portfolio_id argument is provided. Typically set to the ID of
 // the portfolio currently open in the TUI.

@@ -449,6 +449,40 @@ func containsFold(s, substr string) bool {
 	return strings.Contains(strings.ToLower(s), strings.ToLower(substr))
 }
 
+func TestDispatch_ToolTrace_FiresWithNameArgsResult(t *testing.T) {
+	var events []ToolTraceEvent
+	a := New(&mockLLM{}, &mockMarket{}, "", WithToolTrace(func(e ToolTraceEvent) {
+		events = append(events, e)
+	}))
+	var lk ProgressKind
+	a.dispatch(context.Background(), llm.ToolCall{
+		Function: llm.ToolCallFunction{Name: "time_now", Arguments: "{}"},
+	}, &lk)
+
+	if len(events) != 1 {
+		t.Fatalf("expected 1 trace event, got %d", len(events))
+	}
+	ev := events[0]
+	if ev.Name != "time_now" {
+		t.Errorf("expected Name=time_now, got %q", ev.Name)
+	}
+	if ev.Args != "{}" {
+		t.Errorf("expected Args={}, got %q", ev.Args)
+	}
+	if ev.Result == "" {
+		t.Errorf("expected non-empty Result")
+	}
+}
+
+func TestDispatch_ToolTrace_NilIsNoOp(t *testing.T) {
+	a := New(&mockLLM{}, &mockMarket{}, "")
+	var lk ProgressKind
+	// Must not panic when no WithToolTrace was configured.
+	a.dispatch(context.Background(), llm.ToolCall{
+		Function: llm.ToolCallFunction{Name: "time_now", Arguments: "{}"},
+	}, &lk)
+}
+
 func TestDispatch_GetCandles_InvalidTime(t *testing.T) {
 	a := New(&mockLLM{}, &mockMarket{}, "")
 	var lk ProgressKind
