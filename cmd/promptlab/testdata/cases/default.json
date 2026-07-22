@@ -1,0 +1,38 @@
+{
+  "cases": [
+    {
+      "name": "rsi-chain",
+      "prompt": "¿Cómo está el RSI de AAPL ahora mismo?",
+      "expected_tool_sequence": ["market_get_candles", "calculate_rsi"],
+      "forbidden_phrases": [
+        "no tengo acceso a datos en tiempo real",
+        "no puedo acceder a internet",
+        "según mis datos de entrenamiento"
+      ]
+    },
+    {
+      "name": "market-news",
+      "prompt": "¿Qué noticias hay del mercado hoy?",
+      "expected_tool_sequence": ["fetch_news"],
+      "forbidden_phrases": [
+        "no tengo acceso a internet",
+        "no tengo acceso en tiempo real",
+        "no puedo navegar por internet"
+      ]
+    },
+    {
+      "name": "volatility-comparison",
+      "prompt": "Compara la volatilidad de AAPL y MSFT en los últimos 3 meses. ¿Cuál es más arriesgada?",
+      "expected_tool_sequence": [
+        "market_get_candles",
+        "market_get_candles",
+        "calculate_volatility",
+        "calculate_volatility"
+      ],
+      "forbidden_phrases": [
+        "no tengo acceso a datos en tiempo real",
+        "según mis datos de entrenamiento"
+      ]
+    }
+  ]
+}

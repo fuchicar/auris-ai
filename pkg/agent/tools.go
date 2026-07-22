@@ -635,8 +635,17 @@ func (a *Agent) dispatch(ctx context.Context, call llm.ToolCall, lastKind *Progr
 	a.debugf("[dispatch] tool=%s args=%s", call.Function.Name, truncate(call.Function.Arguments, 300))
 	start := time.Now()
 	result := a.dispatchInner(ctx, call, lastKind)
+	duration := time.Since(start)
 	a.debugf("[dispatch] tool=%s done duration=%dms result=%s",
-		call.Function.Name, time.Since(start).Milliseconds(), truncate(result, 300))
+		call.Function.Name, duration.Milliseconds(), truncate(result, 300))
+	if a.toolTrace != nil {
+		a.toolTrace(ToolTraceEvent{
+			Name:     call.Function.Name,
+			Args:     call.Function.Arguments,
+			Result:   result,
+			Duration: duration,
+		})
+	}
 	return result
 }
 

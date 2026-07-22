@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"sync"
+	"time"
 
 	"github.com/fuchicar/auris-ai/pkg/llm"
 	"github.com/fuchicar/auris-ai/pkg/market"
@@ -44,6 +45,19 @@ type ChartEvent struct {
 	Candles []market.Candle
 }
 
+// ToolTraceEvent records a single completed tool dispatch: the exact call the
+// model made and the result it got back. Unlike ProgressEvent it fires for
+// every tool call (including time_*) with no deduplication, and unlike
+// WithDebugLogger it's structured rather than free-text — meant for callers
+// that need to reconstruct or assert on the full tool-call sequence of a run
+// (see cmd/promptlab).
+type ToolTraceEvent struct {
+	Name     string
+	Args     string
+	Result   string
+	Duration time.Duration
+}
+
 // Agent combines an LLM provider with a market data provider, exposing market
 // operations as tools the model can call autonomously.
 type Agent struct {
@@ -55,6 +69,7 @@ type Agent struct {
 	progressCh         chan<- ProgressEvent
 	chartCh            chan<- ChartEvent
 	debugLogger        *log.Logger
+	toolTrace          func(ToolTraceEvent)
 	currentPortfolioID string
 	lastUsage          llm.TokenUsage
 	// usageMu protects only lastUsage. It is written from the background
