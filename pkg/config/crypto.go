@@ -5,7 +5,9 @@ import (
 	"crypto/cipher"
 	"crypto/rand"
 	"encoding/base64"
+	"encoding/binary"
 	"fmt"
+	"hash/crc32"
 	"io"
 
 	"golang.org/x/crypto/argon2"
@@ -151,6 +153,36 @@ func EncryptBytes(key []byte, plaintext []byte) (string, error) {
 
 	blob := gcm.Seal(nonce, nonce, plaintext, nil)
 	return base64.StdEncoding.EncodeToString(blob), nil
+}
+
+// newPassphraseCheck generates a fresh 16-byte random value, appends its
+// CRC32 checksum, and encrypts the pair with key. A fixed/known plaintext is
+// deliberately avoided here — each Save produces a unique blob, so there is
+// no constant ciphertext/plaintext pair for an attacker to collect across
+// configs; wrong-passphrase detection instead relies on AES-GCM's built-in
+// auth-tag failure plus this CRC as a redundant, explicit check.
+func newPassphraseCheck(key []byte) (string, error) {
+	random := make([]byte, 16)
+	if _, err := io.ReadFull(rand.Reader, random); err != nil {
+		return "", fmt.Errorf("config: newPassphraseCheck: read random: %w", err)
+	}
+	payload := binary.BigEndian.AppendUint32(random, crc32.ChecksumIEEE(random))
+	blob, err := EncryptBytes(key, payload)
+	if err != nil {
+		return "", fmt.Errorf("config: newPassphraseCheck: %w", err)
+	}
+	return blob, nil
+}
+
+// verifyPassphraseCheck decrypts blob with key and confirms the trailing
+// CRC32 matches the leading random bytes. False means either the key is
+// wrong (GCM auth failure) or the payload was corrupted/tampered with.
+func verifyPassphraseCheck(key []byte, blob string) bool {
+	payload, err := DecryptBytes(key, blob)
+	if err != nil || len(payload) != 20 {
+		return false
+	}
+	return binary.BigEndian.Uint32(payload[16:]) == crc32.ChecksumIEEE(payload[:16])
 }
 
 // DecryptBytes decrypts a base64(nonce[12]+ciphertext) blob produced by EncryptBytes.
