@@ -1,7 +1,9 @@
 package config
 
 import (
+	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -210,6 +212,176 @@ func TestLoad_WrongPassphrase(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "config: Load:") {
 		t.Errorf("error should contain 'config: Load:', got: %v", err)
+	}
+}
+
+// TestLoad_WrongPassphrase_NoAPIKeys covers issue #23: with no provider API
+// keys stored at all (e.g. an Ollama-only setup), there is no encrypted
+// field whose decryption would incidentally fail on a wrong passphrase.
+// Load must still reject it via the PassphraseCheck value.
+func TestLoad_WrongPassphrase_NoAPIKeys(t *testing.T) {
+	withTempConfig(t)
+
+	cfg := &AurisConfig{ActiveAIProvider: "ollama"}
+	if err := Save(cfg, "correct"); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	_, err := Load("wrong")
+	if err == nil {
+		t.Fatal("expected error with wrong passphrase, got nil")
+	}
+	if !errors.Is(err, ErrIncorrectPassphrase) {
+		t.Errorf("expected ErrIncorrectPassphrase, got: %v", err)
+	}
+
+	if _, err := Load("correct"); err != nil {
+		t.Errorf("Load with correct passphrase: %v", err)
+	}
+}
+
+// TestLoad_LegacyConfig_NoPassphraseCheck_StillLoads simulates a config
+// file written before PassphraseCheck existed (empty/omitted field). Load
+// must not regress for these — the check is simply skipped.
+func TestLoad_LegacyConfig_NoPassphraseCheck_StillLoads(t *testing.T) {
+	withTempConfig(t)
+
+	params, err := newKDFParams()
+	if err != nil {
+		t.Fatalf("newKDFParams: %v", err)
+	}
+	legacy := diskConfig{
+		ActiveProvider: "fmp",
+		KDF: diskKDF{
+			Salt:    base64.StdEncoding.EncodeToString(params.Salt),
+			Time:    params.Time,
+			Memory:  params.Memory,
+			Threads: params.Threads,
+			KeyLen:  params.KeyLen,
+		},
+		// PassphraseCheck intentionally left empty, simulating a pre-fix file.
+	}
+	data, err := json.MarshalIndent(legacy, "", "  ")
+	if err != nil {
+		t.Fatalf("marshal legacy config: %v", err)
+	}
+	if err := os.WriteFile(configPathOverride, data, 0o600); err != nil {
+		t.Fatalf("write legacy config: %v", err)
+	}
+
+	loaded, err := Load("anypassphrase")
+	if err != nil {
+		t.Fatalf("Load legacy config: %v", err)
+	}
+	if loaded.ActiveProvider != "fmp" {
+		t.Errorf("ActiveProvider: got %q, want %q", loaded.ActiveProvider, "fmp")
+	}
+}
+
+// TestSave_UpgradesLegacyConfig_WithPassphraseCheck confirms the migration
+// path from the issue: a legacy config (no PassphraseCheck) that goes
+// through a normal Load-then-Save cycle (as AppModel.saveConfig does)
+// gets upgraded, and a wrong passphrase is rejected from then on.
+func TestSave_UpgradesLegacyConfig_WithPassphraseCheck(t *testing.T) {
+	withTempConfig(t)
+
+	params, err := newKDFParams()
+	if err != nil {
+		t.Fatalf("newKDFParams: %v", err)
+	}
+	legacy := diskConfig{
+		KDF: diskKDF{
+			Salt:    base64.StdEncoding.EncodeToString(params.Salt),
+			Time:    params.Time,
+			Memory:  params.Memory,
+			Threads: params.Threads,
+			KeyLen:  params.KeyLen,
+		},
+	}
+	data, err := json.MarshalIndent(legacy, "", "  ")
+	if err != nil {
+		t.Fatalf("marshal legacy config: %v", err)
+	}
+	if err := os.WriteFile(configPathOverride, data, 0o600); err != nil {
+		t.Fatalf("write legacy config: %v", err)
+	}
+
+	cfg, err := Load("mypassphrase")
+	if err != nil {
+		t.Fatalf("initial Load of legacy config: %v", err)
+	}
+	if err := Save(cfg, "mypassphrase"); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	upgraded, err := os.ReadFile(configPathOverride)
+	if err != nil {
+		t.Fatalf("read upgraded config: %v", err)
+	}
+	var disk diskConfig
+	if err := json.Unmarshal(upgraded, &disk); err != nil {
+		t.Fatalf("unmarshal upgraded config: %v", err)
+	}
+	if disk.PassphraseCheck == "" {
+		t.Fatal("expected PassphraseCheck to be populated after Save")
+	}
+
+	if _, err := Load("wrongpassphrase"); !errors.Is(err, ErrIncorrectPassphrase) {
+		t.Errorf("expected ErrIncorrectPassphrase after upgrade, got: %v", err)
+	}
+}
+
+func TestSave_PassphraseCheckDiffersEachCall(t *testing.T) {
+	withTempConfig(t)
+
+	cfg := &AurisConfig{ActiveProvider: "fmp"}
+
+	if err := Save(cfg, "pass"); err != nil {
+		t.Fatalf("first Save: %v", err)
+	}
+	data1, err := os.ReadFile(configPathOverride)
+	if err != nil {
+		t.Fatalf("read first save: %v", err)
+	}
+
+	if err := Save(cfg, "pass"); err != nil {
+		t.Fatalf("second Save: %v", err)
+	}
+	data2, err := os.ReadFile(configPathOverride)
+	if err != nil {
+		t.Fatalf("read second save: %v", err)
+	}
+
+	var disk1, disk2 diskConfig
+	json.Unmarshal(data1, &disk1)
+	json.Unmarshal(data2, &disk2)
+
+	if disk1.PassphraseCheck == "" || disk2.PassphraseCheck == "" {
+		t.Fatal("expected PassphraseCheck to be populated on both saves")
+	}
+	if disk1.PassphraseCheck == disk2.PassphraseCheck {
+		t.Error("expected different PassphraseCheck values on each Save, got the same")
+	}
+}
+
+func TestPassphraseCheck_RoundtripAndWrongKey(t *testing.T) {
+	params, err := newKDFParams()
+	if err != nil {
+		t.Fatalf("newKDFParams: %v", err)
+	}
+	key := deriveKey("passphrase", params)
+
+	blob, err := newPassphraseCheck(key)
+	if err != nil {
+		t.Fatalf("newPassphraseCheck: %v", err)
+	}
+	if !verifyPassphraseCheck(key, blob) {
+		t.Error("verifyPassphraseCheck: expected true for the correct key")
+	}
+
+	wrongKey := deriveKey("different-passphrase", params)
+	if verifyPassphraseCheck(wrongKey, blob) {
+		t.Error("verifyPassphraseCheck: expected false for the wrong key")
 	}
 }
 

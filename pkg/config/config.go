@@ -11,6 +11,12 @@ import (
 	"github.com/fuchicar/auris-ai/pkg/news"
 )
 
+// ErrIncorrectPassphrase is returned by Load when the passphrase fails the
+// on-disk verification check (see diskConfig.PassphraseCheck) — i.e. it's
+// deterministically wrong, not just a decrypt error surfacing incidentally
+// because a provider API key happened to be stored.
+var ErrIncorrectPassphrase = errors.New("config: incorrect passphrase")
+
 // AurisConfig is the in-memory representation of the agent configuration.
 // Sensitive fields (e.g. APIKey) are held as plaintext strings.
 type AurisConfig struct {
@@ -143,6 +149,14 @@ type diskConfig struct {
 	EncryptStorage   bool                       `json:"encrypt_storage,omitempty"`
 	StorageSalt      string                     `json:"storage_salt,omitempty"` // base64
 	SimulationMode   bool                       `json:"simulation_mode,omitempty"`
+	// PassphraseCheck is a random value + CRC32 encrypted under the
+	// credential key (see newPassphraseCheck/verifyPassphraseCheck in
+	// crypto.go), written on every Save and validated by Load before
+	// anything else. Lets Load reject a wrong passphrase deterministically
+	// even when no provider API key is stored to fail decryption on
+	// (issue #23). Empty on configs saved before this field existed —
+	// Load skips the check for those (migration path; upgraded on next Save).
+	PassphraseCheck string `json:"passphrase_check,omitempty"`
 }
 
 type diskAIProvider struct {
@@ -201,6 +215,10 @@ func Load(passphrase string) (*AurisConfig, error) {
 		KeyLen:  disk.KDF.KeyLen,
 	}
 	key := deriveKey(passphrase, params)
+
+	if disk.PassphraseCheck != "" && !verifyPassphraseCheck(key, disk.PassphraseCheck) {
+		return nil, fmt.Errorf("config: Load: %w", ErrIncorrectPassphrase)
+	}
 
 	newsFeeds := disk.NewsFeeds
 	if len(newsFeeds) == 0 {
@@ -272,6 +290,11 @@ func Save(cfg *AurisConfig, passphrase string) error {
 	}
 	key := deriveKey(passphrase, params)
 
+	passphraseCheck, err := newPassphraseCheck(key)
+	if err != nil {
+		return fmt.Errorf("config: Save: %w", err)
+	}
+
 	disk := diskConfig{
 		ActiveProvider: cfg.ActiveProvider,
 		ProviderOrder:  cfg.ProviderOrder,
@@ -294,6 +317,7 @@ func Save(cfg *AurisConfig, passphrase string) error {
 		EncryptStorage:   cfg.EncryptStorage,
 		StorageSalt:      base64.StdEncoding.EncodeToString(cfg.StorageSalt),
 		SimulationMode:   cfg.SimulationMode,
+		PassphraseCheck:  passphraseCheck,
 	}
 
 	if len(cfg.Providers) > 0 {
