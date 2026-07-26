@@ -281,6 +281,7 @@
       <ul class="list" style="margin-top:1rem">
         <li>El agente <span class="bright">encadena herramientas por sí solo</span>: cotización → histórico → métricas → riesgo.</li>
         <li>Respuestas en Markdown renderizado, sesiones persistentes, paleta de comandos con <span class="kbd">/</span>, interfaz en español e inglés.</li>
+        <li><span class="bright">Gráficos en el terminal</span>: velas con SMA(20) en cada instrumento, sparklines por posición y una tool (<code>market_render_price_chart</code>) que pinta el gráfico dentro del propio chat.</li>
       </ul>
     </div>
   </section>
@@ -311,7 +312,7 @@
         </div>
         <div style="display:flex;flex-direction:column;gap:.9rem">
           <div class="tile"><div class="v">Go 1.25</div><div class="l">sin frameworks pesados: stdlib + Charm + SDKs oficiales</div></div>
-          <div class="tile"><div class="v">~23.400</div><div class="l">líneas de Go en 20 paquetes desacoplados</div></div>
+          <div class="tile"><div class="v">~24.500</div><div class="l">líneas de Go en 21 paquetes desacoplados</div></div>
           <div class="tile"><div class="l" style="margin-top:0">servicios transversales</div><div class="l" style="color:var(--text)">portfolio · news (RSS) · config cifrada · locale (es/en)</div></div>
         </div>
       </div>
@@ -344,7 +345,7 @@
         <div style="display:flex;flex-direction:column;gap:1rem">
           <div class="card">
             <h3>5 drivers de IA</h3>
-            <p><span class="bright">Anthropic · Gemini · Ollama · MiniMax · OpenAI</span> — nube de frontera o inferencia local, elegibles por caso de uso; el de OpenAI sirve además cualquier endpoint compatible (DeepSeek, Groq, OpenRouter…).</p>
+            <p><span class="bright">Anthropic · Gemini · Ollama · MiniMax · OpenAI</span> — nube de frontera o inferencia local, elegibles por caso de uso; además, endpoints OpenAI-compatible con nombre propio e instancias simultáneas (LM Studio, DeepSeek, Groq, OpenRouter…).</p>
           </div>
           <div class="card">
             <h3>2 drivers de mercado</h3>
@@ -386,8 +387,8 @@
       </div>
       <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:1rem;margin-top:1.8rem">
         <div class="tile"><div class="v">≤ 10</div><div class="l">iteraciones por turno: el agente encadena consultas y cálculos, con freno determinista anti-bucle</div></div>
-        <div class="tile"><div class="v">3</div><div class="l">TaskTypes con system prompt propio (chat, análisis financiero, resumen) e inyección del perfil del usuario</div></div>
-        <div class="tile"><div class="v">⚙ en vivo</div><div class="l">cada tool call se reporta a la TUI como progreso: el usuario ve qué está consultando el agente</div></div>
+        <div class="tile"><div class="v">2</div><div class="l">system prompts especializados (chat general y modo cartera) con inyección del perfil del usuario y reglas anti-manipulación</div></div>
+        <div class="tile"><div class="v">⚙ en vivo</div><div class="l">respuestas en streaming token a token y cada tool call reportada como progreso: el usuario ve qué consulta el agente</div></div>
       </div>
     </div>
   </section>
@@ -533,7 +534,7 @@
     <hr class="rule">
     <div class="body">
       <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:1rem">
-        <div class="tile"><div class="v">740</div><div class="l">funciones de test en el repositorio</div></div>
+        <div class="tile"><div class="v">759</div><div class="l">funciones de test en el repositorio</div></div>
         <div class="tile"><div class="v">175</div><div class="l">tests solo en pkg/finance: el motor de cálculo es la pieza más blindada</div></div>
         <div class="tile"><div class="v">2</div><div class="l">idiomas completos (es/en) con detección automática del locale</div></div>
         <div class="tile"><div class="v">6</div><div class="l">temas visuales con previsualización en vivo</div></div>
@@ -543,6 +544,7 @@
         <li><span class="bright b">Tests de integración honestos</span>: se saltan solos (<code>t.Skip</code>) si no hay credenciales; la suite corre limpia en cualquier máquina y en CI.</li>
         <li><span class="bright b">Contratos explícitos</span>: errores sentinel compartidos y un contrato de streaming («el canal siempre se cierra») documentados y testeados.</li>
         <li><span class="bright b">Validación exhaustiva de entradas</span>: ninguna función de cálculo acepta un número sin pasar por la capa de validación por dominio.</li>
+        <li><span class="bright b">Prompts evaluados, no intuidos</span>: <code>promptlab</code>, un banco de pruebas propio, ejecuta el agente real contra suites de escenarios deterministas y puntúa cada system prompt por la secuencia de tools esperada — con matriz comparativa entre LLMs y juez-LLM consultivo.</li>
       </ul>
     </div>
   </section>
@@ -568,6 +570,7 @@
         <ul class="list checks">
           <li><span class="bright b">Mitigación estructural, no solo textual</span>: el riesgo de alucinación numérica se elimina delegando toda la aritmética al motor determinista.</li>
           <li><span class="bright b">Transparencia</span>: cada consulta de datos y cada cálculo se muestran en pantalla (⚙) mientras ocurren.</li>
+          <li><span class="bright b">Endurecido contra manipulación</span>: reglas anti-jailbreak en el system prompt y noticias RSS envueltas como «dato, no instrucción» — mitigación de prompt injection indirecta, cubierta por tests.</li>
         </ul>
       </div>
     </div>
@@ -585,8 +588,8 @@
           <p>El patrón driver hace que integrar un nuevo proveedor de datos —o la API de un bróker para operar— sea un paquete aislado, sin tocar el núcleo. Así se añadió EODHD como segundo mercado.</p>
         </div>
         <div class="card">
-          <h3><span class="acc">›</span> Streaming en el chat</h3>
-          <p>La TUI ya muestra las respuestas del LLM token a token en los 5 drivers, incluyendo llamadas a herramientas dentro del streaming — sin esperas a ciegas ni con modelos locales.</p>
+          <h3><span class="acc">›</span> Evaluación continua del agente</h3>
+          <p>Llevar <code>promptlab</code> a la CI: cada cambio de system prompt o de modelo pasaría la suite de escenarios automáticamente, detectando regresiones de comportamiento antes de publicar.</p>
         </div>
         <div class="card">
           <h3><span class="acc">›</span> Alertas y vigilancia</h3>
@@ -594,7 +597,7 @@
         </div>
         <div class="card">
           <h3><span class="acc">›</span> Más clases de activo</h3>
-          <p>El modelo de datos (<code>AssetType</code>) ya contempla más allá de la renta variable: fondos, ETFs, cripto y renta fija como evolución natural.</p>
+          <p>El modelo de datos (<code>AssetType</code>) ya cubre ETFs, futuros, forex y cripto además de acciones; fondos de inversión y renta fija son la evolución natural del mismo enum.</p>
         </div>
       </div>
       <p class="mut" style="margin-top:1.5rem;text-align:center">Nada de esto exige rediseñar: <span class="bright">las abstracciones ya lo soportan</span>.</p>
