@@ -218,6 +218,7 @@ Hasta FEAT-20 el proyecto no tenía tooling de build/CI: sin Makefile, sin `.git
 - Acoplamiento implícito: si `version`/`commit`/`date`/`builtBy` se renombran algún día, hay que añadir un `ldflags:` explícito o re-alinear nombres con GoReleaser.
 - `release.yml`/`ci.yml` quedan inactivos hasta publicar el repo en GitHub (remoto actual: Gitea/Forgejo autoalojado) — esperado, no un error de configuración.
 - Primera dependencia de *tooling* externo del repo (no toca `go.mod`); validada localmente con `goreleaser check` y `goreleaser build --snapshot --clean --single-target` (requirió `GOTOOLCHAIN=auto`, ya que GoReleaser v2 exige Go ≥ 1.26.4 y el entorno de desarrollo tenía 1.25.12 instalado — el propio `go run` descargó el toolchain necesario sin tocar `go.mod`, que sigue declarando `go 1.25.0`).
+- **2026-07-26**: `ci.yml` se amplía para correr también en push/PR a `develop`, al introducir la rama de integración. La sección *Decision* queda como registro histórico de la decisión original; los PRs siguen landing en `main` vía promoción desde `develop` (tag incluido). Sin cambios en `release.yml`.
 
 ---
 
