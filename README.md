@@ -47,7 +47,7 @@ This README covers the essentials. The [wiki](https://github.com/fuchicar/auris-
 | 🚀 [Using the Agent](https://github.com/fuchicar/auris-ai/wiki/Using-the-Agent) | First steps, the setup wizard, recommended first prompts, and a full portfolio-creation walkthrough. |
 | ⚠️ [AI Disclaimer & Responsible Use](https://github.com/fuchicar/auris-ai/wiki/AI-Disclaimer-and-Responsible-Use) | What Auris's numbers can and can't responsibly be used for, with good/bad practice examples. |
 | ❓ [FAQ & Troubleshooting](https://github.com/fuchicar/auris-ai/wiki/FAQ-and-Troubleshooting) | Common questions, provider errors, and what to do when something looks stuck. |
-| 🤝 [Contributing](https://github.com/fuchicar/auris-ai/wiki/Contributing) | Fork, branch, commit convention, local checks, and how to open a PR. |
+| 🤝 [Contributing](https://github.com/fuchicar/auris-ai/wiki/Contributing) | Fork, branching from `develop`, commit convention, local checks, and how to open a PR against `develop`. |
 | 🛠️ [Building from Source](https://github.com/fuchicar/auris-ai/wiki/Building-from-Source) | Requirements, `go build`, Nix, running the test suite, and how releases are built. |
 | 🏛️ [Architecture & Design Decisions](https://github.com/fuchicar/auris-ai/wiki/Architecture-and-Design-Decisions) | The ports & adapters shape of the codebase and the reasoning behind ten key design decisions. |
 | 🔒 [Security & Privacy](https://github.com/fuchicar/auris-ai/wiki/Security-and-Privacy) | Exactly how credentials, portfolios, and sessions are encrypted at rest, and what that protects against (and what it doesn't). |
