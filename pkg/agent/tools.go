@@ -441,13 +441,14 @@ func buildTools() []llm.Tool {
 			}, []string{"symbol", "name", "instrument_type"}),
 		),
 		tool("portfolio_add_lot",
-			"Add a purchase lot to an existing holding in a portfolio. Fails if the instrument is not a holding.",
+			"Add a purchase lot to an existing holding in a portfolio. Fails if the instrument is not a holding. This does NOT touch cash by default, since the common case is cataloging a lot already owned before using Auris. Set debit_cash=true only if this specifically represents a new purchase happening now with the portfolio's cash.",
 			obj(map[string]any{
 				"portfolio_id": str("Portfolio ID (optional; omit to use the current portfolio)"),
 				"symbol":       str("Ticker symbol of the existing holding"),
 				"quantity":     numProp("Number of units purchased"),
 				"price":        numProp("Purchase price per unit"),
 				"date":         str("Purchase date ISO 8601 or YYYY-MM-DD (optional; defaults to today)"),
+				"debit_cash":   boolProp("If true, treat this as a real purchase happening now: debit quantity*price from the portfolio's cash and log a 'buy' transaction. Defaults to false — the lot is still added to the holding, but cash is untouched and the recorded transaction is a zero-cash-delta 'adjustment' instead."),
 			}, []string{"symbol", "quantity", "price"}),
 		),
 		tool("portfolio_sell",
@@ -1357,10 +1358,18 @@ func (a *Agent) dispatchInner(ctx context.Context, call llm.ToolCall, lastKind *
 				}
 				date := parseLotDate("date")
 				p.Instruments[i].Lots = append(p.Instruments[i].Lots, portfolio.NewLot(qty, price, date))
-				p.RecordTransaction(portfolio.Transaction{
-					Type: portfolio.TransactionBuy, Symbol: ins.Symbol,
-					Quantity: qty, Price: price, CashDelta: -qty * price, Date: date,
-				})
+				if boolVal("debit_cash") {
+					p.RecordTransaction(portfolio.Transaction{
+						Type: portfolio.TransactionBuy, Symbol: ins.Symbol,
+						Quantity: qty, Price: price, CashDelta: -qty * price, Date: date,
+					})
+				} else {
+					p.RecordTransaction(portfolio.Transaction{
+						Type: portfolio.TransactionAdjustment, Symbol: ins.Symbol,
+						Quantity: qty, Price: price, CashDelta: 0, Date: date,
+						Note: "lot catalogued without cash debit (debit_cash=false)",
+					})
+				}
 				if err := portfolio.SavePortfolio(p); err != nil {
 					return encode(nil, err)
 				}
