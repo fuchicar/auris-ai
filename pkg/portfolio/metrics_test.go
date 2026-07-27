@@ -471,6 +471,34 @@ func TestHoldingsAsOf_ReplaysBuysAndSells(t *testing.T) {
 	}
 }
 
+// TestHoldingsAsOf_ReplaysAdjustmentTransactions is a regression test for
+// GitHub issue #28: a lot catalogued via portfolio_add_lot/
+// portfolio_add_instrument (debit_cash=false) records a zero-cash-delta
+// TransactionAdjustment with Symbol/Quantity set, and HoldingsAsOf must count
+// it like a buy — otherwise it stays invisible to start-of-period
+// reconstruction and portfolio_compare_benchmark inflates returns. A
+// portfolio_set_cash-style adjustment (empty Symbol) must remain a no-op.
+func TestHoldingsAsOf_ReplaysAdjustmentTransactions(t *testing.T) {
+	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	p := &Portfolio{ID: "test", Transactions: []Transaction{
+		{Type: TransactionAdjustment, Symbol: "AAPL", Quantity: 10, Price: 90, CashDelta: 0, Date: base},
+		{Type: TransactionAdjustment, Symbol: "", CashDelta: 500, Date: base.AddDate(0, 0, 5)},
+	}}
+	// Before the catalogued lot: nothing held.
+	if qty := HoldingsAsOf(p, base.AddDate(0, 0, -1)); qty["AAPL"] != 0 {
+		t.Errorf("before catalogued lot: want 0, got %v", qty["AAPL"])
+	}
+	// After the catalogued lot and the cash-only adjustment: 10, no stray
+	// entry for the empty-Symbol adjustment.
+	qty := HoldingsAsOf(p, base.AddDate(0, 0, 10))
+	if qty["AAPL"] != 10 {
+		t.Errorf("after catalogued lot: want 10, got %v", qty["AAPL"])
+	}
+	if v, ok := qty[""]; ok {
+		t.Errorf("cash-only adjustment must not create a holdings entry, got qty[\"\"]=%v", v)
+	}
+}
+
 func TestHoldingsAsOf_NoTransactions_EmptyMap(t *testing.T) {
 	p := &Portfolio{ID: "test"}
 	qty := HoldingsAsOf(p, time.Now())

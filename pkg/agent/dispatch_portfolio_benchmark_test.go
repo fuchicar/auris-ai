@@ -370,3 +370,82 @@ func TestDispatch_PortfolioCompareBenchmark_CustomBenchmarkSymbol(t *testing.T) 
 		t.Errorf("BenchmarkReturnPercent: want 10, got %v", res.BenchmarkReturnPercent)
 	}
 }
+
+// TestDispatch_PortfolioCompareBenchmark_CataloguedLotNotInflated is a
+// regression test for GitHub issue #28: a holding catalogued without a cash
+// debit (portfolio_add_instrument/portfolio_add_lot, debit_cash=false) is
+// recorded as a zero-cash-delta TransactionAdjustment, not a plain Lot with
+// no transaction at all. A single unrelated transaction (here, one deposit)
+// is enough to route portfolio_compare_benchmark into the modified_dietz
+// branch — before the fix, HoldingsAsOf ignored TransactionAdjustment
+// entirely, so the catalogued AAPL position was invisible at the start of
+// the period while fully counted at the end, inflating the return from a
+// true ~5% to a spurious 110%.
+func TestDispatch_PortfolioCompareBenchmark_CataloguedLotNotInflated(t *testing.T) {
+	tmp := t.TempDir()
+	prev := portfolio.SetPortfoliosDirForTest(tmp)
+	t.Cleanup(func() { portfolio.SetPortfoliosDirForTest(prev) })
+
+	catalogueDate := time.Date(2025, 12, 1, 0, 0, 0, 0, time.UTC)
+	p := portfolio.NewPortfolio("test")
+	p.Cash = 1000
+	p.Instruments = []portfolio.Instrument{
+		{
+			ID: "ins-AAPL", Symbol: "AAPL", Name: "AAPL", Type: portfolio.InstrumentHolding,
+			Lots: []portfolio.Lot{{ID: "lot-AAPL", Quantity: 10, Price: 90, Date: catalogueDate}},
+		},
+	}
+	p.Transactions = []portfolio.Transaction{
+		// The "one unrelated transaction" from the issue: a deposit that has
+		// nothing to do with the catalogued AAPL lot.
+		{Type: portfolio.TransactionDeposit, CashDelta: 1000, Date: catalogueDate},
+		// The catalogued lot itself: no cash movement.
+		{Type: portfolio.TransactionAdjustment, Symbol: "AAPL", Quantity: 10, Price: 90, CashDelta: 0, Date: catalogueDate},
+	}
+	if err := portfolio.SavePortfolio(p); err != nil {
+		t.Fatal(err)
+	}
+
+	aaplSeries := []market.Candle{
+		candle("2026-01-01", 100), candle("2026-01-02", 102), candle("2026-01-03", 101), candle("2026-01-04", 103),
+	}
+	spySeries := []market.Candle{
+		candle("2026-01-01", 400), candle("2026-01-02", 404), candle("2026-01-03", 408), candle("2026-01-04", 440),
+	}
+	mp := &mockMarket{
+		candlesBySymbol: map[string][]market.Candle{
+			"AAPL": aaplSeries,
+			"SPY":  spySeries,
+		},
+		quotesBySymbol: map[string]market.Quote{
+			"AAPL": {Last: 110},
+		},
+	}
+	a := New(&mockLLM{}, mp, "")
+	a.currentPortfolioID = p.ID
+
+	var lk ProgressKind
+	args := toolCallArgs(t, map[string]any{"from": "2026-01-01T00:00:00Z", "to": "2026-01-04T00:00:00Z"})
+	result := a.dispatch(context.Background(), llm.ToolCall{
+		Function: llm.ToolCallFunction{Name: "portfolio_compare_benchmark", Arguments: args},
+	}, &lk)
+	if result[:6] == "error:" {
+		t.Fatalf("unexpected error: %s", result)
+	}
+
+	var res benchmarkComparisonResult
+	if err := json.Unmarshal([]byte(result), &res); err != nil {
+		t.Fatalf("invalid JSON: %s — %v", result, err)
+	}
+	if res.ReturnMethod != "modified_dietz" {
+		t.Errorf("ReturnMethod: want modified_dietz (transaction history present), got %s", res.ReturnMethod)
+	}
+	// Start value = cash(1000, deposit predates the period) + 10*close_on_from(100) = 2000.
+	// End value = cash(1000) + 10*last_quote(110) = 2100.
+	// Return = (2100-2000)/2000*100 = 5. Before the fix this came out to 110%
+	// (the catalogued lot's 1100 of value counted only at the end, against a
+	// cash-only start value of 1000).
+	if !approxEqual(res.PortfolioReturnPercent, 5.0, 1e-6) {
+		t.Errorf("PortfolioReturnPercent: want 5 (catalogued lot counted at both ends), got %v", res.PortfolioReturnPercent)
+	}
+}

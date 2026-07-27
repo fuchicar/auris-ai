@@ -20,11 +20,11 @@ const (
 	TransactionDeposit    TransactionType = "deposit"
 	TransactionWithdrawal TransactionType = "withdrawal"
 	// TransactionAdjustment records either a corrective portfolio_set_cash
-	// overwrite, or a portfolio_add_lot call with debit_cash=false cataloging
-	// a lot already owned (CashDelta left at 0) — kept distinct from
-	// Deposit/Withdrawal/Buy so neither a real-world cash movement the user
-	// reports, nor a real purchase, is ever conflated with a non-cash
-	// bookkeeping event.
+	// overwrite, or a portfolio_add_lot/portfolio_add_instrument call with
+	// debit_cash=false cataloging a lot already owned (CashDelta left at 0)
+	// — kept distinct from Deposit/Withdrawal/Buy so neither a real-world
+	// cash movement the user reports, nor a real purchase, is ever conflated
+	// with a non-cash bookkeeping event.
 	TransactionAdjustment TransactionType = "adjustment"
 )
 

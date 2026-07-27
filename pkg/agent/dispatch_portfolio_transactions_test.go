@@ -172,8 +172,12 @@ func TestDispatch_PortfolioAddInstrument_WithInitialLot_DefaultDoesNotDebitCash(
 	if reloaded.Cash != 1000 {
 		t.Errorf("Cash = %v, want unchanged 1000 (debit_cash defaults to false)", reloaded.Cash)
 	}
-	if len(reloaded.Transactions) != 0 {
-		t.Errorf("Transactions = %+v, want 0 transactions when debit_cash is not set", reloaded.Transactions)
+	if len(reloaded.Transactions) != 1 {
+		t.Fatalf("Transactions = %+v, want exactly 1 catalogued-lot adjustment when debit_cash is not set", reloaded.Transactions)
+	}
+	tx := reloaded.Transactions[0]
+	if tx.Type != portfolio.TransactionAdjustment || tx.Symbol != "MSFT" || tx.Quantity != 2 || tx.Price != 300 || tx.CashDelta != 0 {
+		t.Errorf("transaction = %+v, want adjustment for MSFT qty=2 price=300 cash_delta=0", tx)
 	}
 	if len(reloaded.Instruments) != 1 || len(reloaded.Instruments[0].Lots) != 1 {
 		t.Fatalf("want 1 instrument with 1 lot, got %+v", reloaded.Instruments)
