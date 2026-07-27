@@ -85,6 +85,137 @@ func TestTransition_SessionSelectPreservesToolWrites(t *testing.T) {
 	assertPersistedCash(t, p.ID, 500)
 }
 
+// TestToggleMode_FromPortfolioAgent_ReturnsToPortfolioView verifies issue #27:
+// Shift+Tab (toggleMode) leaving portfolio-agent mode must return to the
+// portfolio dashboard (not the root menu) and must reset flowContext away
+// from FlowPortfolio, so a subsequent global agent session doesn't get
+// mistaken for a portfolio-scoped one.
+func TestToggleMode_FromPortfolioAgent_ReturnsToPortfolioView(t *testing.T) {
+	p := setupPortfolioAgentTest(t)
+
+	a := &AppModel{
+		cfg:             &config.AurisConfig{},
+		screen:          ScreenAgent,
+		flowContext:     FlowPortfolio,
+		activePortfolio: p,
+		styles:          NewStyles(ThemeDark),
+	}
+	updated, _ := a.toggleMode()
+	got := updated.(*AppModel)
+
+	if got.screen != ScreenPortfolioView {
+		t.Errorf("screen = %v, want ScreenPortfolioView", got.screen)
+	}
+	if got.flowContext != FlowMenu {
+		t.Errorf("flowContext = %v, want FlowMenu (must not stay FlowPortfolio)", got.flowContext)
+	}
+}
+
+// TestToggleMode_FromGlobalAgent_ReturnsToMenu verifies toggleMode's normal
+// (non-portfolio) behavior is unchanged.
+func TestToggleMode_FromGlobalAgent_ReturnsToMenu(t *testing.T) {
+	a := &AppModel{
+		cfg:         &config.AurisConfig{},
+		screen:      ScreenAgent,
+		flowContext: FlowAgent,
+		styles:      NewStyles(ThemeDark),
+	}
+	updated, _ := a.toggleMode()
+	got := updated.(*AppModel)
+
+	if got.screen != ScreenMenu {
+		t.Errorf("screen = %v, want ScreenMenu", got.screen)
+	}
+	if got.flowContext != FlowMenu {
+		t.Errorf("flowContext = %v, want FlowMenu", got.flowContext)
+	}
+}
+
+// TestTransition_ScreenAgentNil_FromPortfolioAgent_ReturnsToPortfolioView
+// verifies the Esc/quit-to-menu path (transition's ScreenAgent/nil branch)
+// has the same fix as toggleMode.
+func TestTransition_ScreenAgentNil_FromPortfolioAgent_ReturnsToPortfolioView(t *testing.T) {
+	p := setupPortfolioAgentTest(t)
+
+	a := &AppModel{
+		cfg:             &config.AurisConfig{},
+		screen:          ScreenAgent,
+		flowContext:     FlowPortfolio,
+		activePortfolio: p,
+		styles:          NewStyles(ThemeDark),
+	}
+	updated, _ := a.transition(ScreenDoneMsg{From: ScreenAgent, Result: nil})
+	got := updated.(*AppModel)
+
+	if got.screen != ScreenPortfolioView {
+		t.Errorf("screen = %v, want ScreenPortfolioView", got.screen)
+	}
+	if got.flowContext != FlowMenu {
+		t.Errorf("flowContext = %v, want FlowMenu (must not stay FlowPortfolio)", got.flowContext)
+	}
+}
+
+// TestHandleAgentCommand_AfterPortfolioExit_MenuBehavesAsGlobal is the direct
+// regression test for issue #27: once flowContext has been reset to FlowMenu
+// on exit (activePortfolio is sticky and stays non-nil by design), /menu from
+// a subsequent global agent session must go to the root menu, not the stale
+// portfolio's dashboard.
+func TestHandleAgentCommand_AfterPortfolioExit_MenuBehavesAsGlobal(t *testing.T) {
+	p := setupPortfolioAgentTest(t)
+
+	a := &AppModel{
+		cfg:             &config.AurisConfig{},
+		flowContext:     FlowMenu, // reset after leaving portfolio-agent mode
+		activePortfolio: p,        // sticky: still set from the earlier portfolio visit
+		styles:          NewStyles(ThemeDark),
+	}
+	updated, _ := a.handleAgentCommand(CommandResult{Cmd: "menu"})
+	got := updated.(*AppModel)
+
+	if got.screen != ScreenMenu {
+		t.Errorf("screen = %v, want ScreenMenu (global /menu must not route to the stale portfolio)", got.screen)
+	}
+}
+
+// TestHandleAgentCommand_AfterPortfolioExit_SessionBehavesAsGlobal is the
+// /session counterpart of the test above.
+func TestHandleAgentCommand_AfterPortfolioExit_SessionBehavesAsGlobal(t *testing.T) {
+	p := setupPortfolioAgentTest(t)
+
+	globalSession := config.NewSession()
+	if err := config.SaveSession(globalSession); err != nil {
+		t.Fatalf("SaveSession (global): %v", err)
+	}
+	portfolioSession := config.NewSession()
+	portfolioSession.PortfolioID = p.ID
+	if err := config.SaveSession(portfolioSession); err != nil {
+		t.Fatalf("SaveSession (portfolio): %v", err)
+	}
+	p.ActiveSessionID = portfolioSession.ID
+	if err := portfolio.SavePortfolio(p); err != nil {
+		t.Fatalf("SavePortfolio: %v", err)
+	}
+
+	a := &AppModel{
+		cfg: &config.AurisConfig{
+			ActiveSessionID: globalSession.ID,
+		},
+		flowContext:     FlowMenu, // reset after leaving portfolio-agent mode
+		activePortfolio: p,        // sticky: still set from the earlier portfolio visit
+		styles:          NewStyles(ThemeDark),
+	}
+	updated, _ := a.handleAgentCommand(CommandResult{Cmd: "session"})
+	got := updated.(*AppModel)
+
+	sel, ok := got.current.(*SessionSelectModel)
+	if !ok {
+		t.Fatalf("current = %T, want *SessionSelectModel", got.current)
+	}
+	if sel.currentID != globalSession.ID {
+		t.Errorf("currentID = %q, want %q (global session, not the portfolio's)", sel.currentID, globalSession.ID)
+	}
+}
+
 func TestResolvePortfolioSession_ReturnsFreshPortfolio(t *testing.T) {
 	p := setupPortfolioAgentTest(t)
 	simulateAgentToolWrite(t, p.ID, 500)
