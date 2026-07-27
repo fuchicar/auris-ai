@@ -885,6 +885,11 @@ func (a *AppModel) transition(msg ScreenDoneMsg) (tea.Model, tea.Cmd) {
 		switch r := msg.Result.(type) {
 		case nil:
 			a.saveConfig()
+			if a.flowContext == FlowPortfolio && a.activePortfolio != nil {
+				a.flowContext = FlowMenu
+				return a.returnToActivePortfolioView()
+			}
+			a.flowContext = FlowMenu
 			a.screen = ScreenMenu
 			a.current = newMenuModel(a.styles, a.cfg.ActiveAIProvider != "", a.cfg.SimulationMode)
 		case CommandResult:
@@ -1259,15 +1264,9 @@ func (a *AppModel) handleAgentCommand(cmd CommandResult) (tea.Model, tea.Cmd) {
 	case "menu":
 		a.saveConfig()
 		if a.flowContext == FlowPortfolio && a.activePortfolio != nil {
-			// Return to portfolio view instead of main menu. Reload from disk first —
-			// the agent's portfolio tools write directly to disk (pkg/agent/tools.go)
-			// without updating this in-memory pointer, so a stale reuse here would
-			// show pre-transaction data (issue #10).
-			a.reloadActivePortfolio()
-			mp := a.buildMarketProvider()
-			a.screen = ScreenPortfolioView
-			a.current = newPortfolioViewModel(a.activePortfolio, mp, a.styles, a.height)
-			return a, a.current.Init()
+			// Return to portfolio view instead of main menu.
+			a.flowContext = FlowMenu
+			return a.returnToActivePortfolioView()
 		}
 		a.screen = ScreenMenu
 		a.current = newMenuModel(a.styles, a.cfg.ActiveAIProvider != "", a.cfg.SimulationMode)
@@ -1447,6 +1446,11 @@ func (a *AppModel) toggleMode() (tea.Model, tea.Cmd) {
 	}
 	if a.screen == ScreenAgent {
 		a.saveConfig()
+		if a.flowContext == FlowPortfolio && a.activePortfolio != nil {
+			a.flowContext = FlowMenu
+			return a.returnToActivePortfolioView()
+		}
+		a.flowContext = FlowMenu
 		a.screen = ScreenMenu
 		a.current = newMenuModel(a.styles, a.cfg.ActiveAIProvider != "", a.cfg.SimulationMode)
 		return a, a.current.Init()
@@ -1807,6 +1811,20 @@ func (a *AppModel) returnFromMarketProviderManagement() (tea.Model, tea.Cmd) {
 	}
 	a.screen = ScreenMenu
 	a.current = newMenuModel(a.styles, a.cfg.ActiveAIProvider != "", a.cfg.SimulationMode)
+	return a, a.current.Init()
+}
+
+// returnToActivePortfolioView switches to the active portfolio's dashboard,
+// reloading it from disk first since the agent's portfolio tools
+// (pkg/agent/tools.go) write mutations directly to disk without updating the
+// in-memory a.activePortfolio pointer (issue #24, following the /menu fix from
+// commit 1e62892 for issue #10). Callers must already hold the portfolio-agent
+// invariant (flowContext was FlowPortfolio, a.activePortfolio != nil).
+func (a *AppModel) returnToActivePortfolioView() (tea.Model, tea.Cmd) {
+	a.reloadActivePortfolio()
+	mp := a.buildMarketProvider()
+	a.screen = ScreenPortfolioView
+	a.current = newPortfolioViewModel(a.activePortfolio, mp, a.styles, a.height)
 	return a, a.current.Init()
 }
 
