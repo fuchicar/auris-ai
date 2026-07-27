@@ -896,6 +896,10 @@ func (a *AppModel) transition(msg ScreenDoneMsg) (tea.Model, tea.Cmd) {
 		case SessionSelectResult:
 			if a.flowContext == FlowPortfolio && a.activePortfolio != nil {
 				if s, err := config.LoadSession(r.ID); err == nil && s != nil {
+					// Reload before mutating + saving — a.activePortfolio may be
+					// stale relative to writes the agent's portfolio tools made
+					// directly to disk during the session being left (issue #24).
+					a.reloadActivePortfolio()
 					a.activePortfolio.ActiveSessionID = r.ID
 					_ = portfolio.SavePortfolio(a.activePortfolio)
 					return a.enterPortfolioAgentModeWithSession(a.activePortfolio, s)
@@ -1259,9 +1263,7 @@ func (a *AppModel) handleAgentCommand(cmd CommandResult) (tea.Model, tea.Cmd) {
 			// the agent's portfolio tools write directly to disk (pkg/agent/tools.go)
 			// without updating this in-memory pointer, so a stale reuse here would
 			// show pre-transaction data (issue #10).
-			if p, err := portfolio.LoadPortfolio(a.activePortfolio.ID); err == nil && p != nil {
-				a.activePortfolio = p
-			}
+			a.reloadActivePortfolio()
 			mp := a.buildMarketProvider()
 			a.screen = ScreenPortfolioView
 			a.current = newPortfolioViewModel(a.activePortfolio, mp, a.styles, a.height)
@@ -1277,6 +1279,10 @@ func (a *AppModel) handleAgentCommand(cmd CommandResult) (tea.Model, tea.Cmd) {
 
 	case "new":
 		if a.flowContext == FlowPortfolio && a.activePortfolio != nil {
+			// Reload before mutating + saving — a.activePortfolio may be stale
+			// relative to writes the agent's portfolio tools made directly to
+			// disk during the session being replaced (issue #24).
+			a.reloadActivePortfolio()
 			s := config.NewSession()
 			s.PortfolioID = a.activePortfolio.ID
 			_ = config.SaveSession(s)
@@ -1804,12 +1810,38 @@ func (a *AppModel) returnFromMarketProviderManagement() (tea.Model, tea.Cmd) {
 	return a, a.current.Init()
 }
 
-// resolvePortfolioSession returns the active session for a portfolio, creating
-// and persisting a new portfolio-scoped session when none exists.
-func (a *AppModel) resolvePortfolioSession(p *portfolio.Portfolio) *config.Session {
+// reloadActivePortfolio reloads a.activePortfolio from disk, replacing the
+// in-memory pointer with fresh state. The agent's portfolio tools
+// (pkg/agent/tools.go) write mutations directly to disk without updating
+// this pointer, so any path about to mutate-and-save the active portfolio
+// (or build a system prompt from it) must call this first, or it will
+// silently overwrite the tool's writes (issue #24, following the /menu fix
+// from commit 1e62892 for issue #10).
+func (a *AppModel) reloadActivePortfolio() {
+	if a.activePortfolio == nil {
+		return
+	}
+	if p, err := portfolio.LoadPortfolio(a.activePortfolio.ID); err == nil && p != nil {
+		a.activePortfolio = p
+	}
+}
+
+// resolvePortfolioSession returns the fresh-from-disk portfolio and its active
+// session, creating and persisting a new portfolio-scoped session when none
+// exists. The caller's p may be stale relative to writes the agent's
+// portfolio tools made directly to disk (issue #24), so it is reloaded here
+// before any mutate-and-save; callers must use the returned portfolio instead
+// of their original pointer.
+func (a *AppModel) resolvePortfolioSession(p *portfolio.Portfolio) (*portfolio.Portfolio, *config.Session) {
+	if fresh, err := portfolio.LoadPortfolio(p.ID); err == nil && fresh != nil {
+		p = fresh
+		if a.activePortfolio != nil && a.activePortfolio.ID == p.ID {
+			a.activePortfolio = p
+		}
+	}
 	if p.ActiveSessionID != "" {
 		if s, err := config.LoadSession(p.ActiveSessionID); err == nil && s != nil {
-			return s
+			return p, s
 		}
 	}
 	s := config.NewSession()
@@ -1817,7 +1849,7 @@ func (a *AppModel) resolvePortfolioSession(p *portfolio.Portfolio) *config.Sessi
 	_ = config.SaveSession(s)
 	p.ActiveSessionID = s.ID
 	_ = portfolio.SavePortfolio(p)
-	return s
+	return p, s
 }
 
 // enterPortfolioAgentMode launches agent mode scoped to a portfolio.
@@ -1825,7 +1857,7 @@ func (a *AppModel) enterPortfolioAgentMode(p *portfolio.Portfolio) (tea.Model, t
 	if p == nil {
 		return a, nil
 	}
-	session := a.resolvePortfolioSession(p)
+	p, session := a.resolvePortfolioSession(p)
 	return a.enterPortfolioAgentModeWithSession(p, session)
 }
 
