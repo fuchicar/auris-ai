@@ -2,6 +2,8 @@ package news
 
 import (
 	"context"
+	"errors"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -90,6 +92,9 @@ func TestDefaultFeeds_Live(t *testing.T) {
 			defer cancel()
 			parsed, err := fp.ParseURLWithContext(f.URL, ctx)
 			if err != nil {
+				if isTransientFeedError(err) {
+					t.Skipf("transient error fetching %q (%s), skipping: %v", f.Name, f.URL, err)
+				}
 				t.Fatalf("parse %q (%s): %v", f.Name, f.URL, err)
 			}
 			if parsed == nil {
@@ -100,4 +105,21 @@ func TestDefaultFeeds_Live(t *testing.T) {
 			}
 		})
 	}
+}
+
+// isTransientFeedError reports whether err looks like a temporary upstream
+// hiccup (5xx response, network timeout) rather than a genuinely broken feed
+// URL. CI runners occasionally get rate-limited or gatewayed by individual
+// news providers; that shouldn't fail the build any more than the BBC
+// reachability probe above treats a 5xx as "network unavailable".
+func isTransientFeedError(err error) bool {
+	var httpErr gofeed.HTTPError
+	if errors.As(err, &httpErr) && httpErr.StatusCode >= 500 {
+		return true
+	}
+	var netErr net.Error
+	if errors.As(err, &netErr) && netErr.Timeout() {
+		return true
+	}
+	return errors.Is(err, context.DeadlineExceeded)
 }
