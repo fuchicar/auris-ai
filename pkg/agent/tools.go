@@ -1312,6 +1312,12 @@ func (a *Agent) dispatchInner(ctx context.Context, call llm.ToolCall, lastKind *
 							Type: portfolio.TransactionBuy, Symbol: symbol,
 							Quantity: qty, Price: price, CashDelta: -qty * price, Date: date,
 						})
+					} else {
+						p.RecordTransaction(portfolio.Transaction{
+							Type: portfolio.TransactionAdjustment, Symbol: symbol,
+							Quantity: qty, Price: price, CashDelta: 0, Date: date,
+							Note: "lot catalogued without cash debit (debit_cash=false)",
+						})
 					}
 				}
 			}

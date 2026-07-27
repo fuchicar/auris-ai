@@ -454,12 +454,13 @@ func SuggestRebalance(p *Portfolio, quotes map[string]Quote, maxDriftPercent flo
 }
 
 // HoldingsAsOf reconstructs each symbol's held quantity as of a past date by
-// replaying Transactions with Date <= at (buys add, sells subtract). Only
-// meaningful for portfolios with transaction history (see FEAT-2): a
-// portfolio created before that field existed has no Transactions to replay,
-// so this returns an empty map — callers must check len(p.Transactions) > 0
-// before trusting the result and fall back to treating current holdings as
-// unchanged over the period otherwise (a buy-and-hold approximation).
+// replaying Transactions with Date <= at (buys and catalogued-lot adjustments
+// add, sells subtract). Only meaningful for portfolios with transaction
+// history (see FEAT-2): a portfolio created before that field existed has no
+// Transactions to replay, so this returns an empty map — callers must check
+// len(p.Transactions) > 0 before trusting the result and fall back to
+// treating current holdings as unchanged over the period otherwise (a
+// buy-and-hold approximation).
 func HoldingsAsOf(p *Portfolio, at time.Time) map[string]float64 {
 	qty := make(map[string]float64)
 	for _, tx := range p.Transactions {
@@ -471,6 +472,13 @@ func HoldingsAsOf(p *Portfolio, at time.Time) map[string]float64 {
 			qty[tx.Symbol] += tx.Quantity
 		case TransactionSell:
 			qty[tx.Symbol] -= tx.Quantity
+		case TransactionAdjustment:
+			// Only the portfolio_add_lot/portfolio_add_instrument shape (Symbol
+			// set) represents a catalogued lot; portfolio_set_cash's adjustment
+			// leaves Symbol empty and must not be counted as a holding.
+			if tx.Symbol != "" {
+				qty[tx.Symbol] += tx.Quantity
+			}
 		}
 	}
 	return qty
