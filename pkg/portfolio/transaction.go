@@ -19,9 +19,12 @@ const (
 	TransactionDividend   TransactionType = "dividend"
 	TransactionDeposit    TransactionType = "deposit"
 	TransactionWithdrawal TransactionType = "withdrawal"
-	// TransactionAdjustment records a corrective portfolio_set_cash overwrite
-	// — kept distinct from Deposit/Withdrawal so a real-world cash movement
-	// the user reports is never conflated with a balance-sync override.
+	// TransactionAdjustment records either a corrective portfolio_set_cash
+	// overwrite, or a portfolio_add_lot call with debit_cash=false cataloging
+	// a lot already owned (CashDelta left at 0) — kept distinct from
+	// Deposit/Withdrawal/Buy so neither a real-world cash movement the user
+	// reports, nor a real purchase, is ever conflated with a non-cash
+	// bookkeeping event.
 	TransactionAdjustment TransactionType = "adjustment"
 )
 
@@ -42,9 +45,9 @@ type LotConsumption struct {
 type Transaction struct {
 	ID           string           `json:"id"`
 	Type         TransactionType  `json:"type"`
-	Symbol       string           `json:"symbol,omitempty"`        // empty for deposit/withdrawal/adjustment
-	Quantity     float64          `json:"quantity,omitempty"`      // buy/sell only
-	Price        float64          `json:"price,omitempty"`         // buy/sell: per-unit price
+	Symbol       string           `json:"symbol,omitempty"`        // empty for deposit/withdrawal/portfolio_set_cash adjustment
+	Quantity     float64          `json:"quantity,omitempty"`      // buy/sell, and adjustment from portfolio_add_lot(debit_cash=false)
+	Price        float64          `json:"price,omitempty"`         // per-unit price: buy/sell, and adjustment from portfolio_add_lot(debit_cash=false)
 	CashDelta    float64          `json:"cash_delta"`              // signed effect on Cash: +credit / -debit
 	RealizedPnL  float64          `json:"realized_pnl,omitempty"`  // sell only
 	ConsumedLots []LotConsumption `json:"consumed_lots,omitempty"` // sell only
