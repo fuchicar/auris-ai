@@ -309,8 +309,15 @@ func (a *AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.Type == tea.KeyCtrlC {
 			return a, tea.Quit
 		}
-		// Global Shift+Tab toggles between menu and agent mode.
+		// Global Shift+Tab toggles between menu and agent mode. Swallowed
+		// while inference is streaming — toggling would discard the
+		// AgentModel without cancelling the in-flight LLM call (issue #25),
+		// consistent with handleKey's own key-block during streaming
+		// (screen_agent.go:505-519).
 		if msg.Type == tea.KeyShiftTab && (a.screen == ScreenMenu || a.screen == ScreenAgent) {
+			if am, ok := a.current.(*AgentModel); ok && am.streaming {
+				return a, nil
+			}
 			return a.toggleMode()
 		}
 
@@ -662,12 +669,25 @@ func (a *AppModel) transition(msg ScreenDoneMsg) (tea.Model, tea.Cmd) {
 		}
 
 		if a.managingMarketProviders {
+			if !resultOK {
+				// Esc-back: return to the provider checklist without saving
+				// this (or any later still-queued) provider.
+				a.pendingMarketProviders = nil
+				a.pendingMarketIdx = 0
+				preSelected := make(map[string]bool, len(a.cfg.Providers))
+				for k := range a.cfg.Providers {
+					preSelected[k] = true
+				}
+				a.screen = ScreenMarketProviderManage
+				a.current = newMarketProviderManageModel(a.styles, a.marketProviderOrder(), preSelected, true)
+				return a, a.current.Init()
+			}
 			// /marketproviders flow: advance through the queue of newly-added
 			// providers, same pattern as ScreenAIProviderConfig for /aiproviders.
 			a.pendingMarketIdx++
 			if a.pendingMarketIdx < len(a.pendingMarketProviders) {
 				nextEntry, _ := findMarketEntry(a.pendingMarketProviders[a.pendingMarketIdx])
-				a.current = newAPIKeyModel(nextEntry, a.styles, ScreenAPIKey, false, false)
+				a.current = newAPIKeyModel(nextEntry, a.styles, ScreenAPIKey, false, true)
 				return a, a.current.Init()
 			}
 			a.managingMarketProviders = false
@@ -885,6 +905,11 @@ func (a *AppModel) transition(msg ScreenDoneMsg) (tea.Model, tea.Cmd) {
 		switch r := msg.Result.(type) {
 		case nil:
 			a.saveConfig()
+			if a.flowContext == FlowPortfolio && a.activePortfolio != nil {
+				a.flowContext = FlowMenu
+				return a.returnToActivePortfolioView()
+			}
+			a.flowContext = FlowMenu
 			a.screen = ScreenMenu
 			a.current = newMenuModel(a.styles, a.cfg.ActiveAIProvider != "", a.cfg.SimulationMode)
 		case CommandResult:
@@ -896,6 +921,10 @@ func (a *AppModel) transition(msg ScreenDoneMsg) (tea.Model, tea.Cmd) {
 		case SessionSelectResult:
 			if a.flowContext == FlowPortfolio && a.activePortfolio != nil {
 				if s, err := config.LoadSession(r.ID); err == nil && s != nil {
+					// Reload before mutating + saving — a.activePortfolio may be
+					// stale relative to writes the agent's portfolio tools made
+					// directly to disk during the session being left (issue #24).
+					a.reloadActivePortfolio()
 					a.activePortfolio.ActiveSessionID = r.ID
 					_ = portfolio.SavePortfolio(a.activePortfolio)
 					return a.enterPortfolioAgentModeWithSession(a.activePortfolio, s)
@@ -1255,17 +1284,9 @@ func (a *AppModel) handleAgentCommand(cmd CommandResult) (tea.Model, tea.Cmd) {
 	case "menu":
 		a.saveConfig()
 		if a.flowContext == FlowPortfolio && a.activePortfolio != nil {
-			// Return to portfolio view instead of main menu. Reload from disk first —
-			// the agent's portfolio tools write directly to disk (pkg/agent/tools.go)
-			// without updating this in-memory pointer, so a stale reuse here would
-			// show pre-transaction data (issue #10).
-			if p, err := portfolio.LoadPortfolio(a.activePortfolio.ID); err == nil && p != nil {
-				a.activePortfolio = p
-			}
-			mp := a.buildMarketProvider()
-			a.screen = ScreenPortfolioView
-			a.current = newPortfolioViewModel(a.activePortfolio, mp, a.styles, a.height)
-			return a, a.current.Init()
+			// Return to portfolio view instead of main menu.
+			a.flowContext = FlowMenu
+			return a.returnToActivePortfolioView()
 		}
 		a.screen = ScreenMenu
 		a.current = newMenuModel(a.styles, a.cfg.ActiveAIProvider != "", a.cfg.SimulationMode)
@@ -1277,6 +1298,10 @@ func (a *AppModel) handleAgentCommand(cmd CommandResult) (tea.Model, tea.Cmd) {
 
 	case "new":
 		if a.flowContext == FlowPortfolio && a.activePortfolio != nil {
+			// Reload before mutating + saving — a.activePortfolio may be stale
+			// relative to writes the agent's portfolio tools made directly to
+			// disk during the session being replaced (issue #24).
+			a.reloadActivePortfolio()
 			s := config.NewSession()
 			s.PortfolioID = a.activePortfolio.ID
 			_ = config.SaveSession(s)
@@ -1441,6 +1466,11 @@ func (a *AppModel) toggleMode() (tea.Model, tea.Cmd) {
 	}
 	if a.screen == ScreenAgent {
 		a.saveConfig()
+		if a.flowContext == FlowPortfolio && a.activePortfolio != nil {
+			a.flowContext = FlowMenu
+			return a.returnToActivePortfolioView()
+		}
+		a.flowContext = FlowMenu
 		a.screen = ScreenMenu
 		a.current = newMenuModel(a.styles, a.cfg.ActiveAIProvider != "", a.cfg.SimulationMode)
 		return a, a.current.Init()
@@ -1776,7 +1806,7 @@ func (a *AppModel) applyMarketProviderSelection(newKeys []string) (tea.Model, te
 		a.pendingMarketIdx = 0
 		entry, _ := findMarketEntry(toAdd[0])
 		a.screen = ScreenAPIKey
-		a.current = newAPIKeyModel(entry, a.styles, ScreenAPIKey, false, false)
+		a.current = newAPIKeyModel(entry, a.styles, ScreenAPIKey, false, true)
 		return a, a.current.Init()
 	}
 
@@ -1804,12 +1834,52 @@ func (a *AppModel) returnFromMarketProviderManagement() (tea.Model, tea.Cmd) {
 	return a, a.current.Init()
 }
 
-// resolvePortfolioSession returns the active session for a portfolio, creating
-// and persisting a new portfolio-scoped session when none exists.
-func (a *AppModel) resolvePortfolioSession(p *portfolio.Portfolio) *config.Session {
+// returnToActivePortfolioView switches to the active portfolio's dashboard,
+// reloading it from disk first since the agent's portfolio tools
+// (pkg/agent/tools.go) write mutations directly to disk without updating the
+// in-memory a.activePortfolio pointer (issue #24, following the /menu fix from
+// commit 1e62892 for issue #10). Callers must already hold the portfolio-agent
+// invariant (flowContext was FlowPortfolio, a.activePortfolio != nil).
+func (a *AppModel) returnToActivePortfolioView() (tea.Model, tea.Cmd) {
+	a.reloadActivePortfolio()
+	mp := a.buildMarketProvider()
+	a.screen = ScreenPortfolioView
+	a.current = newPortfolioViewModel(a.activePortfolio, mp, a.styles, a.height)
+	return a, a.current.Init()
+}
+
+// reloadActivePortfolio reloads a.activePortfolio from disk, replacing the
+// in-memory pointer with fresh state. The agent's portfolio tools
+// (pkg/agent/tools.go) write mutations directly to disk without updating
+// this pointer, so any path about to mutate-and-save the active portfolio
+// (or build a system prompt from it) must call this first, or it will
+// silently overwrite the tool's writes (issue #24, following the /menu fix
+// from commit 1e62892 for issue #10).
+func (a *AppModel) reloadActivePortfolio() {
+	if a.activePortfolio == nil {
+		return
+	}
+	if p, err := portfolio.LoadPortfolio(a.activePortfolio.ID); err == nil && p != nil {
+		a.activePortfolio = p
+	}
+}
+
+// resolvePortfolioSession returns the fresh-from-disk portfolio and its active
+// session, creating and persisting a new portfolio-scoped session when none
+// exists. The caller's p may be stale relative to writes the agent's
+// portfolio tools made directly to disk (issue #24), so it is reloaded here
+// before any mutate-and-save; callers must use the returned portfolio instead
+// of their original pointer.
+func (a *AppModel) resolvePortfolioSession(p *portfolio.Portfolio) (*portfolio.Portfolio, *config.Session) {
+	if fresh, err := portfolio.LoadPortfolio(p.ID); err == nil && fresh != nil {
+		p = fresh
+		if a.activePortfolio != nil && a.activePortfolio.ID == p.ID {
+			a.activePortfolio = p
+		}
+	}
 	if p.ActiveSessionID != "" {
 		if s, err := config.LoadSession(p.ActiveSessionID); err == nil && s != nil {
-			return s
+			return p, s
 		}
 	}
 	s := config.NewSession()
@@ -1817,7 +1887,7 @@ func (a *AppModel) resolvePortfolioSession(p *portfolio.Portfolio) *config.Sessi
 	_ = config.SaveSession(s)
 	p.ActiveSessionID = s.ID
 	_ = portfolio.SavePortfolio(p)
-	return s
+	return p, s
 }
 
 // enterPortfolioAgentMode launches agent mode scoped to a portfolio.
@@ -1825,7 +1895,7 @@ func (a *AppModel) enterPortfolioAgentMode(p *portfolio.Portfolio) (tea.Model, t
 	if p == nil {
 		return a, nil
 	}
-	session := a.resolvePortfolioSession(p)
+	p, session := a.resolvePortfolioSession(p)
 	return a.enterPortfolioAgentModeWithSession(p, session)
 }
 

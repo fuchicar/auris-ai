@@ -28,7 +28,7 @@ func TestDispatch_PortfolioAddLot_DebitsCash(t *testing.T) {
 	a.currentPortfolioID = p.ID
 
 	var lk ProgressKind
-	args := toolCallArgs(t, map[string]any{"symbol": "AAPL", "quantity": 5.0, "price": 100.0})
+	args := toolCallArgs(t, map[string]any{"symbol": "AAPL", "quantity": 5.0, "price": 100.0, "debit_cash": true})
 	result := a.dispatch(context.Background(), llm.ToolCall{
 		Function: llm.ToolCallFunction{Name: "portfolio_add_lot", Arguments: args},
 	}, &lk)
@@ -49,6 +49,55 @@ func TestDispatch_PortfolioAddLot_DebitsCash(t *testing.T) {
 	tx := reloaded.Transactions[0]
 	if tx.Type != portfolio.TransactionBuy || tx.CashDelta != -500 || tx.Symbol != "AAPL" {
 		t.Errorf("transaction = %+v, want Type=buy CashDelta=-500 Symbol=AAPL", tx)
+	}
+}
+
+func TestDispatch_PortfolioAddLot_DefaultDoesNotDebitCash(t *testing.T) {
+	tmp := t.TempDir()
+	prev := portfolio.SetPortfoliosDirForTest(tmp)
+	t.Cleanup(func() { portfolio.SetPortfoliosDirForTest(prev) })
+
+	p := portfolio.NewPortfolio("test")
+	p.Cash = 1000
+	p.Instruments = []portfolio.Instrument{
+		{ID: "ins-AAPL", Symbol: "AAPL", Name: "AAPL", Type: portfolio.InstrumentHolding},
+	}
+	if err := portfolio.SavePortfolio(p); err != nil {
+		t.Fatal(err)
+	}
+
+	a := New(&mockLLM{}, &mockMarket{}, "")
+	a.currentPortfolioID = p.ID
+
+	var lk ProgressKind
+	args := toolCallArgs(t, map[string]any{"symbol": "AAPL", "quantity": 5.0, "price": 100.0})
+	result := a.dispatch(context.Background(), llm.ToolCall{
+		Function: llm.ToolCallFunction{Name: "portfolio_add_lot", Arguments: args},
+	}, &lk)
+	if result[:6] == "error:" {
+		t.Fatalf("unexpected error: %s", result)
+	}
+
+	reloaded, err := portfolio.LoadPortfolio(p.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reloaded.Cash != 1000 {
+		t.Errorf("Cash = %v, want unchanged 1000 (debit_cash defaults to false)", reloaded.Cash)
+	}
+	if len(reloaded.Transactions) != 1 {
+		t.Fatalf("want 1 transaction, got %d", len(reloaded.Transactions))
+	}
+	tx := reloaded.Transactions[0]
+	if tx.Type != portfolio.TransactionAdjustment || tx.CashDelta != 0 || tx.Symbol != "AAPL" {
+		t.Errorf("transaction = %+v, want Type=adjustment CashDelta=0 Symbol=AAPL", tx)
+	}
+	if len(reloaded.Instruments) != 1 || len(reloaded.Instruments[0].Lots) != 1 {
+		t.Fatalf("want 1 instrument with 1 lot, got %+v", reloaded.Instruments)
+	}
+	lot := reloaded.Instruments[0].Lots[0]
+	if lot.Quantity != 5 || lot.Price != 100 {
+		t.Errorf("lot = %+v, want Quantity=5 Price=100 (cost basis still recorded)", lot)
 	}
 }
 
@@ -123,8 +172,12 @@ func TestDispatch_PortfolioAddInstrument_WithInitialLot_DefaultDoesNotDebitCash(
 	if reloaded.Cash != 1000 {
 		t.Errorf("Cash = %v, want unchanged 1000 (debit_cash defaults to false)", reloaded.Cash)
 	}
-	if len(reloaded.Transactions) != 0 {
-		t.Errorf("Transactions = %+v, want 0 transactions when debit_cash is not set", reloaded.Transactions)
+	if len(reloaded.Transactions) != 1 {
+		t.Fatalf("Transactions = %+v, want exactly 1 catalogued-lot adjustment when debit_cash is not set", reloaded.Transactions)
+	}
+	tx := reloaded.Transactions[0]
+	if tx.Type != portfolio.TransactionAdjustment || tx.Symbol != "MSFT" || tx.Quantity != 2 || tx.Price != 300 || tx.CashDelta != 0 {
+		t.Errorf("transaction = %+v, want adjustment for MSFT qty=2 price=300 cash_delta=0", tx)
 	}
 	if len(reloaded.Instruments) != 1 || len(reloaded.Instruments[0].Lots) != 1 {
 		t.Fatalf("want 1 instrument with 1 lot, got %+v", reloaded.Instruments)
