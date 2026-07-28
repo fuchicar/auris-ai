@@ -37,3 +37,25 @@ func WriteFileAtomic(path string, data []byte, perm os.FileMode) error {
 	}
 	return nil
 }
+
+// WriteFileNew is like WriteFileAtomic but refuses to write if the
+// destination already exists. Use on create paths (e.g. SavePortfolio,
+// SaveSession) where an ID collision must never silently overwrite a real
+// file. Updates still go through WriteFileAtomic — the caller distinguishes
+// create from update with os.Stat before invoking this function.
+//
+// The existence check is racy in the multi-writer sense (another writer
+// could create the destination in the microsecond gap between the stat and
+// the rename), but the agent dispatches tool calls sequentially so the only
+// "racer" is an upstream re-roll on the same struct, in which case the
+// caller already mutated the ID before re-invoking SavePortfolio. In that
+// case the second save targets a different path entirely and the race
+// window doesn't matter.
+func WriteFileNew(path string, data []byte, perm os.FileMode) error {
+	if _, err := os.Stat(path); err == nil {
+		return fmt.Errorf("config: WriteFileNew: destination already exists: %w", os.ErrExist)
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("config: WriteFileNew: stat: %w", err)
+	}
+	return WriteFileAtomic(path, data, perm)
+}

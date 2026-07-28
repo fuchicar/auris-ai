@@ -75,12 +75,13 @@ func SessionsDir() (string, error) {
 	return filepath.Join(filepath.Dir(p), "sessions"), nil
 }
 
-// NewSession creates a new session with a timestamp-based ID and the
-// placeholder title "new_session".
+// NewSession creates a new session with a timestamp-based ID (with 16 bits
+// of random entropy so two creations in the same second don't collide — see
+// issue #32) and the placeholder title "new_session".
 func NewSession() *Session {
 	now := time.Now()
 	return &Session{
-		ID:        now.Format("20060102-150405"),
+		ID:        NewTimestampID(),
 		Title:     "new_session",
 		CreatedAt: now,
 		UpdatedAt: now,
@@ -88,7 +89,11 @@ func NewSession() *Session {
 	}
 }
 
-// SaveSession writes a session to disk as a JSON file.
+// SaveSession writes a session to disk as a JSON file. On first save (the
+// destination doesn't exist yet) it uses O_EXCL semantics so a stale or
+// colliding ID never silently overwrites an existing session; on subsequent
+// saves (updating an existing session) it overwrites as today. See
+// issue #32.
 func SaveSession(s *Session) error {
 	dir, err := SessionsDir()
 	if err != nil {
@@ -102,8 +107,18 @@ func SaveSession(s *Session) error {
 		return fmt.Errorf("config: SaveSession: marshal: %w", err)
 	}
 	p := filepath.Join(dir, s.ID+".json")
-	if err := WriteFileAtomic(p, data, 0o600); err != nil {
-		return fmt.Errorf("config: SaveSession: write: %w", err)
+	_, statErr := os.Stat(p)
+	switch {
+	case statErr == nil:
+		if err := WriteFileAtomic(p, data, 0o600); err != nil {
+			return fmt.Errorf("config: SaveSession: write: %w", err)
+		}
+	case errors.Is(statErr, os.ErrNotExist):
+		if err := WriteFileNew(p, data, 0o600); err != nil {
+			return fmt.Errorf("config: SaveSession: write: %w", err)
+		}
+	default:
+		return fmt.Errorf("config: SaveSession: stat: %w", statErr)
 	}
 	return nil
 }
