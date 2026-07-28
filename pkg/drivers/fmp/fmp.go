@@ -89,7 +89,7 @@ func (d *Driver) doGet(ctx context.Context, path string, params url.Values, dest
 
 	resp, err := d.httpClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("http: %w", market.RedactURLError(err, "apikey"))
+		return fmt.Errorf("http: %w", err)
 	}
 	defer resp.Body.Close()
 
