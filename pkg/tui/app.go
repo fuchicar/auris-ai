@@ -309,8 +309,15 @@ func (a *AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.Type == tea.KeyCtrlC {
 			return a, tea.Quit
 		}
-		// Global Shift+Tab toggles between menu and agent mode.
+		// Global Shift+Tab toggles between menu and agent mode. Swallowed
+		// while inference is streaming — toggling would discard the
+		// AgentModel without cancelling the in-flight LLM call (issue #25),
+		// consistent with handleKey's own key-block during streaming
+		// (screen_agent.go:505-519).
 		if msg.Type == tea.KeyShiftTab && (a.screen == ScreenMenu || a.screen == ScreenAgent) {
+			if am, ok := a.current.(*AgentModel); ok && am.streaming {
+				return a, nil
+			}
 			return a.toggleMode()
 		}
 
