@@ -3,6 +3,8 @@ package tui
 import (
 	"testing"
 
+	tea "github.com/charmbracelet/bubbletea"
+
 	"github.com/fuchicar/auris-ai/pkg/config"
 	"github.com/fuchicar/auris-ai/pkg/portfolio"
 )
@@ -213,6 +215,49 @@ func TestHandleAgentCommand_AfterPortfolioExit_SessionBehavesAsGlobal(t *testing
 	}
 	if sel.currentID != globalSession.ID {
 		t.Errorf("currentID = %q, want %q (global session, not the portfolio's)", sel.currentID, globalSession.ID)
+	}
+}
+
+// TestUpdate_ShiftTabDuringStreaming_DoesNotToggle verifies issue #25:
+// the global Shift+Tab intercept in AppModel.Update must not discard the
+// AgentModel (and its in-flight LLM call) while streaming is true.
+func TestUpdate_ShiftTabDuringStreaming_DoesNotToggle(t *testing.T) {
+	am := &AgentModel{streaming: true}
+	a := &AppModel{
+		cfg:     &config.AurisConfig{},
+		screen:  ScreenAgent,
+		styles:  NewStyles(ThemeDark),
+		current: am,
+	}
+
+	updated, _ := a.Update(tea.KeyMsg{Type: tea.KeyShiftTab})
+	got := updated.(*AppModel)
+
+	if got.screen != ScreenAgent {
+		t.Errorf("screen = %v, want ScreenAgent (Shift+Tab must be swallowed while streaming)", got.screen)
+	}
+	if got.current != am {
+		t.Errorf("current model was replaced; AgentModel must survive Shift+Tab while streaming")
+	}
+}
+
+// TestUpdate_ShiftTabNotStreaming_TogglesToMenu verifies the normal
+// (non-streaming) Shift+Tab behavior is unchanged.
+func TestUpdate_ShiftTabNotStreaming_TogglesToMenu(t *testing.T) {
+	am := &AgentModel{streaming: false}
+	a := &AppModel{
+		cfg:         &config.AurisConfig{},
+		screen:      ScreenAgent,
+		flowContext: FlowAgent,
+		styles:      NewStyles(ThemeDark),
+		current:     am,
+	}
+
+	updated, _ := a.Update(tea.KeyMsg{Type: tea.KeyShiftTab})
+	got := updated.(*AppModel)
+
+	if got.screen != ScreenMenu {
+		t.Errorf("screen = %v, want ScreenMenu", got.screen)
 	}
 }
 
