@@ -17,7 +17,13 @@ import (
 const apiKeyConnectTimeout = 15 * time.Second
 
 // connectResultMsg carries the outcome of an asynchronous API key validation.
-type connectResultMsg struct{ err error }
+// gen ties it back to the connectGen that was current when the connect
+// attempt started, so a stale result (superseded by Esc or a new attempt)
+// can be detected and ignored on receipt.
+type connectResultMsg struct {
+	err error
+	gen int
+}
 
 // APIKeyModel collects the user's API key for the selected provider, validates
 // it by calling Connect, and emits [ScreenDoneMsg] on success. When optional is
@@ -34,6 +40,7 @@ type APIKeyModel struct {
 	input      textinput.Model
 	spin       spinner.Model
 	connecting bool
+	connectGen int
 	err        string
 	styles     *Styles
 }
@@ -65,6 +72,9 @@ func (m *APIKeyModel) Init() tea.Cmd { return textinput.Blink }
 func (m *APIKeyModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case connectResultMsg:
+		if msg.gen != m.connectGen {
+			return m, nil // stale: Esc cancelled it, or a newer attempt superseded it
+		}
 		m.connecting = false
 		if msg.err != nil {
 			m.err = locale.Tp("setup.apikey.error", map[string]any{"Error": msg.err.Error()})
@@ -87,16 +97,20 @@ func (m *APIKeyModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case tea.KeyMsg:
-		if !m.connecting && m.optional && msg.Type == tea.KeyEsc {
-			from, entry := m.from, m.entry
-			return m, func() tea.Msg {
-				return ScreenDoneMsg{
-					From:   from,
-					Result: APIKeyResult{Entry: entry, APIKey: ""},
+		if msg.Type == tea.KeyEsc && (m.optional || m.canGoBack) {
+			// Invalidate any in-flight connect attempt so a late
+			// connectResultMsg can't clobber state after we've navigated away.
+			m.connectGen++
+			m.connecting = false
+			if m.optional {
+				from, entry := m.from, m.entry
+				return m, func() tea.Msg {
+					return ScreenDoneMsg{
+						From:   from,
+						Result: APIKeyResult{Entry: entry, APIKey: ""},
+					}
 				}
 			}
-		}
-		if !m.connecting && m.canGoBack && msg.Type == tea.KeyEsc {
 			from := m.from
 			return m, func() tea.Msg {
 				return ScreenDoneMsg{From: from, Result: nil}
@@ -106,9 +120,11 @@ func (m *APIKeyModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.connecting = true
 			m.err = ""
 			m.input.Blur()
+			m.connectGen++
+			gen := m.connectGen
 			apiKey := m.input.Value()
 			entry := m.entry
-			return m, tea.Batch(m.spin.Tick, connectCmd(entry, apiKey))
+			return m, tea.Batch(m.spin.Tick, connectCmd(entry, apiKey, gen))
 		}
 	}
 
@@ -122,13 +138,14 @@ func (m *APIKeyModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 // connectCmd returns a [tea.Cmd] that constructs the driver, calls Connect with
-// a timeout, and wraps the outcome in a [connectResultMsg].
-func connectCmd(entry registry.MarketEntry, apiKey string) tea.Cmd {
+// a timeout, and wraps the outcome in a [connectResultMsg]. gen is echoed back
+// unchanged so the receiver can detect a stale result.
+func connectCmd(entry registry.MarketEntry, apiKey string, gen int) tea.Cmd {
 	return func() tea.Msg {
 		driver := entry.New(apiKey)
 		ctx, cancel := context.WithTimeout(context.Background(), apiKeyConnectTimeout)
 		defer cancel()
-		return connectResultMsg{err: driver.Connect(ctx)}
+		return connectResultMsg{err: driver.Connect(ctx), gen: gen}
 	}
 }
 
@@ -145,30 +162,34 @@ func (m *APIKeyModel) View() string {
 	docsLink := m.styles.DocsURL.Render(m.entry.DocsURL)
 	inputLabel := m.styles.Unselected.Render(locale.T(labelKey))
 
-	var status string
+	var statusLine string
 	if m.connecting {
-		status = m.styles.Hint.Render(
+		statusLine = m.styles.Hint.Render(
 			fmt.Sprintf("%s %s", m.spin.View(), locale.T("setup.apikey.connecting")),
 		)
 	} else if m.err != "" {
-		status = m.styles.Error.Render(fmt.Sprintf("✗ %s", m.err))
-	} else {
-		hintText := locale.T(hintKey)
-		if m.canGoBack {
-			hintText += "  " + locale.T("hint.esc_back")
-		}
-		status = m.styles.Hint.Render(hintText)
+		statusLine = m.styles.Error.Render(fmt.Sprintf("✗ %s", m.err))
 	}
 
+	hintText := locale.T(hintKey)
+	if m.canGoBack {
+		hintText += "  " + locale.T("hint.esc_back")
+	}
+	hintLine := m.styles.Hint.Render(hintText)
+
 	inp := m.styles.Input.Render(m.input.View())
-	return lipgloss.JoinVertical(lipgloss.Left,
+	parts := []string{
 		providerName,
 		explain,
 		"",
-		docsLabel+" "+docsLink,
+		docsLabel + " " + docsLink,
 		"",
 		inputLabel,
 		inp,
-		status,
-	)
+	}
+	if statusLine != "" {
+		parts = append(parts, statusLine)
+	}
+	parts = append(parts, hintLine)
+	return lipgloss.JoinVertical(lipgloss.Left, parts...)
 }
