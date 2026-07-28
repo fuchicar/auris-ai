@@ -195,6 +195,120 @@ func TestLoadPortfolio_NotFound(t *testing.T) {
 	}
 }
 
+// ─── Issue #32: ID uniqueness + O_EXCL on create ──────────────────────────────
+
+func TestNewPortfolio_UniqueIDsInSameSecond(t *testing.T) {
+	// 1000 back-to-back NewPortfolio calls must all produce distinct IDs even
+	// though they almost certainly happen within the same wall-clock second.
+	// Pre-fix, all 1000 shared the same 1-second timestamp and SavePortfolio
+	// would silently overwrite the previous one.
+	const n = 1000
+	seen := make(map[string]struct{}, n)
+	for i := 0; i < n; i++ {
+		id := NewPortfolio("p").ID
+		if _, dup := seen[id]; dup {
+			t.Fatalf("duplicate ID %q after %d calls", id, i)
+		}
+		seen[id] = struct{}{}
+	}
+}
+
+func TestSavePortfolio_TwoSameSecondCreatesDoNotClobber(t *testing.T) {
+	tmp := t.TempDir()
+	dir := filepath.Join(tmp, "portfolios")
+	origDir := portfoliosDirOverride
+	portfoliosDirOverride = dir
+	t.Cleanup(func() { portfoliosDirOverride = origDir })
+
+	// Two back-to-back NewPortfolio calls — they're guaranteed to share the
+	// same second on a fast runner; the entropy suffix is what differentiates
+	// their IDs. Saving both must produce two distinct files.
+	p1 := NewPortfolio("first")
+	p2 := NewPortfolio("second")
+	if p1.ID == p2.ID {
+		t.Fatalf("precondition failed: NewPortfolio IDs collided: %q", p1.ID)
+	}
+
+	if err := SavePortfolio(p1); err != nil {
+		t.Fatalf("SavePortfolio p1: %v", err)
+	}
+	if err := SavePortfolio(p2); err != nil {
+		t.Fatalf("SavePortfolio p2: %v", err)
+	}
+
+	for _, id := range []string{p1.ID, p2.ID} {
+		if _, err := os.Stat(filepath.Join(dir, id+".json")); err != nil {
+			t.Errorf("expected file %s.json on disk, got: %v", id, err)
+		}
+	}
+
+	loaded1, err := LoadPortfolio(p1.ID)
+	if err != nil || loaded1 == nil || loaded1.Name != "first" {
+		t.Errorf("LoadPortfolio(p1) = %+v, %v; want Name=first", loaded1, err)
+	}
+	loaded2, err := LoadPortfolio(p2.ID)
+	if err != nil || loaded2 == nil || loaded2.Name != "second" {
+		t.Errorf("LoadPortfolio(p2) = %+v, %v; want Name=second", loaded2, err)
+	}
+}
+
+func TestSavePortfolio_UpdateStillOverwrites(t *testing.T) {
+	tmp := t.TempDir()
+	dir := filepath.Join(tmp, "portfolios")
+	origDir := portfoliosDirOverride
+	portfoliosDirOverride = dir
+	t.Cleanup(func() { portfoliosDirOverride = origDir })
+
+	p := NewPortfolio("original")
+	if err := SavePortfolio(p); err != nil {
+		t.Fatalf("first SavePortfolio: %v", err)
+	}
+
+	p.Name = "updated"
+	if err := SavePortfolio(p); err != nil {
+		t.Fatalf("second SavePortfolio (update): %v", err)
+	}
+
+	loaded, err := LoadPortfolio(p.ID)
+	if err != nil || loaded == nil {
+		t.Fatalf("LoadPortfolio: %+v, %v", loaded, err)
+	}
+	if loaded.Name != "updated" {
+		t.Errorf("Name = %q, want %q (update path should overwrite, not fail)", loaded.Name, "updated")
+	}
+}
+
+func TestSavePortfolio_CreatePathRefusesExistingDestination(t *testing.T) {
+	// SavePortfolio dispatches to config.WriteFileNew on the create branch
+	// (when the destination doesn't exist). That function is O_EXCL-style,
+	// so once a file exists at the target path, a subsequent WriteFileNew
+	// must fail without overwriting. We exercise it directly here so the
+	// test is independent of SavePortfolio's own stat-branch selection.
+	tmp := t.TempDir()
+	dir := filepath.Join(tmp, "portfolios")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	path := filepath.Join(dir, "manual-id.json")
+	if err := config.WriteFileNew(path, []byte(`{"placeholder":true}`), 0o600); err != nil {
+		t.Fatalf("first WriteFileNew: %v", err)
+	}
+
+	err := config.WriteFileNew(path, []byte(`{"placeholder":false}`), 0o600)
+	if err == nil {
+		t.Fatal("expected O_EXCL error on second WriteFileNew, got nil")
+	}
+
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != `{"placeholder":true}` {
+		t.Errorf("file was overwritten despite O_EXCL: %q", got)
+	}
+}
+
 // ─── Transaction tests ─────────────────────────────────────────────────────────
 
 func TestRecordTransaction_AppendsAndAdjustsCash(t *testing.T) {
@@ -368,14 +482,12 @@ func TestReencryptAllPortfolios(t *testing.T) {
 	t.Cleanup(func() { portfoliosDirOverride = origDir })
 	t.Cleanup(func() { config.SetStorageKey(nil) })
 
-	// Start plaintext (nil key), create two portfolios. NewPortfolio's ID has
-	// only second resolution, so assign distinct IDs explicitly to avoid a
-	// collision between p1 and p2 created in the same test.
+	// Start plaintext (nil key), create two portfolios. NewPortfolio now
+	// produces IDs with 16 bits of random entropy (issue #32), so two
+	// same-second creations never collide — no manual ID overrides needed.
 	config.SetStorageKey(nil)
 	p1 := NewPortfolio("Portfolio One")
-	p1.ID = "20260101-000001"
 	p2 := NewPortfolio("Portfolio Two")
-	p2.ID = "20260101-000002"
 	if err := SavePortfolio(p1); err != nil {
 		t.Fatalf("SavePortfolio p1: %v", err)
 	}
