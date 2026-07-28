@@ -662,12 +662,25 @@ func (a *AppModel) transition(msg ScreenDoneMsg) (tea.Model, tea.Cmd) {
 		}
 
 		if a.managingMarketProviders {
+			if !resultOK {
+				// Esc-back: return to the provider checklist without saving
+				// this (or any later still-queued) provider.
+				a.pendingMarketProviders = nil
+				a.pendingMarketIdx = 0
+				preSelected := make(map[string]bool, len(a.cfg.Providers))
+				for k := range a.cfg.Providers {
+					preSelected[k] = true
+				}
+				a.screen = ScreenMarketProviderManage
+				a.current = newMarketProviderManageModel(a.styles, a.marketProviderOrder(), preSelected, true)
+				return a, a.current.Init()
+			}
 			// /marketproviders flow: advance through the queue of newly-added
 			// providers, same pattern as ScreenAIProviderConfig for /aiproviders.
 			a.pendingMarketIdx++
 			if a.pendingMarketIdx < len(a.pendingMarketProviders) {
 				nextEntry, _ := findMarketEntry(a.pendingMarketProviders[a.pendingMarketIdx])
-				a.current = newAPIKeyModel(nextEntry, a.styles, ScreenAPIKey, false, false)
+				a.current = newAPIKeyModel(nextEntry, a.styles, ScreenAPIKey, false, true)
 				return a, a.current.Init()
 			}
 			a.managingMarketProviders = false
@@ -1786,7 +1799,7 @@ func (a *AppModel) applyMarketProviderSelection(newKeys []string) (tea.Model, te
 		a.pendingMarketIdx = 0
 		entry, _ := findMarketEntry(toAdd[0])
 		a.screen = ScreenAPIKey
-		a.current = newAPIKeyModel(entry, a.styles, ScreenAPIKey, false, false)
+		a.current = newAPIKeyModel(entry, a.styles, ScreenAPIKey, false, true)
 		return a, a.current.Init()
 	}
 
