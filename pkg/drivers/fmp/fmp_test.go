@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"math"
+	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"testing"
@@ -600,4 +602,43 @@ func assertCandlesNonZero(t *testing.T, candles []market.Candle) {
 		}
 	}
 	t.Error("no candle with Open > 0 and Close > 0")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Issue #31 — el API key no debe filtrarse en errores de transporte
+// ─────────────────────────────────────────────────────────────────────────────
+
+// urlErrorTransport implementa http.RoundTripper devolviendo un *url.Error
+// con la URL completa (incluyendo el API key) y un error subyacente —
+// replica exactamente lo que http.Transport emite en un fallo de DNS/TLS.
+// Determinista y hermético, sin red real.
+type urlErrorTransport struct{}
+
+func (urlErrorTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	return nil, &url.Error{
+		Op:  "Get",
+		URL: req.URL.String(),
+		Err: errors.New("dial tcp: lookup financialmodelingprep.com: no such host"),
+	}
+}
+
+// TestTransportError_NoAPIKeyLeak verifica que un error de transporte
+// (DNS, TLS, timeout) que llegue a través de doGet no exponga el API key
+// en err.Error() — el error llega luego al LLM y se persiste en disco.
+func TestTransportError_NoAPIKeyLeak(t *testing.T) {
+	const canary = "CANARY_FMP_API_KEY"
+
+	d := fmp.New(canary, fmp.WithHTTPClient(&http.Client{Transport: urlErrorTransport{}}))
+	// Connect sólo valida la key devolviendo un *url.Error, no hace falta
+	// mock más complejo — el camino de sanitización está dentro de doGet.
+	err := d.Connect(bg())
+	if err == nil {
+		t.Fatal("expected transport error, got nil")
+	}
+	if strings.Contains(err.Error(), canary) {
+		t.Errorf("API key leaked into transport error: %s", err.Error())
+	}
+	if !strings.Contains(err.Error(), "REDACTED") {
+		t.Errorf("expected apikey=REDACTED in sanitized URL, got: %s", err.Error())
+	}
 }
