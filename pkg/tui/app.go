@@ -303,12 +303,19 @@ func (a *AppModel) Update(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
 	// terminal. Re-inject the known size into any screen that turns out to
 	// be new by the time this call returns, regardless of how deep the call
 	// chain that replaced it went (issue #34).
+	//
+	// During the setup wizard the step indicator line (+blank separator) is
+	// prepended in [View], so the inner screen has `a.height -
+	// wizardStepLines` rows to render into. Screens with height-aware
+	// windowing (issue #35) treat that effective height as their budget so
+	// long lists don't push past the bottom of the panel.
 	prevScreen := a.current
 	defer func() {
 		if a.current == prevScreen {
 			return
 		}
-		updated, sizeCmd := a.current.Update(tea.WindowSizeMsg{Width: a.width, Height: a.height})
+		wizardH := a.wizardStepLines()
+		updated, sizeCmd := a.current.Update(tea.WindowSizeMsg{Width: a.width, Height: a.height - wizardH})
 		a.current = updated
 		cmd = tea.Batch(cmd, sizeCmd)
 	}()
@@ -318,8 +325,14 @@ func (a *AppModel) Update(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
 		a.width = msg.Width
 		a.height = msg.Height
 		// Always forward resize events so screens that need dimensions (e.g.
-		// AgentModel's viewport) can update themselves.
-		updated, cmd := a.current.Update(msg)
+		// AgentModel's viewport) can update themselves. Subtract the wizard
+		// step chrome here too — otherwise a live resize while already on a
+		// windowed wizard screen (ScreenProfile, ScreenProvider, etc.) would
+		// seed it with the full terminal height while the screen-creation
+		// path (the defer above) seeds the height-minus-chrome value, so the
+		// same screen would compute two different budgets depending on
+		// whether it just got created or just got resized.
+		updated, cmd := a.current.Update(tea.WindowSizeMsg{Width: a.width, Height: a.height - a.wizardStepLines()})
 		a.current = updated
 		return a, cmd
 
@@ -450,6 +463,18 @@ func (a *AppModel) wizardStep() (current, total int, ok bool) {
 		return 0, 0, false
 	}
 	return current, total, true
+}
+
+// wizardStepLines returns the number of terminal rows the "Step N/M"
+// indicator + blank separator occupies in the rendered output (2 when the
+// current screen is part of the wizard, 0 otherwise). Returns 0 also when
+// the program is past first-run setup, so callers can use it unconditionally
+// to subtract from a screen's effective height.
+func (a *AppModel) wizardStepLines() int {
+	if _, _, ok := a.wizardStep(); !ok {
+		return 0
+	}
+	return 2 // step line + blank
 }
 
 // wizardStepLine renders the "Step N/M" indicator line for the active setup

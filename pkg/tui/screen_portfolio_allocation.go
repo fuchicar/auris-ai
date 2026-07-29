@@ -43,6 +43,7 @@ type portfolioAllocationModel struct {
 	portfolio *portfolio.Portfolio
 	rows      []allocationRow
 	cursor    int
+	scrollOff int
 	mode      allocationMode
 
 	weightInput textinput.Model
@@ -51,6 +52,7 @@ type portfolioAllocationModel struct {
 	infoMsg   string
 	infoIsErr bool
 
+	height int // terminal height (updated by WindowSizeMsg)
 	styles *Styles
 }
 
@@ -93,6 +95,10 @@ func (m *portfolioAllocationModel) Init() tea.Cmd {
 }
 
 func (m *portfolioAllocationModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if ws, ok := msg.(tea.WindowSizeMsg); ok {
+		m.height = ws.Height
+		return m, nil
+	}
 	if key, ok := msg.(tea.KeyMsg); ok {
 		return m.handleKey(key)
 	}
@@ -114,10 +120,12 @@ func (m *portfolioAllocationModel) handleList(key tea.KeyMsg) (tea.Model, tea.Cm
 	case tea.KeyUp:
 		if m.cursor > 0 {
 			m.cursor--
+			m.scrollOff = clampScrollOff(m.cursor, m.scrollOff, m.maxVisible())
 		}
 	case tea.KeyDown:
 		if m.cursor < len(m.rows)-1 {
 			m.cursor++
+			m.scrollOff = clampScrollOff(m.cursor, m.scrollOff, m.maxVisible())
 		}
 	case tea.KeyEnter:
 		if len(m.rows) == 0 {
@@ -192,6 +200,52 @@ func (m *portfolioAllocationModel) commit() {
 	m.infoIsErr = false
 }
 
+// chromeBelow returns the number of terminal rows the allocation screen
+// renders below the row list. Uses [lipgloss.Height] on each rendered piece
+// so bordered boxes (WarnBox, Input) and wrapping warning copy are measured
+// exactly — hand-counted constants undercounted them in the first cut of
+// this code, letting long allocations spill past the terminal height
+// (issue #35 review feedback).
+func (m *portfolioAllocationModel) chromeBelow() int {
+	n := 0
+	// blank line that introduces [viewTotal]
+	n++
+	n += lipgloss.Height(m.viewTotal())
+	if m.infoMsg != "" {
+		n++
+		if m.infoIsErr {
+			n += lipgloss.Height(m.styles.Error.Render(m.infoMsg))
+		} else {
+			n += lipgloss.Height(m.styles.Hint.Render(m.infoMsg))
+		}
+	}
+	if m.mode == allocModeEdit {
+		// blank line that introduces the edit panel + the panel itself.
+		n++
+		for _, line := range m.viewEdit() {
+			n += lipgloss.Height(line)
+		}
+	}
+	// blank + hint at the very bottom.
+	n += 1 + lipgloss.Height(m.styles.Hint.Render(locale.T("portfolio.allocation.hint")))
+	return n
+}
+
+// maxVisible returns the number of allocation rows that fit in the terminal,
+// accounting for the title, total-line, blank separators, hint, and — in
+// edit mode — the input form panel below the list. Reserves 2 lines for the
+// worst-case up + down scroll indicators.
+func (m *portfolioAllocationModel) maxVisible() int {
+	if m.height == 0 {
+		return 20
+	}
+	n := m.height - 2 - m.chromeBelow() - 2 // 2 chrome-above (title + blank) + 2 indicator reserve
+	if n < 0 {
+		return 0
+	}
+	return n
+}
+
 func (m *portfolioAllocationModel) View() string {
 	var parts []string
 	parts = append(parts, m.styles.Selected.Render(locale.T("portfolio.allocation.title")), "")
@@ -199,7 +253,18 @@ func (m *portfolioAllocationModel) View() string {
 	if len(m.rows) == 0 {
 		parts = append(parts, m.styles.Hint.Render(locale.T("portfolio.allocation.empty")))
 	} else {
-		parts = append(parts, m.viewRows()...)
+		rows := windowedRows(WindowedRowOpts{
+			Height:           m.height,
+			ScrollOff:        m.scrollOff,
+			Cursor:           m.cursor,
+			Total:            len(m.rows),
+			ChromeAbove:      2, // title (1) + blank (1)
+			ChromeBelow:      m.chromeBelow(),
+			IndicatorReserve: 2,
+			RenderRow:        m.renderRow,
+			HintRender:       func(s string) string { return m.styles.Hint.Render(s) },
+		})
+		parts = append(parts, rows...)
 		parts = append(parts, "", m.viewTotal())
 	}
 
@@ -223,19 +288,25 @@ func (m *portfolioAllocationModel) View() string {
 
 func (m *portfolioAllocationModel) viewRows() []string {
 	rows := make([]string, 0, len(m.rows))
-	for i, r := range m.rows {
-		badge := ""
-		if !r.Held {
-			badge = " " + m.styles.Hint.Render("("+locale.T("portfolio.allocation.not_held_badge")+")")
-		}
-		line := fmt.Sprintf("%-10s %6.1f%%%s", r.Symbol, r.Weight*100, badge)
-		if i == m.cursor {
-			rows = append(rows, fmt.Sprintf("%s %s", m.styles.Cursor.Render(">"), m.styles.Selected.Render(line)))
-		} else {
-			rows = append(rows, fmt.Sprintf("  %s", m.styles.Unselected.Render(line)))
-		}
+	for i := range m.rows {
+		rows = append(rows, m.renderRow(i))
 	}
 	return rows
+}
+
+// renderRow returns the visible allocation line for index i. Pure rendering —
+// no chrome/header concern here, just the data line.
+func (m *portfolioAllocationModel) renderRow(i int) string {
+	r := m.rows[i]
+	badge := ""
+	if !r.Held {
+		badge = " " + m.styles.Hint.Render("("+locale.T("portfolio.allocation.not_held_badge")+")")
+	}
+	line := fmt.Sprintf("%-10s %6.1f%%%s", r.Symbol, r.Weight*100, badge)
+	if i == m.cursor {
+		return fmt.Sprintf("%s %s", m.styles.Cursor.Render(">"), m.styles.Selected.Render(line))
+	}
+	return fmt.Sprintf("  %s", m.styles.Unselected.Render(line))
 }
 
 func (m *portfolioAllocationModel) viewTotal() string {

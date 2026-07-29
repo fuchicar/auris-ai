@@ -229,13 +229,33 @@ func (m *portfolioCreateModel) Init() tea.Cmd {
 	return tea.Batch(m.spin.Tick, textinput.Blink)
 }
 
+// pcListChromeAbove/pcListChromeBelow are the single source of truth for the
+// currency- and model-picker lists' chrome budget: outer [View] renders
+// title (3 — Title style content + Padding(1,0)) + progress (1) + blank (1)
+// = 5 lines above the body, and each picker step adds its own Subtitle/label
+// (2 lines) above the rows; chromeBelow is the hint line below. maxVisible
+// and every renderScrollList call site share these two constants instead of
+// repeating the numbers, so the key-press clamp budget and the render budget
+// can't drift apart again (they previously did: maxVisible was left at the
+// pre-outer-chrome numbers after the render call sites were corrected).
+const (
+	pcListChromeAbove = 7 // 5 (outer title+progress+blank) + 2 (local Subtitle/label)
+	pcListChromeBelow = 1 // hint
+)
+
+// maxVisible mirrors the budget [renderScrollList] computes internally via
+// [windowedRows], using the same [pcListChromeAbove]/[pcListChromeBelow]
+// constants every call site passes, plus the 2-line indicator reserve
+// windowedRows always reserves. Kept in sync structurally (shared constants)
+// since this is used for scrollOff clamping on key presses, ahead of the
+// render that owns the real chrome numbers.
 func (m *portfolioCreateModel) maxVisible() int {
 	if m.height == 0 {
 		return 12
 	}
-	n := m.height - 6
-	if n < 3 {
-		return 3
+	n := m.height - pcListChromeAbove - pcListChromeBelow - 2 // + 2-line indicator reserve
+	if n < 0 {
+		return 0
 	}
 	return n
 }
@@ -528,7 +548,7 @@ func (m *portfolioCreateModel) View() string {
 		for i, c := range m.currencies {
 			labels[i] = fmt.Sprintf("%s (%s)", c, finance.CurrencySymbol(c))
 		}
-		rows := m.renderScrollList(labels, m.currencyCursor, m.currencyScrollOff, m.maxVisible())
+		rows := m.renderScrollList(labels, m.currencyCursor, m.currencyScrollOff, m.height, pcListChromeAbove, pcListChromeBelow)
 		hint := m.styles.Hint.Render(locale.T("portfolio.create.currency.hint"))
 		body = append(body, label)
 		body = append(body, rows...)
@@ -555,8 +575,6 @@ func (m *portfolioCreateModel) View() string {
 }
 
 func (m *portfolioCreateModel) viewModelPicker() []string {
-	maxVis := m.maxVisible()
-
 	switch m.modelStep {
 	case pmStepProvider:
 		title := m.styles.Subtitle.Render(locale.T("setup.ai.model.provider.label"))
@@ -564,7 +582,7 @@ func (m *portfolioCreateModel) viewModelPicker() []string {
 		for i, e := range m.entries {
 			labels[i] = e.DisplayName
 		}
-		rows := m.renderScrollList(labels, m.provCursor, m.provScrollOff, maxVis)
+		rows := m.renderScrollList(labels, m.provCursor, m.provScrollOff, m.height, pcListChromeAbove, pcListChromeBelow)
 		hint := m.styles.Hint.Render(locale.T("portfolio.create.model.hint"))
 		result := []string{title}
 		result = append(result, rows...)
@@ -597,7 +615,7 @@ func (m *portfolioCreateModel) viewModelPicker() []string {
 					labels[i] = mod.ID
 				}
 			}
-			rows = m.renderScrollList(labels, m.modelCursor, m.modelScrollOff, maxVis)
+			rows = m.renderScrollList(labels, m.modelCursor, m.modelScrollOff, m.height, pcListChromeAbove, pcListChromeBelow)
 		}
 		var hintText string
 		if len(m.entries) > 1 {
@@ -614,24 +632,29 @@ func (m *portfolioCreateModel) viewModelPicker() []string {
 	return nil
 }
 
-func (m *portfolioCreateModel) renderScrollList(items []string, cursor, scrollOff, maxVis int) []string {
-	end := scrollOff + maxVis
-	if end > len(items) {
-		end = len(items)
-	}
-	var rows []string
-	if scrollOff > 0 {
-		rows = append(rows, m.styles.Hint.Render(locale.T("setup.ai.model.scroll_up")))
-	}
-	for i := scrollOff; i < end; i++ {
+// renderScrollList renders a windowed list of items, applying the cursor
+// style and surfacing "↑ more above" / "↓ more below" indicators when the
+// list overflows what fits in [height] rows given [chromeAbove]/[chromeBelow].
+// It calls through to the package-level [windowedRows] helper; this wrapper
+// exists so callers stay a single-method call site that injects the styling
+// closures.
+func (m *portfolioCreateModel) renderScrollList(items []string, cursor, scrollOff, height, chromeAbove, chromeBelow int) []string {
+	render := func(i int) string {
 		if i == cursor {
-			rows = append(rows, fmt.Sprintf("%s %s", m.styles.Cursor.Render(">"), m.styles.Selected.Render(items[i])))
-		} else {
-			rows = append(rows, fmt.Sprintf("  %s", m.styles.Unselected.Render(items[i])))
+			return fmt.Sprintf("%s %s", m.styles.Cursor.Render(">"), m.styles.Selected.Render(items[i]))
 		}
+		return fmt.Sprintf("  %s", m.styles.Unselected.Render(items[i]))
 	}
-	if end < len(items) {
-		rows = append(rows, m.styles.Hint.Render(locale.T("setup.ai.model.scroll_down")))
-	}
-	return rows
+	hint := func(s string) string { return m.styles.Hint.Render(s) }
+	return windowedRows(WindowedRowOpts{
+		Height:           height,
+		ScrollOff:        scrollOff,
+		Cursor:           cursor,
+		Total:            len(items),
+		ChromeAbove:      chromeAbove,
+		ChromeBelow:      chromeBelow,
+		IndicatorReserve: 2,
+		RenderRow:        render,
+		HintRender:       hint,
+	})
 }
