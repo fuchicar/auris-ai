@@ -18,6 +18,8 @@ import (
 type ProfileModel struct {
 	question   int                       // index of the current question (0–9)
 	cursor     int                       // focused option row
+	scrollOff  int                       // first visible option index (new screens windowed)
+	height     int                       // terminal height (updated by WindowSizeMsg)
 	singleSel  map[int]string            // q index → selected option key
 	multiSel   map[int]map[string]bool   // q index → option key → selected
 	textValues map[int]map[string]string // q index → option key → typed text
@@ -94,6 +96,10 @@ func (m *ProfileModel) Init() tea.Cmd { return nil }
 
 // Update implements [tea.Model].
 func (m *ProfileModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if ws, ok := msg.(tea.WindowSizeMsg); ok {
+		m.height = ws.Height
+		return m, nil
+	}
 	if m.inputMode {
 		return m.updateInputMode(msg)
 	}
@@ -143,10 +149,12 @@ func (m *ProfileModel) updateSelectMode(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyUp:
 		if m.cursor > 0 {
 			m.cursor--
+			m.scrollOff = clampScrollOff(m.cursor, m.scrollOff, m.maxVisible())
 		}
 	case tea.KeyDown:
 		if m.cursor < len(q.Options)-1 {
 			m.cursor++
+			m.scrollOff = clampScrollOff(m.cursor, m.scrollOff, m.maxVisible())
 		}
 
 	case tea.KeySpace:
@@ -251,6 +259,34 @@ func (m *ProfileModel) buildProfile() config.FinancialProfile {
 	}
 }
 
+// chromeBelow returns the number of terminal rows the profile screen renders
+// below the option list (hint, plus the free-text input field in inputMode,
+// plus its trailing lines).
+func (m *ProfileModel) chromeBelow() int {
+	// hint (1). In inputMode: input field (1) above the hint.
+	n := 1
+	if m.inputMode {
+		// input field (1) + blank (1) above the hint — keep budget exact.
+		n += 2
+	}
+	return n
+}
+
+// maxVisible returns the number of option rows that fit in the terminal
+// after the progress line, question label, hint, optional input field, and
+// the worst-case two scroll indicators are accounted for.
+func (m *ProfileModel) maxVisible() int {
+	if m.height == 0 {
+		return 20
+	}
+	// chrome above: progress (1) + label (2 — Subtitle content + MarginBottom).
+	n := m.height - 3 - m.chromeBelow() - 2 // 3 chrome-above + chrome-below + 2 indicator reserve
+	if n < 0 {
+		return 0
+	}
+	return n
+}
+
 // View implements [tea.Model].
 func (m *ProfileModel) View() string {
 	q := Questions[m.question]
@@ -263,45 +299,17 @@ func (m *ProfileModel) View() string {
 	)
 	label := m.styles.Subtitle.Render(locale.T(q.LabelKey))
 
-	var rows []string
-	for i, opt := range q.Options {
-		label := locale.T(opt.LabelKey)
-		var row string
-
-		switch q.Type {
-		case SingleSelect:
-			if i == m.cursor {
-				row = fmt.Sprintf("%s %s", m.styles.Cursor.Render(">"), m.styles.Selected.Render(label))
-			} else {
-				row = fmt.Sprintf("  %s", m.styles.Unselected.Render(label))
-			}
-
-		case MultiSelect:
-			checked := m.multiSel[m.question] != nil && m.multiSel[m.question][opt.Key]
-			box := "[ ]"
-			if checked {
-				box = "[x]"
-			}
-			checkbox := m.styles.Checkbox.Render(box)
-			cursor := "  "
-			if i == m.cursor {
-				cursor = m.styles.Cursor.Render(">")
-			}
-			optLabel := m.styles.Unselected.Render(label)
-			if i == m.cursor {
-				optLabel = m.styles.Selected.Render(label)
-			}
-			row = fmt.Sprintf("%s %s %s", cursor, checkbox, optLabel)
-		}
-		rows = append(rows, row)
-
-		// Show stored text value under checked options that collected text.
-		if q.Type == MultiSelect && m.textValues[m.question] != nil {
-			if v := m.textValues[m.question][opt.Key]; v != "" {
-				rows = append(rows, m.styles.Hint.Render(fmt.Sprintf("    ↳ %s", v)))
-			}
-		}
-	}
+	rows := windowedRows(WindowedRowOpts{
+		Height:           m.height,
+		ScrollOff:        m.scrollOff,
+		Cursor:           m.cursor,
+		Total:            len(q.Options),
+		ChromeAbove:      3, // progress (1) + label (2)
+		ChromeBelow:      m.chromeBelow(),
+		IndicatorReserve: 2,
+		RenderRow:        m.renderRow,
+		HintRender:       func(s string) string { return m.styles.Hint.Render(s) },
+	})
 
 	var hintKey string
 	if m.inputMode {
@@ -324,5 +332,50 @@ func (m *ProfileModel) View() string {
 	}
 	parts = append(parts, hint)
 	return lipgloss.JoinVertical(lipgloss.Left, parts...)
+}
+
+// renderRow returns the visible option line for index i — including the
+// captured free-text sub-line for multi-select options that collected one.
+// The row is a multi-line string so JoinVertical stacks them correctly.
+func (m *ProfileModel) renderRow(i int) string {
+	q := Questions[m.question]
+	opt := q.Options[i]
+	label := locale.T(opt.LabelKey)
+	var row string
+
+	switch q.Type {
+	case SingleSelect:
+		if i == m.cursor {
+			row = fmt.Sprintf("%s %s", m.styles.Cursor.Render(">"), m.styles.Selected.Render(label))
+		} else {
+			row = fmt.Sprintf("  %s", m.styles.Unselected.Render(label))
+		}
+
+	case MultiSelect:
+		checked := m.multiSel[m.question] != nil && m.multiSel[m.question][opt.Key]
+		box := "[ ]"
+		if checked {
+			box = "[x]"
+		}
+		checkbox := m.styles.Checkbox.Render(box)
+		cursor := "  "
+		if i == m.cursor {
+			cursor = m.styles.Cursor.Render(">")
+		}
+		optLabel := m.styles.Unselected.Render(label)
+		if i == m.cursor {
+			optLabel = m.styles.Selected.Render(label)
+		}
+		row = fmt.Sprintf("%s %s %s", cursor, checkbox, optLabel)
+	}
+
+	// Show stored text value under checked multi-select options that
+	// collected text — appended on its own line beneath the row.
+	if q.Type == MultiSelect && m.textValues[m.question] != nil {
+		if v := m.textValues[m.question][opt.Key]; v != "" {
+			row += "\n" + m.styles.Hint.Render(fmt.Sprintf("    ↳ %s", v))
+		}
+	}
+	return row
 }
 
