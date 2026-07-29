@@ -112,13 +112,18 @@ func newNewsFeedsModel(s *Styles, active []news.FeedConfig, canGoBack bool) *New
 func (m *NewsFeedsModel) Init() tea.Cmd { return nil }
 
 // maxVisible returns the number of catalog rows that fit in the terminal.
+// Real chrome: title (3 lines: Title content + Padding(1,0)) above, blank
+// (1) + hint (1) below — and 2 lines reserved for both up + down scroll
+// indicators at once. The previous "n := m.height - 5" understated chrome
+// and let the catalog scroll off the top on small terminals (issue #35).
 func (m *NewsFeedsModel) maxVisible() int {
 	if m.height == 0 {
 		return 20
 	}
-	n := m.height - 5 // overhead: title + hint + scroll indicators + margin
-	if n < 3 {
-		return 3
+	// chrome above: title (3). chrome below: blank + hint = 2.
+	n := m.height - 3 - 2 - 2 // 3 chrome-above + 2 chrome-below + 2 indicator reserve
+	if n < 0 {
+		return 0
 	}
 	return n
 }
@@ -289,38 +294,17 @@ func (m *NewsFeedsModel) View() string {
 func (m *NewsFeedsModel) viewList() string {
 	title := m.styles.Title.Render(locale.T("newsfeeds.title"))
 
-	maxVis := m.maxVisible()
-	end := m.scrollOff + maxVis
-	if end > len(m.entries) {
-		end = len(m.entries)
-	}
-
-	var rows []string
-	if m.scrollOff > 0 {
-		rows = append(rows, m.styles.Hint.Render(locale.T("setup.ai.model.scroll_up")))
-	}
-	for i := m.scrollOff; i < end; i++ {
-		e := m.entries[i]
-		box := "[ ]"
-		if m.selected[e.Feed.URL] {
-			box = "[x]"
-		}
-		checkbox := m.styles.Checkbox.Render(box)
-		cursor := "  "
-		label := fmt.Sprintf("%s (%s)", e.Feed.Name, e.Feed.Language)
-		if !e.IsDefault {
-			label = fmt.Sprintf("%s %s", label, locale.T("newsfeeds.custom_tag"))
-		}
-		style := m.styles.Unselected
-		if i == m.cursor {
-			cursor = m.styles.Cursor.Render(">")
-			style = m.styles.Selected
-		}
-		rows = append(rows, fmt.Sprintf("%s %s %s", cursor, checkbox, style.Render(label)))
-	}
-	if end < len(m.entries) {
-		rows = append(rows, m.styles.Hint.Render(locale.T("setup.ai.model.scroll_down")))
-	}
+	rows := windowedRows(WindowedRowOpts{
+		Height:           m.height,
+		ScrollOff:        m.scrollOff,
+		Cursor:           m.cursor,
+		Total:            len(m.entries),
+		ChromeAbove:      3, // Title style = content + Padding(1,0)
+		ChromeBelow:      2, // blank + hint
+		IndicatorReserve: 2,
+		RenderRow:        m.renderRow,
+		HintRender:       func(s string) string { return m.styles.Hint.Render(s) },
+	})
 
 	hintText := locale.T("newsfeeds.hint")
 	if m.canGoBack {
@@ -331,6 +315,28 @@ func (m *NewsFeedsModel) viewList() string {
 	parts := append([]string{title}, rows...)
 	parts = append(parts, "", hint)
 	return lipgloss.JoinVertical(lipgloss.Left, parts...)
+}
+
+// renderRow returns the visible catalog line for index i. Pure rendering —
+// no chrome/header concern here, just the row.
+func (m *NewsFeedsModel) renderRow(i int) string {
+	e := m.entries[i]
+	box := "[ ]"
+	if m.selected[e.Feed.URL] {
+		box = "[x]"
+	}
+	checkbox := m.styles.Checkbox.Render(box)
+	cursor := "  "
+	label := fmt.Sprintf("%s (%s)", e.Feed.Name, e.Feed.Language)
+	if !e.IsDefault {
+		label = fmt.Sprintf("%s %s", label, locale.T("newsfeeds.custom_tag"))
+	}
+	style := m.styles.Unselected
+	if i == m.cursor {
+		cursor = m.styles.Cursor.Render(">")
+		style = m.styles.Selected
+	}
+	return fmt.Sprintf("%s %s %s", cursor, checkbox, style.Render(label))
 }
 
 func (m *NewsFeedsModel) viewAdd() string {

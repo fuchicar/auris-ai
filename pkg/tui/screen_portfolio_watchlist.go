@@ -32,6 +32,8 @@ type portfolioWatchlistModel struct {
 	portfolio *portfolio.Portfolio
 	rows      []portfolio.Instrument // distinct InstrumentWatchlist entries, in portfolio order
 	cursor    int
+	scrollOff int
+	height    int // terminal height (updated by WindowSizeMsg)
 
 	quotes        map[string]market.Quote
 	loadingPrices bool
@@ -96,6 +98,10 @@ func (m *portfolioWatchlistModel) fetchQuotesCmd() tea.Cmd {
 }
 
 func (m *portfolioWatchlistModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if ws, ok := msg.(tea.WindowSizeMsg); ok {
+		m.height = ws.Height
+		return m, nil
+	}
 	switch msg := msg.(type) {
 	case spinner.TickMsg:
 		if m.loadingPrices {
@@ -121,10 +127,12 @@ func (m *portfolioWatchlistModel) handleKey(key tea.KeyMsg) (tea.Model, tea.Cmd)
 	case tea.KeyUp:
 		if m.cursor > 0 {
 			m.cursor--
+			m.scrollOff = clampScrollOff(m.cursor, m.scrollOff, m.maxVisible())
 		}
 	case tea.KeyDown:
 		if m.cursor < len(m.rows)-1 {
 			m.cursor++
+			m.scrollOff = clampScrollOff(m.cursor, m.scrollOff, m.maxVisible())
 		}
 	case tea.KeyEsc:
 		p := m.portfolio
@@ -153,27 +161,72 @@ func formatWatchlistRow(ins portfolio.Instrument, q market.Quote, hasQuote bool)
 	return line, change, nonNeg
 }
 
-func (m *portfolioWatchlistModel) viewRows() []string {
-	rows := make([]string, 0, len(m.rows))
-	for i, ins := range m.rows {
-		q, ok := m.quotes[ins.Symbol]
-		line, changeText, nonNeg := formatWatchlistRow(ins, q, ok)
-
-		changeStyle := m.styles.Bear
-		if nonNeg {
-			changeStyle = m.styles.Bull
-		}
-		coloredChange := changeStyle.Render(fmt.Sprintf("%10s", changeText))
-
-		var lineRendered string
-		if i == m.cursor {
-			lineRendered = fmt.Sprintf("%s %s", m.styles.Cursor.Render(">"), m.styles.Selected.Render(line))
-		} else {
-			lineRendered = fmt.Sprintf("  %s", m.styles.Unselected.Render(line))
-		}
-		rows = append(rows, lineRendered+" "+coloredChange)
+// maxVisible returns the number of watchlist rows that fit in the terminal
+// after the title, blank separator, optional loading line, column header,
+// hint, and the worst-case two scroll indicators are accounted for.
+func (m *portfolioWatchlistModel) maxVisible() int {
+	if m.height == 0 {
+		return 20
 	}
-	return rows
+	// chrome above (rows present): title (1) + blank (1) + [loading (1) +
+	// blank (1)] + header (1). chrome below: blank + hint = 2.
+	chrome := 3
+	if m.loadingPrices && len(m.rows) > 0 {
+		chrome = 5
+	}
+	n := m.height - chrome - 2 - 2 // reserve 2 lines for up+down indicators
+	if n < 0 {
+		return 0
+	}
+	return n
+}
+
+func (m *portfolioWatchlistModel) View() string {
+	title := m.styles.Selected.Render(locale.T("portfolio.watchlist.title"))
+
+	if len(m.rows) == 0 {
+		hint := m.styles.Hint.Render(locale.T("portfolio.watchlist.empty"))
+		navHint := m.styles.Hint.Render(locale.T("portfolio.watchlist.hint"))
+		return lipgloss.JoinVertical(lipgloss.Left, title, "", hint, "", navHint)
+	}
+
+	var chrome []string
+	if m.loadingPrices {
+		chrome = append(chrome,
+			fmt.Sprintf("%s %s", locale.T("portfolio.watchlist.price_loading"), m.spin.View()),
+			"",
+		)
+	}
+	chrome = append(chrome, m.viewHeader())
+
+	rows := windowedRows(WindowedRowOpts{
+		Height:           m.height,
+		ScrollOff:        m.scrollOff,
+		Cursor:           m.cursor,
+		Total:            len(m.rows),
+		ChromeAbove:      m.chromeAbove(),
+		ChromeBelow:      2, // blank + hint
+		IndicatorReserve: 2,
+		RenderRow:        m.renderRow,
+		HintRender:       func(s string) string { return m.styles.Hint.Render(s) },
+	})
+
+	hint := m.styles.Hint.Render(locale.T("portfolio.watchlist.hint"))
+	parts := []string{title, ""}
+	parts = append(parts, chrome...)
+	parts = append(parts, rows...)
+	parts = append(parts, "", hint)
+	return lipgloss.JoinVertical(lipgloss.Left, parts...)
+}
+
+// chromeAbove matches the chrome rendered above the watchlist window — kept
+// in sync with [maxVisible] so the visible row budget stays correct.
+func (m *portfolioWatchlistModel) chromeAbove() int {
+	n := 3 // title (1) + blank (1) + header (1)
+	if m.loadingPrices {
+		n += 2 // loading line + blank
+	}
+	return n
 }
 
 func (m *portfolioWatchlistModel) viewHeader() string {
@@ -186,23 +239,24 @@ func (m *portfolioWatchlistModel) viewHeader() string {
 	return m.styles.Hint.Render(header)
 }
 
-func (m *portfolioWatchlistModel) View() string {
-	var parts []string
-	parts = append(parts, m.styles.Selected.Render(locale.T("portfolio.watchlist.title")), "")
+// renderRow returns the styled watchlist line for index i. Pure rendering —
+// no chrome/header concern here, just the data line.
+func (m *portfolioWatchlistModel) renderRow(i int) string {
+	ins := m.rows[i]
+	q, ok := m.quotes[ins.Symbol]
+	line, changeText, nonNeg := formatWatchlistRow(ins, q, ok)
 
-	if len(m.rows) == 0 {
-		parts = append(parts, m.styles.Hint.Render(locale.T("portfolio.watchlist.empty")))
-	} else {
-		if m.loadingPrices {
-			parts = append(parts,
-				fmt.Sprintf("%s %s", locale.T("portfolio.watchlist.price_loading"), m.spin.View()),
-				"",
-			)
-		}
-		parts = append(parts, m.viewHeader())
-		parts = append(parts, m.viewRows()...)
+	changeStyle := m.styles.Bear
+	if nonNeg {
+		changeStyle = m.styles.Bull
 	}
+	coloredChange := changeStyle.Render(fmt.Sprintf("%10s", changeText))
 
-	parts = append(parts, "", m.styles.Hint.Render(locale.T("portfolio.watchlist.hint")))
-	return lipgloss.JoinVertical(lipgloss.Left, parts...)
+	var prefix string
+	if i == m.cursor {
+		prefix = fmt.Sprintf("%s %s", m.styles.Cursor.Render(">"), m.styles.Selected.Render(line))
+	} else {
+		prefix = fmt.Sprintf("  %s", m.styles.Unselected.Render(line))
+	}
+	return prefix + " " + coloredChange
 }

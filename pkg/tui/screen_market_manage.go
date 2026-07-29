@@ -20,6 +20,8 @@ type MarketProviderManageModel struct {
 	entries   []registry.MarketEntry // current order; mutated in place by +/-
 	selected  map[string]bool        // keyed by Entry.Key, independent of position
 	cursor    int
+	scrollOff int
+	height    int // terminal height (updated by WindowSizeMsg)
 	styles    *Styles
 	canGoBack bool
 }
@@ -49,6 +51,10 @@ func (m *MarketProviderManageModel) Init() tea.Cmd { return nil }
 // active/inactive; +/- reorder the entry under the cursor; Enter confirms;
 // Esc cancels (if canGoBack).
 func (m *MarketProviderManageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if ws, ok := msg.(tea.WindowSizeMsg); ok {
+		m.height = ws.Height
+		return m, nil
+	}
 	key, ok := msg.(tea.KeyMsg)
 	if !ok {
 		return m, nil
@@ -57,10 +63,12 @@ func (m *MarketProviderManageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyUp:
 		if m.cursor > 0 {
 			m.cursor--
+			m.scrollOff = clampScrollOff(m.cursor, m.scrollOff, m.maxVisible())
 		}
 	case tea.KeyDown:
 		if m.cursor < len(m.entries)-1 {
 			m.cursor++
+			m.scrollOff = clampScrollOff(m.cursor, m.scrollOff, m.maxVisible())
 		}
 	case tea.KeySpace:
 		if len(m.entries) > 0 {
@@ -117,25 +125,37 @@ func (m *MarketProviderManageModel) moveDown() {
 	m.cursor++
 }
 
+// maxVisible returns the number of provider rows that fit in the terminal
+// after the title, separator, hint, and worst-case two scroll indicators are
+// accounted for.
+func (m *MarketProviderManageModel) maxVisible() int {
+	if m.height == 0 {
+		return 20
+	}
+	// chrome above: Subtitle (2 — content + MarginBottom(1)). chrome below:
+	// blank (1) + hint (1) = 2.
+	n := m.height - 2 - 2 - 2 // 2 chrome-above + 2 chrome-below + 2 indicator reserve
+	if n < 0 {
+		return 0
+	}
+	return n
+}
+
 // View implements [tea.Model].
 func (m *MarketProviderManageModel) View() string {
 	title := m.styles.Subtitle.Render(locale.T("setup.market.manage.label"))
 
-	var rows []string
-	for i, e := range m.entries {
-		box := "[ ]"
-		if m.selected[e.Key] {
-			box = "[x]"
-		}
-		checkbox := m.styles.Checkbox.Render(box)
-		cursor := "  "
-		label := m.styles.Unselected.Render(e.DisplayName)
-		if i == m.cursor {
-			cursor = m.styles.Cursor.Render(">")
-			label = m.styles.Selected.Render(e.DisplayName)
-		}
-		rows = append(rows, fmt.Sprintf("%s %d. %s %s", cursor, i+1, checkbox, label))
-	}
+	rows := windowedRows(WindowedRowOpts{
+		Height:           m.height,
+		ScrollOff:        m.scrollOff,
+		Cursor:           m.cursor,
+		Total:            len(m.entries),
+		ChromeAbove:      2, // Subtitle (content + MarginBottom)
+		ChromeBelow:      2, // blank + hint
+		IndicatorReserve: 2,
+		RenderRow:        m.renderRow,
+		HintRender:       func(s string) string { return m.styles.Hint.Render(s) },
+	})
 
 	hintText := locale.T("setup.market.manage.hint")
 	if m.canGoBack {
@@ -145,4 +165,22 @@ func (m *MarketProviderManageModel) View() string {
 	parts := append([]string{title}, rows...)
 	parts = append(parts, "", hint)
 	return lipgloss.JoinVertical(lipgloss.Left, parts...)
+}
+
+// renderRow returns the visible provider line for index i. Pure rendering —
+// no chrome/header concern here, just the row.
+func (m *MarketProviderManageModel) renderRow(i int) string {
+	e := m.entries[i]
+	box := "[ ]"
+	if m.selected[e.Key] {
+		box = "[x]"
+	}
+	checkbox := m.styles.Checkbox.Render(box)
+	cursor := "  "
+	label := m.styles.Unselected.Render(e.DisplayName)
+	if i == m.cursor {
+		cursor = m.styles.Cursor.Render(">")
+		label = m.styles.Selected.Render(e.DisplayName)
+	}
+	return fmt.Sprintf("%s %d. %s %s", cursor, i+1, checkbox, label)
 }
