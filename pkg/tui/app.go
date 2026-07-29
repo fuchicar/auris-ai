@@ -294,7 +294,25 @@ func (a *AppModel) Init() tea.Cmd {
 // Update implements [tea.Model]. It intercepts global keys, window resize
 // events, and screen-done messages, delegating everything else to the active
 // child screen.
-func (a *AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (a *AppModel) Update(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
+	// BubbleTea only ever sends tea.WindowSizeMsg at startup and on an actual
+	// terminal resize (see screen_agent.go). transition()/toggleMode()/the
+	// modelsLoadedMsg handler below all swap a.current to a freshly created
+	// screen without re-seeding its dimensions, so it renders with whatever
+	// hardcoded fallback its maxVisible() uses until the user resizes the
+	// terminal. Re-inject the known size into any screen that turns out to
+	// be new by the time this call returns, regardless of how deep the call
+	// chain that replaced it went (issue #34).
+	prevScreen := a.current
+	defer func() {
+		if a.current == prevScreen {
+			return
+		}
+		updated, sizeCmd := a.current.Update(tea.WindowSizeMsg{Width: a.width, Height: a.height})
+		a.current = updated
+		cmd = tea.Batch(cmd, sizeCmd)
+	}()
+
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		a.width = msg.Width
