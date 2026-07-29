@@ -36,6 +36,9 @@
   "unlock.error": {
     "other": "Wrong passphrase. Please try again."
   },
+  "unlock.load_error": {
+    "other": "Could not load the configuration file: {{.Error}}"
+  },
 
   "setup.theme.label": {
     "other": "Choose a display theme"

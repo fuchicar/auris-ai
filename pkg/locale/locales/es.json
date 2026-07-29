@@ -36,6 +36,9 @@
   "unlock.error": {
     "other": "Contraseña incorrecta. Inténtelo de nuevo."
   },
+  "unlock.load_error": {
+    "other": "No se pudo cargar el fichero de configuración: {{.Error}}"
+  },
 
   "setup.theme.label": {
     "other": "Elija un tema visual"
