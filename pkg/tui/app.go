@@ -1108,7 +1108,7 @@ func (a *AppModel) transition(msg ScreenDoneMsg) (tea.Model, tea.Cmd) {
 				a.activeInstrument = r.Instrument
 				mp := a.buildMarketProvider()
 				a.screen = ScreenPortfolioInstrumentView
-				a.current = newPortfolioInstrumentViewModel(r.Portfolio, r.Instrument, mp, a.styles)
+				a.current = newPortfolioInstrumentViewModel(r.Portfolio, r.Instrument, mp, a.styles, a.width, a.height)
 			case "add":
 				a.activePortfolio = r.Portfolio
 				a.instrumentSearchOrigin = ScreenPortfolioInstruments

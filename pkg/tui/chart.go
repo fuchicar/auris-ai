@@ -9,13 +9,16 @@ import (
 	"github.com/NimbleMarkets/ntcharts/sparkline"
 
 	"github.com/fuchicar/auris-ai/pkg/finance"
+	"github.com/fuchicar/auris-ai/pkg/locale"
 	"github.com/fuchicar/auris-ai/pkg/market"
 )
 
 const (
 	chartCandlePeriod = 20 // SMA period overlaid on the candle chart
 	chartWidth        = PanelWidth - 4
-	chartHeight       = 14
+	chartHeightMax    = 14 // generous default (matches the historical fixed chart)
+	chartHeightMedium = 8  // compact variant when the screen is tight
+	chartHeightMin    = 5  // smallest height the timeseries chart can render meaningfully
 	sparklineWidth    = 20
 	sparklineHeight   = 3
 )
@@ -23,9 +26,22 @@ const (
 // renderCandleChart renders a candlestick chart with a single SMA overlay
 // line for candles ordered oldest-first. Returns "" when there isn't enough
 // data to draw a meaningful chart (fewer than chartCandlePeriod+1 candles).
-func renderCandleChart(candles []market.Candle, s *Styles) string {
+//
+// When height is 0 (the screen can't spare any rows for the chart) or below
+// chartHeightMin, the chart is replaced with the locale "chart hidden" hint
+// — same degrade-gracefully precedent used by agent.chart_too_narrow in
+// screen_agent.go. width is clamped to chartWidth so callers don't have to
+// know the internal canvas size.
+func renderCandleChart(candles []market.Candle, s *Styles, width, height int) string {
 	if len(candles) < chartCandlePeriod+1 {
 		return ""
+	}
+	if height <= 0 || height < chartHeightMin {
+		return s.Hint.Render(locale.T("portfolio.instrument.chart_too_short"))
+	}
+	w := width
+	if w <= 0 || w > chartWidth {
+		w = chartWidth
 	}
 
 	minY, maxY := candles[0].Low, candles[0].High
@@ -40,7 +56,7 @@ func renderCandleChart(candles []market.Candle, s *Styles) string {
 		closes[i] = c.Close
 	}
 
-	chart := tslc.New(chartWidth, chartHeight,
+	chart := tslc.New(w, height,
 		tslc.WithTimeRange(candles[0].Time, candles[len(candles)-1].Time),
 		tslc.WithYRange(minY, maxY),
 	)

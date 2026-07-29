@@ -1169,6 +1169,9 @@
   "portfolio.instrument.chart.loading": {
     "other": "Loading chart…"
   },
+  "portfolio.instrument.chart_too_short": {
+    "other": "[chart hidden — enlarge the terminal to see it]"
+  },
   "portfolio.instrument.badge.holding": {
     "other": "POSITION"
   },
