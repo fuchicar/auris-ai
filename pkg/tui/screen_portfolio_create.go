@@ -168,13 +168,61 @@ func newPortfolioCreateModel(
 	m.descInput = descInput
 	m.cashInput = cashInput
 
-	// If only one provider, pre-select it and go straight to model step.
+	// Position provider/model cursors on the existing selection (when editing)
+	// so pressing Enter through unchanged steps is a no-op instead of silently
+	// resetting the portfolio's AI provider/model to the first list entry.
+	// Fall back to the current cursor value (typically 0) when the existing
+	// provider/model is no longer present in the loaded lists.
+	m.positionCursorsForExisting()
+
+	// If only one provider is available, skip directly to model selection.
+	// When editing and the single provider matches the existing one, keep the
+	// existing model cursor; otherwise fall back to the only available provider.
 	if len(entries) == 1 {
-		m.selProvider = entries[0].Key
+		if m.selProvider != entries[0].Key {
+			m.selProvider = entries[0].Key
+			m.modelCursor = 0
+			m.modelScrollOff = 0
+		}
 		m.modelStep = pmStepModel
 	}
 
 	return m
+}
+
+// positionCursorsForExisting positions m.provCursor and m.modelCursor on the
+// portfolio's pre-existing AI provider/model when m.selProvider/m.selModel
+// have already been populated (the edit flow). Each cursor falls back to its
+// current value (typically 0) when the corresponding entry is not found — e.g.
+// the provider was removed or the model list changed. Safe to call from the
+// constructor (entries/modelsByProv already populated by the caller) and from
+// the modelsLoadedMsg handler (after the lists are populated).
+func (m *portfolioCreateModel) positionCursorsForExisting() {
+	if m.selProvider == "" {
+		return
+	}
+	maxVis := m.maxVisible()
+	for i, e := range m.entries {
+		if e.Key == m.selProvider {
+			m.provCursor = i
+			m.provScrollOff = clampScrollOff(m.provCursor, m.provScrollOff, maxVis)
+			break
+		}
+	}
+	if m.selModel == "" {
+		return
+	}
+	models, ok := m.modelsByProv[m.selProvider]
+	if !ok {
+		return
+	}
+	for i, mod := range models {
+		if mod.ID == m.selModel {
+			m.modelCursor = i
+			m.modelScrollOff = clampScrollOff(m.modelCursor, m.modelScrollOff, maxVis)
+			break
+		}
+	}
 }
 
 func (m *portfolioCreateModel) Init() tea.Cmd {
@@ -213,8 +261,13 @@ func (m *portfolioCreateModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.entries = msg.entries
 			m.modelsByProv = msg.byProv
 			m.modelsReady = true
+			m.positionCursorsForExisting()
 			if len(m.entries) == 1 {
-				m.selProvider = m.entries[0].Key
+				if m.selProvider != m.entries[0].Key {
+					m.selProvider = m.entries[0].Key
+					m.modelCursor = 0
+					m.modelScrollOff = 0
+				}
 				m.modelStep = pmStepModel
 			}
 		}
@@ -365,9 +418,16 @@ func (m *portfolioCreateModel) handleModelStep(key tea.KeyMsg) (tea.Model, tea.C
 			m.step = pcStepCurrency
 			return m, nil
 		case tea.KeyEnter:
-			m.selProvider = m.entries[m.provCursor].Key
-			m.modelCursor = 0
-			m.modelScrollOff = 0
+			// Only reset the model cursor when the user actually switched
+			// providers — otherwise editing a portfolio and confirming the
+			// unchanged selection would silently jump the model cursor back
+			// to index 0 (issue #40).
+			newProv := m.entries[m.provCursor].Key
+			if newProv != m.selProvider {
+				m.modelCursor = 0
+				m.modelScrollOff = 0
+			}
+			m.selProvider = newProv
 			m.modelStep = pmStepModel
 		}
 
