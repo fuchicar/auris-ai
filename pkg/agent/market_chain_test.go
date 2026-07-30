@@ -22,6 +22,14 @@ type stubMarket struct {
 
 	fundamental market.Fundamental
 	fundErr     error
+
+	instruments    []market.Instrument
+	instrumentsErr error
+	searchCalls    int // SearchInstrument call counter
+
+	corpActions    []market.CorporateAction
+	corpActionsErr error
+	corpCalls      int // GetCorporateActions call counter
 }
 
 func (s *stubMarket) Name() string        { return "stub" }
@@ -49,7 +57,8 @@ func (s *stubMarket) Ping(_ context.Context) error {
 }
 
 func (s *stubMarket) SearchInstrument(_ context.Context, _ string) ([]market.Instrument, error) {
-	return nil, market.ErrNotSupported
+	s.searchCalls++
+	return s.instruments, s.instrumentsErr
 }
 func (s *stubMarket) GetInstrument(_ context.Context, _ string) (market.Instrument, error) {
 	return market.Instrument{}, market.ErrNotSupported
@@ -64,7 +73,8 @@ func (s *stubMarket) GetTicks(_ context.Context, _ string, _, _ time.Time) ([]ma
 	return nil, market.ErrNotSupported
 }
 func (s *stubMarket) GetCorporateActions(_ context.Context, _ string, _, _ time.Time) ([]market.CorporateAction, error) {
-	return nil, market.ErrNotSupported
+	s.corpCalls++
+	return s.corpActions, s.corpActionsErr
 }
 func (s *stubMarket) GetQuote(_ context.Context, _ string) (market.Quote, error) {
 	s.calls++
@@ -252,6 +262,135 @@ func TestMarketChain_AppliesUniformlyToOtherMethods(t *testing.T) {
 	}
 	if f.PERatio != 30 {
 		t.Errorf("PERatio = %v, want 30 (from secondary)", f.PERatio)
+	}
+}
+
+func TestMarketChain_FallsBackOnEmptyResult(t *testing.T) {
+	primary := &stubMarket{instruments: []market.Instrument{}}
+	secondary := &stubMarket{instruments: []market.Instrument{{Symbol: "BKT.MC"}}}
+	chain := NewMarketChain(primary, secondary)
+
+	got, err := chain.SearchInstrument(context.Background(), "BKT.MC")
+	if err != nil {
+		t.Fatalf("SearchInstrument: %v", err)
+	}
+	if len(got) != 1 || got[0].Symbol != "BKT.MC" {
+		t.Errorf("got %v, want [{Symbol: BKT.MC}] (from secondary)", got)
+	}
+	if secondary.searchCalls != 1 {
+		t.Errorf("secondary.searchCalls = %d, want 1 (should be reached)", secondary.searchCalls)
+	}
+}
+
+func TestMarketChain_EmptyResult_MatrixCases(t *testing.T) {
+	data := []market.Instrument{{Symbol: "BKT.MC"}}
+
+	cases := []struct {
+		name          string
+		primary       stubMarket
+		secondary     stubMarket
+		wantSymbol    string // "" means want empty result
+		wantErr       error  // nil means want no error
+		wantSecondary int    // expected secondary.searchCalls
+	}{
+		{
+			name:          "empty+empty returns primary's empty",
+			primary:       stubMarket{instruments: []market.Instrument{}},
+			secondary:     stubMarket{instruments: []market.Instrument{}},
+			wantSecondary: 1,
+		},
+		{
+			name:          "empty+data falls back to secondary",
+			primary:       stubMarket{instruments: []market.Instrument{}},
+			secondary:     stubMarket{instruments: data},
+			wantSymbol:    "BKT.MC",
+			wantSecondary: 1,
+		},
+		{
+			name:          "empty+cascadable err returns primary's empty",
+			primary:       stubMarket{instruments: []market.Instrument{}},
+			secondary:     stubMarket{instrumentsErr: market.ErrNotFound},
+			wantSecondary: 1,
+		},
+		{
+			name:          "empty+non-cascadable err returns primary's empty",
+			primary:       stubMarket{instruments: []market.Instrument{}},
+			secondary:     stubMarket{instrumentsErr: market.ErrUnauthorized},
+			wantSecondary: 1,
+		},
+		{
+			name:          "cascadable err+empty returns primary's error",
+			primary:       stubMarket{instrumentsErr: market.ErrNotFound},
+			secondary:     stubMarket{instruments: []market.Instrument{}},
+			wantErr:       market.ErrNotFound,
+			wantSecondary: 1,
+		},
+		{
+			name:          "cascadable err+data falls back to secondary",
+			primary:       stubMarket{instrumentsErr: market.ErrNotFound},
+			secondary:     stubMarket{instruments: data},
+			wantSymbol:    "BKT.MC",
+			wantSecondary: 1,
+		},
+		{
+			name:          "non-cascadable err never reaches secondary",
+			primary:       stubMarket{instrumentsErr: market.ErrUnauthorized},
+			secondary:     stubMarket{instruments: data},
+			wantErr:       market.ErrUnauthorized,
+			wantSecondary: 0,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			primary := tc.primary
+			secondary := tc.secondary
+			chain := NewMarketChain(&primary, &secondary)
+
+			got, err := chain.SearchInstrument(context.Background(), "BKT.MC")
+
+			if tc.wantErr != nil {
+				if !errors.Is(err, tc.wantErr) {
+					t.Errorf("err = %v, want %v", err, tc.wantErr)
+				}
+			} else if err != nil {
+				t.Errorf("err = %v, want nil", err)
+			}
+
+			if tc.wantSymbol == "" {
+				if len(got) != 0 {
+					t.Errorf("got %v, want empty", got)
+				}
+			} else {
+				if len(got) != 1 || got[0].Symbol != tc.wantSymbol {
+					t.Errorf("got %v, want [{Symbol: %s}]", got, tc.wantSymbol)
+				}
+			}
+
+			if secondary.searchCalls != tc.wantSecondary {
+				t.Errorf("secondary.searchCalls = %d, want %d", secondary.searchCalls, tc.wantSecondary)
+			}
+		})
+	}
+}
+
+func TestMarketChain_EmptyResult_AppliesUniformlyToOtherListMethods(t *testing.T) {
+	// GetCorporateActions exercises the same chainCallList path as
+	// SearchInstrument — confirms the empty-result cascade isn't special-cased
+	// to a single method.
+	primary := &stubMarket{corpActions: []market.CorporateAction{}}
+	secondary := &stubMarket{corpActions: []market.CorporateAction{{Type: "dividend"}}}
+	chain := NewMarketChain(primary, secondary)
+
+	got, err := chain.GetCorporateActions(context.Background(), "BKT.MC", time.Time{}, time.Time{})
+	if err != nil {
+		t.Fatalf("GetCorporateActions: %v", err)
+	}
+	if len(got) != 1 {
+		t.Errorf("got %v, want 1 corporate action (from secondary)", got)
+	}
+	if secondary.corpCalls != 1 {
+		t.Errorf("secondary.corpCalls = %d, want 1", secondary.corpCalls)
 	}
 }
 
