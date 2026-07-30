@@ -257,6 +257,13 @@ func (d *Driver) Stream(ctx context.Context, req llm.CompletionRequest) (<-chan 
 			}
 		} else if ctx.Err() != nil {
 			ch <- llm.StreamChunk{Done: true, Err: ctx.Err()}
+		} else {
+			// The connection closed cleanly (no scan error, not cancelled) but
+			// no frame ever carried done:true. Ollama's protocol guarantees a
+			// terminal done frame, so this is an abnormal termination, not a
+			// legitimate empty result — surface it rather than silently
+			// closing the channel with nothing sent.
+			ch <- llm.StreamChunk{Done: true, Err: fmt.Errorf("ollama: Stream: connection closed before a final frame")}
 		}
 	}()
 

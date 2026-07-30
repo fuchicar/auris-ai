@@ -124,6 +124,22 @@ func TestChatStream_MaxIterations(t *testing.T) {
 	}
 }
 
+func TestChatStream_ClosedWithoutDone(t *testing.T) {
+	mlm := &mockLLM{streamResponses: [][]llm.StreamChunk{
+		{
+			{Content: "partial"},
+		},
+	}}
+	a := New(mlm, &mockMarket{}, "")
+
+	_, err := a.ChatStream(context.Background(), []llm.Message{
+		{Role: llm.RoleUser, Content: "hi"},
+	}, nil)
+	if err == nil {
+		t.Error("expected an error when the stream closes without a terminal Done chunk")
+	}
+}
+
 func TestChatStream_StreamError(t *testing.T) {
 	mlm := &mockLLM{streamResponses: [][]llm.StreamChunk{
 		{
