@@ -14,7 +14,7 @@ import (
 // portfolio_ tool calls rendered nothing at all.
 func TestRenderHistory_ToolLogs_ShowsConcreteCall(t *testing.T) {
 	m := &AgentModel{
-		styles: NewStyles(ThemeDark),
+		styles: NewStyles(ThemeDark, 0),
 		width:  100,
 		session: &config.Session{
 			History: []config.ChatTurn{

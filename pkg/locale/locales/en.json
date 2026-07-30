@@ -26,6 +26,9 @@
   "disclaimer.input.error": {
     "other": "You must type \"yes\" to proceed."
   },
+  "disclaimer.scroll_hint": {
+    "other": "↓/PgDn scroll · End jump to bottom"
+  },
 
   "unlock.prompt": {
     "other": "Enter your master passphrase to unlock the configuration:"

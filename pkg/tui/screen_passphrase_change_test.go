@@ -15,7 +15,7 @@ func typeIntoChangePassphrase(m *ChangePassphraseModel, s string) {
 }
 
 func TestChangePassphraseModel_WrongCurrentRejected(t *testing.T) {
-	m := newChangePassphraseModel(NewStyles(ThemeDark), "correct-horse", true)
+	m := newChangePassphraseModel(NewStyles(ThemeDark, 0), "correct-horse", true)
 
 	typeIntoChangePassphrase(m, "wrong-passphrase")
 	m.Update(tea.KeyMsg{Type: tea.KeyTab})
@@ -41,7 +41,7 @@ func TestChangePassphraseModel_WrongCurrentRejected(t *testing.T) {
 }
 
 func TestChangePassphraseModel_NewTooShortRejected(t *testing.T) {
-	m := newChangePassphraseModel(NewStyles(ThemeDark), "correct-horse", true)
+	m := newChangePassphraseModel(NewStyles(ThemeDark, 0), "correct-horse", true)
 
 	typeIntoChangePassphrase(m, "correct-horse")
 	m.Update(tea.KeyMsg{Type: tea.KeyTab})
@@ -64,7 +64,7 @@ func TestChangePassphraseModel_NewTooShortRejected(t *testing.T) {
 }
 
 func TestChangePassphraseModel_MismatchRejected(t *testing.T) {
-	m := newChangePassphraseModel(NewStyles(ThemeDark), "correct-horse", true)
+	m := newChangePassphraseModel(NewStyles(ThemeDark, 0), "correct-horse", true)
 
 	typeIntoChangePassphrase(m, "correct-horse")
 	m.Update(tea.KeyMsg{Type: tea.KeyTab})
@@ -87,7 +87,7 @@ func TestChangePassphraseModel_MismatchRejected(t *testing.T) {
 }
 
 func TestChangePassphraseModel_SuccessEmitsResult(t *testing.T) {
-	m := newChangePassphraseModel(NewStyles(ThemeDark), "correct-horse", true)
+	m := newChangePassphraseModel(NewStyles(ThemeDark, 0), "correct-horse", true)
 
 	typeIntoChangePassphrase(m, "correct-horse")
 	m.Update(tea.KeyMsg{Type: tea.KeyTab})
@@ -116,7 +116,7 @@ func TestChangePassphraseModel_SuccessEmitsResult(t *testing.T) {
 }
 
 func TestChangePassphraseModel_EscCancels(t *testing.T) {
-	m := newChangePassphraseModel(NewStyles(ThemeDark), "correct-horse", true)
+	m := newChangePassphraseModel(NewStyles(ThemeDark, 0), "correct-horse", true)
 
 	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
 	if cmd == nil {
@@ -135,7 +135,7 @@ func TestChangePassphraseModel_EscCancels(t *testing.T) {
 }
 
 func TestChangePassphraseModel_EscNoOpWhenCannotGoBack(t *testing.T) {
-	m := newChangePassphraseModel(NewStyles(ThemeDark), "correct-horse", false)
+	m := newChangePassphraseModel(NewStyles(ThemeDark, 0), "correct-horse", false)
 
 	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
 	if cmd != nil {

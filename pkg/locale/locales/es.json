@@ -26,6 +26,9 @@
   "disclaimer.input.error": {
     "other": "Debes escribir «yes» o «si» para continuar."
   },
+  "disclaimer.scroll_hint": {
+    "other": "↓/PgDn desplazar · End ir al final"
+  },
 
   "unlock.prompt": {
     "other": "Introduzca su contraseña maestra para desbloquear la configuración:"

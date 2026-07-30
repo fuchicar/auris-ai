@@ -49,7 +49,7 @@ func TestIssue36_InstrumentView_BoundedAt24Lines_WithLots(t *testing.T) {
 	ins := makeInstrumentWithLots("AAPL", 12)
 	p.Instruments = []portfolio.Instrument{*ins}
 
-	m := newPortfolioInstrumentViewModel(p, ins, nil, NewStyles(ThemeDark), 80, 24)
+	m := newPortfolioInstrumentViewModel(p, ins, nil, NewStyles(ThemeDark, 0), 80, 24)
 	view := m.View()
 	mustNotExceed(t, view, 24, "InstrumentView (12 lots @ 80x24)")
 
@@ -93,7 +93,7 @@ func TestIssue36_InstrumentView_ChartDegrades(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			m := newPortfolioInstrumentViewModel(p, ins, nil, NewStyles(ThemeDark), 80, tc.height)
+			m := newPortfolioInstrumentViewModel(p, ins, nil, NewStyles(ThemeDark, 0), 80, tc.height)
 			view := m.View()
 			mustNotExceed(t, view, tc.height, tc.name)
 			// The portfolio header is part of the chrome, so it must always
@@ -115,7 +115,7 @@ func TestIssue36_InstrumentView_LotTableWindowed(t *testing.T) {
 	ins := makeInstrumentWithLots("AAPL", 20)
 	p.Instruments = []portfolio.Instrument{*ins}
 
-	m := newPortfolioInstrumentViewModel(p, ins, nil, NewStyles(ThemeDark), 80, 30)
+	m := newPortfolioInstrumentViewModel(p, ins, nil, NewStyles(ThemeDark, 0), 80, 30)
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'G'}})
 	m = updated.(*portfolioInstrumentViewModel)
 	// Cursor is at the last lot now — emulate walking to the bottom of a
@@ -139,7 +139,7 @@ func TestIssue36_InstrumentView_WindowSizeSeeded(t *testing.T) {
 	ins := makeInstrumentWithLots("AAPL", 3)
 	p.Instruments = []portfolio.Instrument{*ins}
 
-	m := newPortfolioInstrumentViewModel(p, ins, nil, NewStyles(ThemeDark), 80, 24)
+	m := newPortfolioInstrumentViewModel(p, ins, nil, NewStyles(ThemeDark, 0), 80, 24)
 	if m.width != 80 || m.height != 24 {
 		t.Fatalf("seeded width/height = %d/%d, want 80/24", m.width, m.height)
 	}
@@ -168,7 +168,7 @@ func TestIssue36_PortfolioView_BoundedAt24Lines(t *testing.T) {
 		}
 		p.Instruments = append(p.Instruments, ins)
 	}
-	m := newPortfolioViewModel(p, nil, NewStyles(ThemeDark), 24)
+	m := newPortfolioViewModel(p, nil, NewStyles(ThemeDark, 0), 24)
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
 	m = updated.(*portfolioViewModel)
 	view := m.View()
@@ -201,7 +201,7 @@ func TestIssue36_PortfolioView_FullLayoutAt100Lines(t *testing.T) {
 			Lots:   []portfolio.Lot{*lot(100)},
 		})
 	}
-	m := newPortfolioViewModel(p, nil, NewStyles(ThemeDark), 100)
+	m := newPortfolioViewModel(p, nil, NewStyles(ThemeDark, 0), 100)
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 100})
 	m = updated.(*portfolioViewModel)
 	view := m.View()
@@ -251,7 +251,7 @@ func TestIssue36_InstrumentView_AcceptanceCriteria(t *testing.T) {
 	ins := makeInstrumentWithLots("AAPL", 15)
 	p.Instruments = []portfolio.Instrument{*ins}
 
-	m := newPortfolioInstrumentViewModel(p, ins, nil, NewStyles(ThemeDark), 80, 24)
+	m := newPortfolioInstrumentViewModel(p, ins, nil, NewStyles(ThemeDark, 0), 80, 24)
 	view := m.View()
 	mustNotExceed(t, view, 24, "InstrumentView acceptance (80x24, 15 lots)")
 
@@ -274,7 +274,7 @@ func TestIssue36_InstrumentView_LotCursorStaysVisible(t *testing.T) {
 	ins := makeInstrumentWithLots("AAPL", 30)
 	p.Instruments = []portfolio.Instrument{*ins}
 
-	m := newPortfolioInstrumentViewModel(p, ins, nil, NewStyles(ThemeDark), 80, 24)
+	m := newPortfolioInstrumentViewModel(p, ins, nil, NewStyles(ThemeDark, 0), 80, 24)
 	for i := 0; i < 29; i++ {
 		updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
 		m = updated.(*portfolioInstrumentViewModel)

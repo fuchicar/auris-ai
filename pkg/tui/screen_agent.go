@@ -353,7 +353,7 @@ func listenChartCmd(ch <-chan agent.ChartEvent, s *Styles) tea.Cmd {
 		if !ok {
 			return nil
 		}
-		return agentChartMsg{chart: renderCandleChart(ev.Candles, s, chartWidth, chartHeightMax)}
+				return agentChartMsg{chart: renderCandleChart(ev.Candles, s, chartWidth(s), chartHeightMax)}
 	}
 }
 
@@ -1152,7 +1152,7 @@ func (m *AgentModel) renderHistory() string {
 			// code-block highlighter would tokenize and re-color the raw
 			// escape sequences, corrupting them.
 			for _, chart := range turn.Charts {
-				if m.width > 0 && m.width < chartWidth+4 {
+				if m.width > 0 && m.width < chartWidth(m.styles)+4 {
 					sb.WriteString(wrap(m.styles.Hint.Render(locale.T("agent.chart_too_narrow"))))
 				} else {
 					sb.WriteString(chart)

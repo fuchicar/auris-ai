@@ -232,8 +232,8 @@ func (m styleModel) View() string {
 
 func main() {
 	m := styleModel{
-		dark:  tui.NewStyles(tui.ThemeDark),
-		light: tui.NewStyles(tui.ThemeLight),
+		dark:  tui.NewStyles(tui.ThemeDark, 0),
+		light: tui.NewStyles(tui.ThemeLight, 0),
 	}
 	p := tea.NewProgram(m, tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {

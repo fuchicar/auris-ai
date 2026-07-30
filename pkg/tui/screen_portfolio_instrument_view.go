@@ -839,7 +839,7 @@ func (m *portfolioInstrumentViewModel) viewChartSized(budget int) (string, int) 
 		// the data is there but the terminal is too short to draw it.
 		return m.styles.Hint.Render(locale.T("portfolio.instrument.chart_too_short")), 1
 	}
-	return renderCandleChart(m.candles, m.styles, chartWidth, h), h
+	return renderCandleChart(m.candles, m.styles, chartWidth(m.styles), h), h
 }
 
 // viewLotTableWindowed returns the lot table clipped to fit within maxRows

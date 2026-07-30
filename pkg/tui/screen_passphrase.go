@@ -121,7 +121,7 @@ func (m *PassphraseModel) validate() (tea.Model, tea.Cmd) {
 func (m *PassphraseModel) View() string {
 	prompt := m.styles.Subtitle.Render(locale.T("setup.passphrase.prompt"))
 	explain := m.styles.Help.Render(locale.T("setup.passphrase.explain"))
-	warning := m.styles.Warning.Width(PanelWidth).Render(locale.T("setup.passphrase.warning"))
+	warning := m.styles.Warning.Width(m.styles.PanelWidth).Render(locale.T("setup.passphrase.warning"))
 	confirmLabel := m.styles.Unselected.Render(locale.T("setup.passphrase.confirm"))
 	f1 := m.styles.Input.Render(m.first.View())
 	f2 := m.styles.Input.Render(m.confirm.View())

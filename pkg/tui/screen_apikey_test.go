@@ -10,7 +10,7 @@ import (
 
 func TestAPIKeyModel_OptionalEscSkips(t *testing.T) {
 	entry := registry.MarketEntry{Key: "eodhd", DisplayName: "EODHD"}
-	m := newAPIKeyModel(entry, NewStyles(ThemeDark), ScreenAPIKeySecondary, true, false)
+	m := newAPIKeyModel(entry, NewStyles(ThemeDark, 0), ScreenAPIKeySecondary, true, false)
 
 	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
 	if cmd == nil {
@@ -37,7 +37,7 @@ func TestAPIKeyModel_OptionalEscSkips(t *testing.T) {
 
 func TestAPIKeyModel_MandatoryEscDoesNothing(t *testing.T) {
 	entry := registry.MarketEntry{Key: "fmp", DisplayName: "FMP"}
-	m := newAPIKeyModel(entry, NewStyles(ThemeDark), ScreenAPIKey, false, false)
+	m := newAPIKeyModel(entry, NewStyles(ThemeDark, 0), ScreenAPIKey, false, false)
 
 	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
 	if cmd != nil {
@@ -49,7 +49,7 @@ func TestAPIKeyModel_MandatoryEscDoesNothing(t *testing.T) {
 
 func TestAPIKeyModel_CanGoBackEscGoesBack(t *testing.T) {
 	entry := registry.MarketEntry{Key: "fmp", DisplayName: "FMP"}
-	m := newAPIKeyModel(entry, NewStyles(ThemeDark), ScreenAPIKey, false, true)
+	m := newAPIKeyModel(entry, NewStyles(ThemeDark, 0), ScreenAPIKey, false, true)
 
 	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
 	if cmd == nil {
@@ -69,7 +69,7 @@ func TestAPIKeyModel_CanGoBackEscGoesBack(t *testing.T) {
 
 func TestAPIKeyModel_OptionalView_ShowsSkipHint(t *testing.T) {
 	entry := registry.MarketEntry{Key: "eodhd", DisplayName: "EODHD"}
-	m := newAPIKeyModel(entry, NewStyles(ThemeDark), ScreenAPIKeySecondary, true, false)
+	m := newAPIKeyModel(entry, NewStyles(ThemeDark, 0), ScreenAPIKeySecondary, true, false)
 	if got := m.View(); got == "" {
 		t.Fatal("View() returned empty string")
 	}
@@ -77,7 +77,7 @@ func TestAPIKeyModel_OptionalView_ShowsSkipHint(t *testing.T) {
 
 func TestAPIKeyModel_CanGoBackEscWorksWhileConnecting(t *testing.T) {
 	entry := registry.MarketEntry{Key: "fmp", DisplayName: "FMP"}
-	m := newAPIKeyModel(entry, NewStyles(ThemeDark), ScreenAPIKey, false, true)
+	m := newAPIKeyModel(entry, NewStyles(ThemeDark, 0), ScreenAPIKey, false, true)
 	m.input.SetValue("some-key")
 
 	// Start a connect attempt (Enter), putting the model in m.connecting.
@@ -108,7 +108,7 @@ func TestAPIKeyModel_CanGoBackEscWorksWhileConnecting(t *testing.T) {
 
 func TestAPIKeyModel_StaleConnectResultIgnoredAfterEsc(t *testing.T) {
 	entry := registry.MarketEntry{Key: "fmp", DisplayName: "FMP"}
-	m := newAPIKeyModel(entry, NewStyles(ThemeDark), ScreenAPIKey, false, true)
+	m := newAPIKeyModel(entry, NewStyles(ThemeDark, 0), ScreenAPIKey, false, true)
 	m.input.SetValue("some-key")
 
 	m.Update(tea.KeyMsg{Type: tea.KeyEnter})
