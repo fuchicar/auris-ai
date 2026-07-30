@@ -61,10 +61,10 @@ func TestIssue35_PortfolioInstruments_BoundedAt24Lines(t *testing.T) {
 	p := &portfolio.Portfolio{Name: "P"}
 	for i := 0; i < 200; i++ {
 		p.Instruments = append(p.Instruments, portfolio.Instrument{
-			ID: portfolio.NewInstrumentID(),
+			ID:     portfolio.NewInstrumentID(),
 			Symbol: "SYM",
-			Name: "Instrument",
-			Type: portfolio.InstrumentHolding,
+			Name:   "Instrument",
+			Type:   portfolio.InstrumentHolding,
 		})
 	}
 	m := newPortfolioInstrumentsModel(p, NewStyles(ThemeDark, 0))

@@ -62,12 +62,12 @@ type portfolioInstrumentViewModel struct {
 	// here because the lot list is only meaningful in the menu mode — when the
 	// user enters a sell/add input flow they go back to (0, 0) so the next
 	// time the menu renders, the table starts at the top.
-	lotCursor   int
+	lotCursor    int
 	lotScrollOff int
-	infoMsg     string
-	infoIsErr   bool
-	price       float64 // live price if available
-	loadingPx   bool
+	infoMsg      string
+	infoIsErr    bool
+	price        float64 // live price if available
+	loadingPx    bool
 
 	candles        []market.Candle // recent daily candles for the chart
 	loadingCandles bool
@@ -785,7 +785,9 @@ func (m *portfolioInstrumentViewModel) infoLine() string {
 // actually rendered.
 //
 // The chart-degrade ladder (descending):
-//   chartHeightMax (14) → chartHeightMedium (8) → chartHeightMin (5) → hint (1)
+//
+//	chartHeightMax (14) → chartHeightMedium (8) → chartHeightMin (5) → hint (1)
+//
 // Lots use whatever's left, also deducting one separator line for the
 // blank above the block.
 func (m *portfolioInstrumentViewModel) allocateChartAndLot(budget int) (chartH, lotH int) {

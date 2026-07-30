@@ -32,13 +32,13 @@ type DisclaimerModel struct {
 // disclaimerChromeReserve is the rows consumed by everything outside
 // the scrollable body on an 80×24 (or smaller) terminal:
 //
-//   3  Title (with Padding(1, 0))
-//   2  WarnBox top + bottom border
-//   1  blank separator (from JoinVertical's "")
-//   1–2  Label (the 65-char input label wraps to 2 rows on terminals
-//        narrower than ~72 cols)
-//   3  Input box (border + content + border)
-//   1  Bottom hint (or error)
+//	3  Title (with Padding(1, 0))
+//	2  WarnBox top + bottom border
+//	1  blank separator (from JoinVertical's "")
+//	1–2  Label (the 65-char input label wraps to 2 rows on terminals
+//	     narrower than ~72 cols)
+//	3  Input box (border + content + border)
+//	1  Bottom hint (or error)
 //
 // On 80×24 the label stays on 1 row → chrome = 11 → viewport budget
 // = 13. On 60×24 the label wraps to 2 rows → chrome = 12 → viewport
@@ -72,8 +72,21 @@ func newDisclaimerModel(s *Styles) *DisclaimerModel {
 func (m *DisclaimerModel) Init() tea.Cmd { return textinput.Blink }
 
 // Update implements [tea.Model].
-// Keys are first offered to the viewport (PgDn/PgUp/arrows) so the user
-// can scroll the body; on Enter we validate the typed answer.
+//
+// Key dispatch rules (issues #37 follow-up review):
+//
+//   - WindowSizeMsg and Enter (validation) are handled explicitly.
+//   - Everything else is forwarded to both the viewport (for scroll)
+//     AND the text input (for typing the answer), batched via
+//     tea.Batch so neither cmd is discarded — the previous
+//     implementation overwrote cmd and silently dropped the viewport's
+//     side (which is normally nil for viewport, but the convention
+//     matters for any future change and the lints complain).
+//   - Keys that bind to the viewport's default KeyMap (h, j, k, l,
+//     u, d, b, f, space) scroll the body. They must NOT also be
+//     inserted into the answer field as their literal character — a
+//     stray 'j' or ' ' while scrolling would pollute "yes" / "si".
+//     viewportConsumesKey gates the input in those cases.
 func (m *DisclaimerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
@@ -85,12 +98,51 @@ func (m *DisclaimerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if key, ok := msg.(tea.KeyMsg); ok && key.Type == tea.KeyEnter {
 		return m.validate()
 	}
-	// Hand the rest to the viewport so PgDn/PgUp/arrows/End/Home work.
+
+	vpCmd := viewportUpdate(&m.viewport, msg)
+	if key, ok := msg.(tea.KeyMsg); ok && viewportConsumesKey(key) {
+		// The viewport is going to (or already has) consume this key
+		// for scrolling; don't leak the literal character into the
+		// answer field.
+		return m, vpCmd
+	}
+	inCmd := inputUpdate(&m.input, msg)
+	return m, tea.Batch(vpCmd, inCmd)
+}
+
+// viewportUpdate wraps viewport.Model.Update so the rest of this file
+// doesn't repeat the address-of dance. Returned cmd is normally nil
+// (the viewport doesn't issue commands).
+func viewportUpdate(vp *viewport.Model, msg tea.Msg) tea.Cmd {
 	var cmd tea.Cmd
-	m.viewport, cmd = m.viewport.Update(msg)
-	// And to the text input so typing characters still works.
-	m.input, cmd = m.input.Update(msg)
-	return m, cmd
+	*vp, cmd = vp.Update(msg)
+	return cmd
+}
+
+// inputUpdate wraps textinput.Model.Update for the same reason.
+func inputUpdate(in *textinput.Model, msg tea.Msg) tea.Cmd {
+	var cmd tea.Cmd
+	*in, cmd = in.Update(msg)
+	return cmd
+}
+
+// viewportConsumesKey returns true when the viewport's default KeyMap
+// (h/j/k/l/u/d/b/f/space) would scroll the viewport for this key, so
+// the literal character should not be typed into the answer field.
+// Arrows, PgUp/PgDn, Home and End are NOT filtered — the input
+// component naturally ignores them, so forwarding is harmless.
+func viewportConsumesKey(k tea.KeyMsg) bool {
+	if k.Type == tea.KeySpace {
+		return true
+	}
+	if k.Type != tea.KeyRunes || len(k.Runes) != 1 {
+		return false
+	}
+	switch k.Runes[0] {
+	case 'h', 'j', 'k', 'l', 'u', 'd', 'b', 'f':
+		return true
+	}
+	return false
 }
 
 func (m *DisclaimerModel) validate() (tea.Model, tea.Cmd) {

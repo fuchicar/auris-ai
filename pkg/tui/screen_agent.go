@@ -353,7 +353,7 @@ func listenChartCmd(ch <-chan agent.ChartEvent, s *Styles) tea.Cmd {
 		if !ok {
 			return nil
 		}
-				return agentChartMsg{chart: renderCandleChart(ev.Candles, s, chartWidth(s), chartHeightMax)}
+		return agentChartMsg{chart: renderCandleChart(ev.Candles, s, chartWidth(s), chartHeightMax)}
 	}
 }
 

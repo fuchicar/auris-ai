@@ -69,20 +69,20 @@ func TestRenderCandleChart_HeightZeroReturnsHint(t *testing.T) {
 // tracks Styles.PanelWidth instead of the historical fixed PanelWidth-4
 // constant, so the candle canvas shrinks to fit narrow terminals.
 //
-//   panelWidth(60)  = 56         (60 − panelMargin)
-//   chartWidth(60)  = 52         (panelWidth − 4)
-//   panelWidth(12)  = 20         (clamped to PanelWidthMin)
-//   chartWidth(12)  = 16         (20 − 4)
+//	panelWidth(60)  = 56         (60 − panelMargin)
+//	chartWidth(60)  = 52         (panelWidth − 4)
+//	panelWidth(12)  = 20         (clamped to PanelWidthMin)
+//	chartWidth(12)  = 16         (20 − 4)
 func TestChartWidth_FollowsStyles(t *testing.T) {
 	cases := []struct {
 		name string
 		maxW int
 		want int
 	}{
-		{"wide terminal falls back to ceiling", 0, PanelWidthMax - 4},
-		{"100-col terminal clamped to 72", 100, PanelWidthMax - 4},
+		{"wide terminal falls back to ceiling", 0, PanelWidthMax - boxInnerInset},
+		{"100-col terminal clamped to 72", 100, PanelWidthMax - boxInnerInset},
 		{"60-col terminal yields 52", 60, 52},
-		{"narrow terminal floored at PanelWidthMin", 12, PanelWidthMin - 4},
+		{"narrow terminal floored at PanelWidthMin", 12, PanelWidthMin - boxInnerInset},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

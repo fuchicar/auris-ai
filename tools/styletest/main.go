@@ -141,7 +141,7 @@ var proposals = []proposal{
 				BorderStyle(lipgloss.RoundedBorder()).
 				BorderForeground(borderC).
 				Background(bg).Foreground(fg).
-				Width(w - 4).Padding(0, 1).
+				Width(w-4).Padding(0, 1).
 				Render(content)
 			return label + "\n" + box
 		},
