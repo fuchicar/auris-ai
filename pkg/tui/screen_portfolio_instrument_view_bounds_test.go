@@ -74,7 +74,7 @@ func TestIssue36_InstrumentView_BoundedAt24Lines_WithLots(t *testing.T) {
 //   - 22 rows: chrome fits + chartHeightMedium (8) + some lots.
 //   - 16 rows: chrome fits + chartHeightMin (5) + small lot budget.
 //   - 13 rows: chrome fits + the 1-row "chart hidden" hint + 0 lots.
-//   -  9 rows: chrome alone (~12) overflows the terminal — but the chart
+//   - 9 rows: chrome alone (~12) overflows the terminal — but the chart
 //     must collapse to "" so the screen doesn't grow past 9 rows.
 func TestIssue36_InstrumentView_ChartDegrades(t *testing.T) {
 	issue35Setup(t)
@@ -83,8 +83,8 @@ func TestIssue36_InstrumentView_ChartDegrades(t *testing.T) {
 	p.Instruments = []portfolio.Instrument{*ins}
 
 	cases := []struct {
-		name    string
-		height  int
+		name   string
+		height int
 	}{
 		{"28 rows (full chart)", 28},
 		{"22 rows (medium chart)", 22},

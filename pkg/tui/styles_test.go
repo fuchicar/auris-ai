@@ -74,8 +74,8 @@ func TestPanelWidth_AdaptsToTerminalWidth(t *testing.T) {
 // outer rendered width must be ≤ maxWidth.
 func TestNewStyles_WidthBoundStylesFitTerminal(t *testing.T) {
 	cases := []struct {
-		name   string
-		maxW   int
+		name string
+		maxW int
 	}{
 		{"60-col terminal", 60},
 		{"40-col terminal", 40},
@@ -107,8 +107,8 @@ func TestChartWidth_FollowsStylesPanelWidth(t *testing.T) {
 		maxWidth   int
 		wantChartW int
 	}{
-		{0, PanelWidthMax - 4},
-		{100, PanelWidthMax - 4},
+		{0, PanelWidthMax - boxInnerInset},
+		{100, PanelWidthMax - boxInnerInset},
 		{60, 52},
 		{30, 22},
 	}
@@ -225,4 +225,3 @@ func TestDisclaimer_EnterAcceptsYes(t *testing.T) {
 		t.Errorf("expected ScreenDoneMsg{From: ScreenDisclaimer}, got %T %+v", msg, msg)
 	}
 }
-

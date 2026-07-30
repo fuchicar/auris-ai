@@ -14,33 +14,36 @@ var themeOptions = []struct {
 	key      Theme
 	labelKey string
 }{
-	{ThemeLight,      "setup.theme.light"},
-	{ThemeDark,       "setup.theme.dark"},
+	{ThemeLight, "setup.theme.light"},
+	{ThemeDark, "setup.theme.dark"},
 	{ThemeGreenLight, "setup.theme.greenlight"},
-	{ThemeGreenDark,  "setup.theme.greendark"},
-	{ThemeBoxLight,   "setup.theme.boxlight"},
-	{ThemeBoxDark,    "setup.theme.boxdark"},
+	{ThemeGreenDark, "setup.theme.greendark"},
+	{ThemeBoxLight, "setup.theme.boxlight"},
+	{ThemeBoxDark, "setup.theme.boxdark"},
 }
 
 // ThemeModel lets the user choose a display theme.
 // A live preview panel updates immediately as the cursor moves so the user
 // can see the visual difference before confirming.
 type ThemeModel struct {
-	cursor     int
-	previews   []*Styles // one pre-built Styles per theme option
-	styles     *Styles   // current UI style set (for the screen chrome itself)
-	canGoBack  bool
+	cursor    int
+	previews  []*Styles // one pre-built Styles per theme option
+	styles    *Styles   // current UI style set (for the screen chrome itself)
+	canGoBack bool
 }
 
-// newThemeModel constructs a [ThemeModel]. All theme previews are built once
-// at construction time so cursor movement has no allocation cost. The
-// preview width follows the live terminal width (s.PanelWidth) so a
-// preview on a narrow terminal doesn't show a wrapped block whose box
-// would overflow (issue #37).
+// newThemeModel constructs a [ThemeModel]. All theme previews are built
+// once at construction time so cursor movement has no allocation cost.
+// The preview width inherits the parent's already-resolved PanelWidth
+// exactly (issues #37). [NewStylesForWidth] is used here, not
+// [NewStyles], because the latter would re-derive PanelWidth from the
+// given input and shrink the preview by another panelMargin — at any
+// terminal width that mismatch left the theme preview box visibly
+// narrower than the rest of the chrome.
 func newThemeModel(s *Styles, canGoBack bool) *ThemeModel {
 	previews := make([]*Styles, len(themeOptions))
 	for i, opt := range themeOptions {
-		previews[i] = NewStyles(opt.key, s.PanelWidth)
+		previews[i] = NewStylesForWidth(opt.key, s.PanelWidth)
 	}
 	return &ThemeModel{
 		cursor:    1, // default cursor on Dark

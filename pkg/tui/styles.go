@@ -45,11 +45,11 @@ const (
 // that re-wraps inside the box — visible at ~2× height — which is the
 // bug the viewport refactor fixed (issues #37).
 const (
-	PanelWidthMax    = 72
-	PanelWidthMin    = 20
-	panelMargin      = 4
-	boxOuterInset    = 2 // border cols that lipgloss adds *outside* Width(N)
-	boxInnerInset    = 4 // total reserved cols inside the box: border (1) + padding (1) per side
+	PanelWidthMax = 72
+	PanelWidthMin = 20
+	panelMargin   = 4
+	boxOuterInset = 2 // border cols that lipgloss adds *outside* Width(N)
+	boxInnerInset = 4 // total reserved cols inside the box: border (1) + padding (1) per side
 )
 
 // panelWidth returns the actual content width to use given the terminal's
@@ -108,11 +108,35 @@ type Styles struct {
 // terminal width (issues #37). maxWidth is the outer terminal width in
 // columns; pass 0 to fall back to the default PanelWidthMax ceiling
 // (useful for tests that don't seed a real terminal). All 6 themes share
-// the same adaptive palette (see newBaseStyles); only s.Theme differs,
-// which controls how agent messages are rendered in the chat screen
-// (tinted block / green badge / rounded box, light or dark).
+// the same adaptive palette (see newBaseStylesFromPanelWidth); only
+// s.Theme differs, which controls how agent messages are rendered in the
+// chat screen (tinted block / green badge / rounded box, light or dark).
+//
+// Use [NewStylesForWidth] when a sub-screen needs to inherit the
+// parent's already-resolved PanelWidth without re-running the
+// maxWidth → panelWidth derivation (which would shrink it by another
+// panelMargin cols — issues #37).
 func NewStyles(t Theme, maxWidth int) *Styles {
-	s := newBaseStyles(maxWidth)
+	s := newBaseStylesFromPanelWidth(panelWidth(maxWidth))
+	s.Theme = t
+	return s
+}
+
+// NewStylesForWidth builds styles with the given pre-resolved
+// [Styles.PanelWidth], bypassing the maxWidth→panelWidth derivation. Use
+// this when a sub-screen has already computed its panel width and wants
+// a sibling set of styles (e.g. the theme picker wants one [Styles] per
+// theme, each inheriting the parent's panel width — issues #37).
+//
+// pw is clamped to [PanelWidthMin, PanelWidthMax] exactly once.
+func NewStylesForWidth(t Theme, pw int) *Styles {
+	if pw < PanelWidthMin {
+		pw = PanelWidthMin
+	}
+	if pw > PanelWidthMax {
+		pw = PanelWidthMax
+	}
+	s := newBaseStylesFromPanelWidth(pw)
 	s.Theme = t
 	return s
 }
@@ -147,25 +171,18 @@ var (
 	colorUnselected = lipgloss.AdaptiveColor{Light: "#374151", Dark: "#D1D5DB"}
 )
 
-// newBaseStyles builds the width-bound styles. pw is the resolved content
-// width (already clamped to [PanelWidthMin, PanelWidthMax] by panelWidth).
-// Box-bordered styles (Input/Preview/WarnBox) use `.Width(pw -
-// boxOuterInset)` so the *outer* rendered width equals pw (lipgloss
-// adds boxOuterInset=2 cols of border OUTSIDE Width). Content placed
-// inside the box (e.g. the disclaimer viewport body) must therefore
-// fit in `pw - boxInnerInset` cols or it re-wraps inside the box
-// (issues #37).
-func newBaseStyles(maxWidth int) *Styles {
-	pw := panelWidth(maxWidth)
+// newBaseStylesFromPanelWidth builds the width-bound styles directly
+// from the resolved panel width. Box-bordered styles (Input/Preview/
+// WarnBox) use `.Width(pw - boxOuterInset)` so the *outer* rendered
+// width equals pw (lipgloss adds boxOuterInset=2 cols of border
+// OUTSIDE Width). Content placed inside the box (e.g. the disclaimer
+// viewport body) must therefore fit in `pw - boxInnerInset` cols or it
+// re-wraps inside the box (issues #37).
+func newBaseStylesFromPanelWidth(pw int) *Styles {
 	frameW := pw - boxOuterInset
 	if frameW < 1 {
 		frameW = 1
 	}
-	contentW := pw - boxInnerInset
-	if contentW < 1 {
-		contentW = 1
-	}
-	_ = contentW // documented above; callers may use Styles-derived content width
 	return &Styles{
 		PanelWidth: pw,
 		Title:      lipgloss.NewStyle().Bold(true).Foreground(colorAccent).Padding(1, 0),

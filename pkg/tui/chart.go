@@ -24,14 +24,17 @@ const (
 
 // chartWidth returns the canvas width used by renderCandleChart for the
 // given styles. It is derived from Styles.PanelWidth so it follows the
-// terminal's current width: 72 on a wide terminal, the same minus 4 on
-// any narrower one (issues #37). The 4-col subtraction matches the
-// historical PanelWidth-4 layout (border + padding).
+// terminal's current width, on a wide terminal it returns
+// PanelWidthMax - boxInnerInset (= 68) and on any narrower terminal the
+// same formula applies (issues #37). Subtracting boxInnerInset (not the
+// literal 4) keeps the chart canvas aligned with the WarnBox/Input/
+// Preview inner content area — the screen_disclaimer.go viewport body
+// uses the same derivation.
 func chartWidth(s *Styles) int {
 	if s == nil {
-		return PanelWidthMax - 4
+		return PanelWidthMax - boxInnerInset
 	}
-	return s.PanelWidth - 4
+	return s.PanelWidth - boxInnerInset
 }
 
 // renderCandleChart renders a candlestick chart with a single SMA overlay

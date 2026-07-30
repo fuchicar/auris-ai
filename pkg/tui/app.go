@@ -559,7 +559,7 @@ func (a *AppModel) transition(msg ScreenDoneMsg) (tea.Model, tea.Cmd) {
 		a.screen = ScreenMenu
 		a.current = newMenuModel(a.styles, a.cfg.ActiveAIProvider != "", a.cfg.SimulationMode)
 
-		case ScreenTheme:
+	case ScreenTheme:
 		r, resultOK := msg.Result.(ThemeResult)
 		if resultOK {
 			a.cfg.Theme = r.Theme
