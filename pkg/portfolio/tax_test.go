@@ -338,3 +338,36 @@ func TestCalculateTaxPnL_LotsSortedBySaleDateThenSymbol(t *testing.T) {
 		t.Errorf("unexpected sort order: %s, %s, %s", r.Lots[0].LotID, r.Lots[1].LotID, r.Lots[2].LotID)
 	}
 }
+
+// TestCalculateTaxPnL_NonUTCLocation_ComparisonsAreInstantBased guards the
+// timezone-independence half of #33: transaction/lot dates and period bounds
+// may carry different time.Time Locations (e.g. a transaction recorded
+// before the UTC-normalization fix in pkg/agent/tools.go, or dates that
+// round-tripped through a non-UTC system clock). Range filtering and
+// holding-period classification must key off the absolute instant, not the
+// Location, so mixing zones must not change the result.
+func TestCalculateTaxPnL_NonUTCLocation_ComparisonsAreInstantBased(t *testing.T) {
+	loc := time.FixedZone("UTC-5", -5*60*60)
+
+	buyDate := time.Date(2025, 6, 30, 20, 0, 0, 0, loc) // == 2025-07-01T01:00:00Z
+	saleDate := buyDate.AddDate(1, 0, 0)                // exactly 365 days later, same Location
+
+	from := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	to := time.Date(2026, 12, 31, 23, 59, 59, 999999999, time.UTC)
+
+	p := &Portfolio{ID: "test", Transactions: []Transaction{
+		{Type: TransactionSell, Symbol: "AAPL", Quantity: 1, Price: 150, Date: saleDate,
+			ConsumedLots: []LotConsumption{{LotID: "lot1", Quantity: 1, Price: 100, Date: buyDate}}},
+	}}
+
+	r, err := CalculateTaxPnL(p, from, to)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(r.Lots) != 1 {
+		t.Fatalf("expected the sale to be in range regardless of Location mismatch, got %+v", r.Lots)
+	}
+	if r.Lots[0].Term != TaxTermShort {
+		t.Errorf("expected short_term at the exact 365-day boundary, got %s", r.Lots[0].Term)
+	}
+}

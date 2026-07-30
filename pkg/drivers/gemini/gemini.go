@@ -205,27 +205,23 @@ func (d *Driver) Stream(ctx context.Context, req llm.CompletionRequest) (<-chan 
 			done := cand.FinishReason != genai.FinishReasonUnspecified
 			chunk := llm.StreamChunk{Content: textDelta, Done: done}
 			if done {
-				toolCalls := partsToToolCalls(mergedParts)
-				if len(toolCalls) > 0 {
-					chunk.ToolCalls = toolCalls
-					chunk.Extra = map[string]any{
-						"gemini:content": &genai.Content{Role: "model", Parts: mergedParts},
-					}
-				}
-				chunk.StopReason = mapFinishReason(cand.FinishReason, len(toolCalls) > 0)
-				if resp.UsageMetadata != nil {
-					chunk.Usage = llm.TokenUsage{
-						PromptTokens:     int(resp.UsageMetadata.PromptTokenCount),
-						CompletionTokens: int(resp.UsageMetadata.CandidatesTokenCount),
-					}
-				}
+				terminal := buildTerminalChunk(cand.FinishReason, mergedParts, resp.UsageMetadata)
+				chunk.ToolCalls = terminal.ToolCalls
+				chunk.Extra = terminal.Extra
+				chunk.StopReason = terminal.StopReason
+				chunk.Usage = terminal.Usage
 			}
 			ch <- chunk
 			if done || ctx.Err() != nil {
 				return
 			}
 		}
-		ch <- llm.StreamChunk{Done: true}
+		// The stream ended without any candidate ever reporting a terminal
+		// FinishReason (dropped connection, truncated response, ...). Salvage
+		// whatever was merged so far instead of emitting a bare, data-losing
+		// Done chunk — mirrors the anthropic/openai drivers' own defensive
+		// fallback for the same "stream closed before an explicit stop" case.
+		ch <- buildTerminalChunk(genai.FinishReasonUnspecified, mergedParts, nil)
 	}()
 	return ch, nil
 }
@@ -401,6 +397,34 @@ func partsToToolCalls(parts []*genai.Part) []llm.ToolCall {
 		}
 	}
 	return toolCalls
+}
+
+// buildTerminalChunk builds the Done:true StreamChunk for Stream from
+// whatever content parts have been merged so far, extracting tool calls and
+// deriving StopReason/Usage the same way mapResponse does for Complete. Used
+// both for a normal terminal candidate and for the fallback path where the
+// stream ends without one (reason == genai.FinishReasonUnspecified, usage
+// nil), so a dropped/truncated stream still surfaces any tool call the model
+// had already fully emitted instead of a bare, data-losing Done chunk.
+func buildTerminalChunk(reason genai.FinishReason, mergedParts []*genai.Part, usage *genai.GenerateContentResponseUsageMetadata) llm.StreamChunk {
+	toolCalls := partsToToolCalls(mergedParts)
+	chunk := llm.StreamChunk{
+		Done:       true,
+		StopReason: mapFinishReason(reason, len(toolCalls) > 0),
+	}
+	if len(toolCalls) > 0 {
+		chunk.ToolCalls = toolCalls
+		chunk.Extra = map[string]any{
+			"gemini:content": &genai.Content{Role: "model", Parts: mergedParts},
+		}
+	}
+	if usage != nil {
+		chunk.Usage = llm.TokenUsage{
+			PromptTokens:     int(usage.PromptTokenCount),
+			CompletionTokens: int(usage.CandidatesTokenCount),
+		}
+	}
+	return chunk
 }
 
 // extractText concatenates all Text parts from a Content.

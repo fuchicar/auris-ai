@@ -14,30 +14,36 @@ var themeOptions = []struct {
 	key      Theme
 	labelKey string
 }{
-	{ThemeLight,      "setup.theme.light"},
-	{ThemeDark,       "setup.theme.dark"},
+	{ThemeLight, "setup.theme.light"},
+	{ThemeDark, "setup.theme.dark"},
 	{ThemeGreenLight, "setup.theme.greenlight"},
-	{ThemeGreenDark,  "setup.theme.greendark"},
-	{ThemeBoxLight,   "setup.theme.boxlight"},
-	{ThemeBoxDark,    "setup.theme.boxdark"},
+	{ThemeGreenDark, "setup.theme.greendark"},
+	{ThemeBoxLight, "setup.theme.boxlight"},
+	{ThemeBoxDark, "setup.theme.boxdark"},
 }
 
 // ThemeModel lets the user choose a display theme.
 // A live preview panel updates immediately as the cursor moves so the user
 // can see the visual difference before confirming.
 type ThemeModel struct {
-	cursor     int
-	previews   []*Styles // one pre-built Styles per theme option
-	styles     *Styles   // current UI style set (for the screen chrome itself)
-	canGoBack  bool
+	cursor    int
+	previews  []*Styles // one pre-built Styles per theme option
+	styles    *Styles   // current UI style set (for the screen chrome itself)
+	canGoBack bool
 }
 
-// newThemeModel constructs a [ThemeModel]. All theme previews are built once
-// at construction time so cursor movement has no allocation cost.
+// newThemeModel constructs a [ThemeModel]. All theme previews are built
+// once at construction time so cursor movement has no allocation cost.
+// The preview width inherits the parent's already-resolved PanelWidth
+// exactly (issues #37). [NewStylesForWidth] is used here, not
+// [NewStyles], because the latter would re-derive PanelWidth from the
+// given input and shrink the preview by another panelMargin — at any
+// terminal width that mismatch left the theme preview box visibly
+// narrower than the rest of the chrome.
 func newThemeModel(s *Styles, canGoBack bool) *ThemeModel {
 	previews := make([]*Styles, len(themeOptions))
 	for i, opt := range themeOptions {
-		previews[i] = NewStyles(opt.key)
+		previews[i] = NewStylesForWidth(opt.key, s.PanelWidth)
 	}
 	return &ThemeModel{
 		cursor:    1, // default cursor on Dark
@@ -87,7 +93,7 @@ func renderPreview(s *Styles) string {
 	unselected := fmt.Sprintf("  %s", s.Unselected.Render("Unselected option"))
 	hintLine := s.Hint.Render("↑↓ navigate · Enter select")
 
-	previewW := PanelWidth - 4 // account for Preview border + padding
+	previewW := s.PanelWidth - 4 // account for Preview border + padding; follows live terminal width (issue #37)
 	youLine := lipgloss.NewStyle().Width(previewW).Render(
 		s.Selected.Render("You: ") + "What is the P/E ratio of AAPL?",
 	)

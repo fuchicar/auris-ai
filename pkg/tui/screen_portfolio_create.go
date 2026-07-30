@@ -168,26 +168,94 @@ func newPortfolioCreateModel(
 	m.descInput = descInput
 	m.cashInput = cashInput
 
-	// If only one provider, pre-select it and go straight to model step.
+	// Position provider/model cursors on the existing selection (when editing)
+	// so pressing Enter through unchanged steps is a no-op instead of silently
+	// resetting the portfolio's AI provider/model to the first list entry.
+	// Fall back to the current cursor value (typically 0) when the existing
+	// provider/model is no longer present in the loaded lists.
+	m.positionCursorsForExisting()
+
+	// If only one provider is available, skip directly to model selection.
+	// When editing and the single provider matches the existing one, keep the
+	// existing model cursor; otherwise fall back to the only available provider.
 	if len(entries) == 1 {
-		m.selProvider = entries[0].Key
+		if m.selProvider != entries[0].Key {
+			m.selProvider = entries[0].Key
+			m.modelCursor = 0
+			m.modelScrollOff = 0
+		}
 		m.modelStep = pmStepModel
 	}
 
 	return m
 }
 
+// positionCursorsForExisting positions m.provCursor and m.modelCursor on the
+// portfolio's pre-existing AI provider/model when m.selProvider/m.selModel
+// have already been populated (the edit flow). Each cursor falls back to its
+// current value (typically 0) when the corresponding entry is not found — e.g.
+// the provider was removed or the model list changed. Safe to call from the
+// constructor (entries/modelsByProv already populated by the caller) and from
+// the modelsLoadedMsg handler (after the lists are populated).
+func (m *portfolioCreateModel) positionCursorsForExisting() {
+	if m.selProvider == "" {
+		return
+	}
+	maxVis := m.maxVisible()
+	for i, e := range m.entries {
+		if e.Key == m.selProvider {
+			m.provCursor = i
+			m.provScrollOff = clampScrollOff(m.provCursor, m.provScrollOff, maxVis)
+			break
+		}
+	}
+	if m.selModel == "" {
+		return
+	}
+	models, ok := m.modelsByProv[m.selProvider]
+	if !ok {
+		return
+	}
+	for i, mod := range models {
+		if mod.ID == m.selModel {
+			m.modelCursor = i
+			m.modelScrollOff = clampScrollOff(m.modelCursor, m.modelScrollOff, maxVis)
+			break
+		}
+	}
+}
+
 func (m *portfolioCreateModel) Init() tea.Cmd {
 	return tea.Batch(m.spin.Tick, textinput.Blink)
 }
 
+// pcListChromeAbove/pcListChromeBelow are the single source of truth for the
+// currency- and model-picker lists' chrome budget: outer [View] renders
+// title (3 — Title style content + Padding(1,0)) + progress (1) + blank (1)
+// = 5 lines above the body, and each picker step adds its own Subtitle/label
+// (2 lines) above the rows; chromeBelow is the hint line below. maxVisible
+// and every renderScrollList call site share these two constants instead of
+// repeating the numbers, so the key-press clamp budget and the render budget
+// can't drift apart again (they previously did: maxVisible was left at the
+// pre-outer-chrome numbers after the render call sites were corrected).
+const (
+	pcListChromeAbove = 7 // 5 (outer title+progress+blank) + 2 (local Subtitle/label)
+	pcListChromeBelow = 1 // hint
+)
+
+// maxVisible mirrors the budget [renderScrollList] computes internally via
+// [windowedRows], using the same [pcListChromeAbove]/[pcListChromeBelow]
+// constants every call site passes, plus the 2-line indicator reserve
+// windowedRows always reserves. Kept in sync structurally (shared constants)
+// since this is used for scrollOff clamping on key presses, ahead of the
+// render that owns the real chrome numbers.
 func (m *portfolioCreateModel) maxVisible() int {
 	if m.height == 0 {
 		return 12
 	}
-	n := m.height - 6
-	if n < 3 {
-		return 3
+	n := m.height - pcListChromeAbove - pcListChromeBelow - 2 // + 2-line indicator reserve
+	if n < 0 {
+		return 0
 	}
 	return n
 }
@@ -213,8 +281,13 @@ func (m *portfolioCreateModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.entries = msg.entries
 			m.modelsByProv = msg.byProv
 			m.modelsReady = true
+			m.positionCursorsForExisting()
 			if len(m.entries) == 1 {
-				m.selProvider = m.entries[0].Key
+				if m.selProvider != m.entries[0].Key {
+					m.selProvider = m.entries[0].Key
+					m.modelCursor = 0
+					m.modelScrollOff = 0
+				}
 				m.modelStep = pmStepModel
 			}
 		}
@@ -365,9 +438,16 @@ func (m *portfolioCreateModel) handleModelStep(key tea.KeyMsg) (tea.Model, tea.C
 			m.step = pcStepCurrency
 			return m, nil
 		case tea.KeyEnter:
-			m.selProvider = m.entries[m.provCursor].Key
-			m.modelCursor = 0
-			m.modelScrollOff = 0
+			// Only reset the model cursor when the user actually switched
+			// providers — otherwise editing a portfolio and confirming the
+			// unchanged selection would silently jump the model cursor back
+			// to index 0 (issue #40).
+			newProv := m.entries[m.provCursor].Key
+			if newProv != m.selProvider {
+				m.modelCursor = 0
+				m.modelScrollOff = 0
+			}
+			m.selProvider = newProv
 			m.modelStep = pmStepModel
 		}
 
@@ -468,7 +548,7 @@ func (m *portfolioCreateModel) View() string {
 		for i, c := range m.currencies {
 			labels[i] = fmt.Sprintf("%s (%s)", c, finance.CurrencySymbol(c))
 		}
-		rows := m.renderScrollList(labels, m.currencyCursor, m.currencyScrollOff, m.maxVisible())
+		rows := m.renderScrollList(labels, m.currencyCursor, m.currencyScrollOff, m.height, pcListChromeAbove, pcListChromeBelow)
 		hint := m.styles.Hint.Render(locale.T("portfolio.create.currency.hint"))
 		body = append(body, label)
 		body = append(body, rows...)
@@ -495,8 +575,6 @@ func (m *portfolioCreateModel) View() string {
 }
 
 func (m *portfolioCreateModel) viewModelPicker() []string {
-	maxVis := m.maxVisible()
-
 	switch m.modelStep {
 	case pmStepProvider:
 		title := m.styles.Subtitle.Render(locale.T("setup.ai.model.provider.label"))
@@ -504,7 +582,7 @@ func (m *portfolioCreateModel) viewModelPicker() []string {
 		for i, e := range m.entries {
 			labels[i] = e.DisplayName
 		}
-		rows := m.renderScrollList(labels, m.provCursor, m.provScrollOff, maxVis)
+		rows := m.renderScrollList(labels, m.provCursor, m.provScrollOff, m.height, pcListChromeAbove, pcListChromeBelow)
 		hint := m.styles.Hint.Render(locale.T("portfolio.create.model.hint"))
 		result := []string{title}
 		result = append(result, rows...)
@@ -537,7 +615,7 @@ func (m *portfolioCreateModel) viewModelPicker() []string {
 					labels[i] = mod.ID
 				}
 			}
-			rows = m.renderScrollList(labels, m.modelCursor, m.modelScrollOff, maxVis)
+			rows = m.renderScrollList(labels, m.modelCursor, m.modelScrollOff, m.height, pcListChromeAbove, pcListChromeBelow)
 		}
 		var hintText string
 		if len(m.entries) > 1 {
@@ -554,24 +632,29 @@ func (m *portfolioCreateModel) viewModelPicker() []string {
 	return nil
 }
 
-func (m *portfolioCreateModel) renderScrollList(items []string, cursor, scrollOff, maxVis int) []string {
-	end := scrollOff + maxVis
-	if end > len(items) {
-		end = len(items)
-	}
-	var rows []string
-	if scrollOff > 0 {
-		rows = append(rows, m.styles.Hint.Render(locale.T("setup.ai.model.scroll_up")))
-	}
-	for i := scrollOff; i < end; i++ {
+// renderScrollList renders a windowed list of items, applying the cursor
+// style and surfacing "↑ more above" / "↓ more below" indicators when the
+// list overflows what fits in [height] rows given [chromeAbove]/[chromeBelow].
+// It calls through to the package-level [windowedRows] helper; this wrapper
+// exists so callers stay a single-method call site that injects the styling
+// closures.
+func (m *portfolioCreateModel) renderScrollList(items []string, cursor, scrollOff, height, chromeAbove, chromeBelow int) []string {
+	render := func(i int) string {
 		if i == cursor {
-			rows = append(rows, fmt.Sprintf("%s %s", m.styles.Cursor.Render(">"), m.styles.Selected.Render(items[i])))
-		} else {
-			rows = append(rows, fmt.Sprintf("  %s", m.styles.Unselected.Render(items[i])))
+			return fmt.Sprintf("%s %s", m.styles.Cursor.Render(">"), m.styles.Selected.Render(items[i]))
 		}
+		return fmt.Sprintf("  %s", m.styles.Unselected.Render(items[i]))
 	}
-	if end < len(items) {
-		rows = append(rows, m.styles.Hint.Render(locale.T("setup.ai.model.scroll_down")))
-	}
-	return rows
+	hint := func(s string) string { return m.styles.Hint.Render(s) }
+	return windowedRows(WindowedRowOpts{
+		Height:           height,
+		ScrollOff:        scrollOff,
+		Cursor:           cursor,
+		Total:            len(items),
+		ChromeAbove:      chromeAbove,
+		ChromeBelow:      chromeBelow,
+		IndicatorReserve: 2,
+		RenderRow:        render,
+		HintRender:       hint,
+	})
 }

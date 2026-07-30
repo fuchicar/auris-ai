@@ -25,6 +25,8 @@ type portfolioTransactionsModel struct {
 	portfolio *portfolio.Portfolio
 	rows      []portfolio.Transaction // newest-first, built once in the constructor
 	cursor    int
+	scrollOff int
+	height    int // terminal height (updated by WindowSizeMsg)
 	styles    *Styles
 }
 
@@ -40,6 +42,10 @@ func (m *portfolioTransactionsModel) Init() tea.Cmd {
 }
 
 func (m *portfolioTransactionsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if ws, ok := msg.(tea.WindowSizeMsg); ok {
+		m.height = ws.Height
+		return m, nil
+	}
 	if key, ok := msg.(tea.KeyMsg); ok {
 		return m.handleKey(key)
 	}
@@ -51,10 +57,12 @@ func (m *portfolioTransactionsModel) handleKey(key tea.KeyMsg) (tea.Model, tea.C
 	case tea.KeyUp:
 		if m.cursor > 0 {
 			m.cursor--
+			m.scrollOff = clampScrollOff(m.cursor, m.scrollOff, m.maxVisible())
 		}
 	case tea.KeyDown:
 		if m.cursor < len(m.rows)-1 {
 			m.cursor++
+			m.scrollOff = clampScrollOff(m.cursor, m.scrollOff, m.maxVisible())
 		}
 	case tea.KeyEsc:
 		p := m.portfolio
@@ -96,17 +104,48 @@ func formatTransactionRow(tx portfolio.Transaction) string {
 	)
 }
 
-func (m *portfolioTransactionsModel) viewRows() []string {
-	rows := make([]string, 0, len(m.rows))
-	for i, tx := range m.rows {
-		line := formatTransactionRow(tx)
-		if i == m.cursor {
-			rows = append(rows, fmt.Sprintf("%s %s", m.styles.Cursor.Render(">"), m.styles.Selected.Render(line)))
-		} else {
-			rows = append(rows, fmt.Sprintf("  %s", m.styles.Unselected.Render(line)))
-		}
+// maxVisible returns the number of transaction rows that fit in the terminal
+// after the title, blank separator, table header, hint, and the worst-case
+// two scroll indicators are accounted for.
+func (m *portfolioTransactionsModel) maxVisible() int {
+	if m.height == 0 {
+		return 20
 	}
-	return rows
+	// chrome above: title (1) + blank (1) + header (1) = 3.
+	// chrome below: blank (1) + hint (1) = 2.
+	n := m.height - 3 - 2 - 2 // reserve 2 lines for up+down indicators
+	if n < 0 {
+		return 0
+	}
+	return n
+}
+
+func (m *portfolioTransactionsModel) View() string {
+	title := m.styles.Selected.Render(locale.T("portfolio.transactions.title"))
+
+	if len(m.rows) == 0 {
+		hint := m.styles.Hint.Render(locale.T("portfolio.transactions.empty"))
+		navHint := m.styles.Hint.Render(locale.T("portfolio.transactions.hint"))
+		return lipgloss.JoinVertical(lipgloss.Left, title, "", hint, "", navHint)
+	}
+
+	rows := windowedRows(WindowedRowOpts{
+		Height:           m.height,
+		ScrollOff:        m.scrollOff,
+		Cursor:           m.cursor,
+		Total:            len(m.rows),
+		ChromeAbove:      3, // title (1) + blank (1) + header (1)
+		ChromeBelow:      2, // blank (1) + hint (1)
+		IndicatorReserve: 2,
+		RenderRow:        m.renderRow,
+		HintRender:       func(s string) string { return m.styles.Hint.Render(s) },
+	})
+
+	hint := m.styles.Hint.Render(locale.T("portfolio.transactions.hint"))
+	parts := []string{title, "", m.viewHeader()}
+	parts = append(parts, rows...)
+	parts = append(parts, "", hint)
+	return lipgloss.JoinVertical(lipgloss.Left, parts...)
 }
 
 func (m *portfolioTransactionsModel) viewHeader() string {
@@ -122,17 +161,12 @@ func (m *portfolioTransactionsModel) viewHeader() string {
 	return m.styles.Hint.Render(header)
 }
 
-func (m *portfolioTransactionsModel) View() string {
-	var parts []string
-	parts = append(parts, m.styles.Selected.Render(locale.T("portfolio.transactions.title")), "")
-
-	if len(m.rows) == 0 {
-		parts = append(parts, m.styles.Hint.Render(locale.T("portfolio.transactions.empty")))
-	} else {
-		parts = append(parts, m.viewHeader())
-		parts = append(parts, m.viewRows()...)
+// renderRow returns the visible line for transaction index i, with the cursor
+// arrow and styling applied.
+func (m *portfolioTransactionsModel) renderRow(i int) string {
+	line := formatTransactionRow(m.rows[i])
+	if i == m.cursor {
+		return fmt.Sprintf("%s %s", m.styles.Cursor.Render(">"), m.styles.Selected.Render(line))
 	}
-
-	parts = append(parts, "", m.styles.Hint.Render(locale.T("portfolio.transactions.hint")))
-	return lipgloss.JoinVertical(lipgloss.Left, parts...)
+	return fmt.Sprintf("  %s", m.styles.Unselected.Render(line))
 }

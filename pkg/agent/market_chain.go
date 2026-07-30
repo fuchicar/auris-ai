@@ -25,7 +25,12 @@ type marketChain struct {
 // ErrNotConnected, or other errors, which indicate a configuration problem that
 // should surface directly rather than being silently masked by a fallback. If
 // no provider resolves a call, the primary's (providers[0]) error is returned,
-// never the last-tried provider's.
+// never the last-tried provider's. For the list/search-shaped calls
+// (SearchInstrument, ListInstruments, GetCandles, GetCorporateActions), a
+// provider's successful-but-empty result also cascades to the next provider —
+// this is what lets EODHD answer BME symbols like BKT.MC after FMP's search
+// legitimately returns 200+[] for them (FEAT-7) — while still returning the
+// primary's own outcome if no provider yields data.
 //
 // Passing a single provider is a harmless no-op: the chain degrades to a
 // transparent passthrough.
@@ -103,6 +108,38 @@ func chainCall[T any](c *marketChain, fn func(market.ProviderAPI) (T, error)) (T
 	}
 	var zero T
 	return zero, firstErr
+}
+
+// chainCallList is chainCall's counterpart for list/search-shaped calls: a
+// provider that returns a successful-but-empty slice — which FMP does "by
+// construction" for asset types it doesn't cover (futures/forex/crypto) and
+// for symbols its search yields nothing for, e.g. BME tickers like BKT.MC —
+// is treated the same as a cascadable error and triggers the next provider.
+// If no provider returns a non-empty result, the primary's own outcome (its
+// result and error, exactly as returned) is returned unchanged, preserving
+// chainCall's "primary's error wins" rule. See FEAT-7 in docs/task_completed.md.
+func chainCallList[T any](c *marketChain, fn func(market.ProviderAPI) ([]T, error)) ([]T, error) {
+	var firstResult []T
+	var firstErr error
+	haveFirst := false
+
+	for _, p := range c.providers {
+		result, err := fn(p)
+		if !haveFirst {
+			firstResult, firstErr = result, err
+			haveFirst = true
+		}
+		if err == nil {
+			if len(result) > 0 {
+				return result, nil
+			}
+			continue // successful but empty: give the next provider a chance
+		}
+		if !isCascadable(err) {
+			break
+		}
+	}
+	return firstResult, firstErr
 }
 
 func (c *marketChain) Name() string {
@@ -186,7 +223,7 @@ func (c *marketChain) Ping(ctx context.Context) error {
 }
 
 func (c *marketChain) SearchInstrument(ctx context.Context, query string) ([]market.Instrument, error) {
-	return chainCall(c, func(p market.ProviderAPI) ([]market.Instrument, error) {
+	return chainCallList(c, func(p market.ProviderAPI) ([]market.Instrument, error) {
 		return p.SearchInstrument(ctx, query)
 	})
 }
@@ -198,13 +235,13 @@ func (c *marketChain) GetInstrument(ctx context.Context, symbol string) (market.
 }
 
 func (c *marketChain) ListInstruments(ctx context.Context, assetType market.AssetType) ([]market.Instrument, error) {
-	return chainCall(c, func(p market.ProviderAPI) ([]market.Instrument, error) {
+	return chainCallList(c, func(p market.ProviderAPI) ([]market.Instrument, error) {
 		return p.ListInstruments(ctx, assetType)
 	})
 }
 
 func (c *marketChain) GetCandles(ctx context.Context, symbol string, from, to time.Time, tf market.Timeframe) ([]market.Candle, error) {
-	return chainCall(c, func(p market.ProviderAPI) ([]market.Candle, error) {
+	return chainCallList(c, func(p market.ProviderAPI) ([]market.Candle, error) {
 		return p.GetCandles(ctx, symbol, from, to, tf)
 	})
 }
@@ -216,7 +253,7 @@ func (c *marketChain) GetTicks(ctx context.Context, symbol string, from, to time
 }
 
 func (c *marketChain) GetCorporateActions(ctx context.Context, symbol string, from, to time.Time) ([]market.CorporateAction, error) {
-	return chainCall(c, func(p market.ProviderAPI) ([]market.CorporateAction, error) {
+	return chainCallList(c, func(p market.ProviderAPI) ([]market.CorporateAction, error) {
 		return p.GetCorporateActions(ctx, symbol, from, to)
 	})
 }

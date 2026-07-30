@@ -100,7 +100,7 @@ func TestToggleMode_FromPortfolioAgent_ReturnsToPortfolioView(t *testing.T) {
 		screen:          ScreenAgent,
 		flowContext:     FlowPortfolio,
 		activePortfolio: p,
-		styles:          NewStyles(ThemeDark),
+		styles:          NewStyles(ThemeDark, 0),
 	}
 	updated, _ := a.toggleMode()
 	got := updated.(*AppModel)
@@ -120,7 +120,7 @@ func TestToggleMode_FromGlobalAgent_ReturnsToMenu(t *testing.T) {
 		cfg:         &config.AurisConfig{},
 		screen:      ScreenAgent,
 		flowContext: FlowAgent,
-		styles:      NewStyles(ThemeDark),
+		styles:      NewStyles(ThemeDark, 0),
 	}
 	updated, _ := a.toggleMode()
 	got := updated.(*AppModel)
@@ -144,7 +144,7 @@ func TestTransition_ScreenAgentNil_FromPortfolioAgent_ReturnsToPortfolioView(t *
 		screen:          ScreenAgent,
 		flowContext:     FlowPortfolio,
 		activePortfolio: p,
-		styles:          NewStyles(ThemeDark),
+		styles:          NewStyles(ThemeDark, 0),
 	}
 	updated, _ := a.transition(ScreenDoneMsg{From: ScreenAgent, Result: nil})
 	got := updated.(*AppModel)
@@ -169,7 +169,7 @@ func TestHandleAgentCommand_AfterPortfolioExit_MenuBehavesAsGlobal(t *testing.T)
 		cfg:             &config.AurisConfig{},
 		flowContext:     FlowMenu, // reset after leaving portfolio-agent mode
 		activePortfolio: p,        // sticky: still set from the earlier portfolio visit
-		styles:          NewStyles(ThemeDark),
+		styles:          NewStyles(ThemeDark, 0),
 	}
 	updated, _ := a.handleAgentCommand(CommandResult{Cmd: "menu"})
 	got := updated.(*AppModel)
@@ -204,7 +204,7 @@ func TestHandleAgentCommand_AfterPortfolioExit_SessionBehavesAsGlobal(t *testing
 		},
 		flowContext:     FlowMenu, // reset after leaving portfolio-agent mode
 		activePortfolio: p,        // sticky: still set from the earlier portfolio visit
-		styles:          NewStyles(ThemeDark),
+		styles:          NewStyles(ThemeDark, 0),
 	}
 	updated, _ := a.handleAgentCommand(CommandResult{Cmd: "session"})
 	got := updated.(*AppModel)
@@ -226,7 +226,7 @@ func TestUpdate_ShiftTabDuringStreaming_DoesNotToggle(t *testing.T) {
 	a := &AppModel{
 		cfg:     &config.AurisConfig{},
 		screen:  ScreenAgent,
-		styles:  NewStyles(ThemeDark),
+		styles:  NewStyles(ThemeDark, 0),
 		current: am,
 	}
 
@@ -249,7 +249,7 @@ func TestUpdate_ShiftTabNotStreaming_TogglesToMenu(t *testing.T) {
 		cfg:         &config.AurisConfig{},
 		screen:      ScreenAgent,
 		flowContext: FlowAgent,
-		styles:      NewStyles(ThemeDark),
+		styles:      NewStyles(ThemeDark, 0),
 		current:     am,
 	}
 

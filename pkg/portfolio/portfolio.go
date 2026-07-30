@@ -171,11 +171,13 @@ func PortfoliosDir() (string, error) {
 	return filepath.Join(filepath.Dir(p), "portfolios"), nil
 }
 
-// NewPortfolio creates a new Portfolio with a timestamp-based ID.
+// NewPortfolio creates a new Portfolio with a timestamp-based ID. The ID
+// has 16 bits of random entropy (issue #32) so two same-second creations
+// never collide on disk.
 func NewPortfolio(name string) *Portfolio {
 	now := time.Now()
 	return &Portfolio{
-		ID:        now.Format("20060102-150405"),
+		ID:        config.NewTimestampID(),
 		Name:      name,
 		CreatedAt: now,
 		UpdatedAt: now,
@@ -207,7 +209,11 @@ func NewLot(qty, price float64, date time.Time) Lot {
 	}
 }
 
-// SavePortfolio writes a portfolio to disk as a JSON file.
+// SavePortfolio writes a portfolio to disk as a JSON file. On first save
+// (the destination doesn't exist yet) it uses O_EXCL semantics so a stale
+// or colliding ID never silently overwrites an existing portfolio; on
+// subsequent saves (updating an existing portfolio) it overwrites as today.
+// See issue #32.
 func SavePortfolio(p *Portfolio) error {
 	dir, err := PortfoliosDir()
 	if err != nil {
@@ -222,8 +228,18 @@ func SavePortfolio(p *Portfolio) error {
 		return fmt.Errorf("portfolio: SavePortfolio: marshal: %w", err)
 	}
 	path := filepath.Join(dir, p.ID+".json")
-	if err := config.WriteFileAtomic(path, data, 0o600); err != nil {
-		return fmt.Errorf("portfolio: SavePortfolio: write: %w", err)
+	_, statErr := os.Stat(path)
+	switch {
+	case statErr == nil:
+		if err := config.WriteFileAtomic(path, data, 0o600); err != nil {
+			return fmt.Errorf("portfolio: SavePortfolio: write: %w", err)
+		}
+	case errors.Is(statErr, os.ErrNotExist):
+		if err := config.WriteFileNew(path, data, 0o600); err != nil {
+			return fmt.Errorf("portfolio: SavePortfolio: write: %w", err)
+		}
+	default:
+		return fmt.Errorf("portfolio: SavePortfolio: stat: %w", statErr)
 	}
 	return nil
 }

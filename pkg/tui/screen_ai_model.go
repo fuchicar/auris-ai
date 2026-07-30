@@ -53,27 +53,44 @@ func newAIDefaultModelModel(entries []registry.LLMEntry, modelsByProv map[string
 	return m
 }
 
-// maxVisible returns the number of list items that fit in the terminal.
+// chromeLines measures the chrome rendered above+below both lists in this
+// screen. Both sub-steps share the same shape (Subtitle + Help paragraph +
+// blank + blank + hint) so they get the same budget. The Help text changes
+// slightly per step but is roughly the same height; measure per step via
+// maxVisible to avoid surprises.
 func (m *AIDefaultModelModel) maxVisible() int {
 	if m.height == 0 {
 		return 20
 	}
-	n := m.height - 5 // overhead: title + hint + scroll indicators + margin
-	if n < 3 {
-		return 3
+	var title, explain string
+	if m.step == aiModelStepProvider {
+		title = m.styles.Subtitle.Render(locale.T("setup.ai.model.provider.label"))
+		explain = m.styles.Help.Render(locale.T("setup.ai.model.provider.explain"))
+	} else {
+		title = m.styles.Subtitle.Render(locale.T("setup.ai.model.model.label"))
+		explain = m.styles.Help.Render(locale.T("setup.ai.model.model.explain"))
+	}
+	// Title + Explain + blank above + blank below + hint + 2 indicator reserve.
+	chrome := lipgloss.Height(title) + lipgloss.Height(explain) + 1 + 1 + 1 + 2
+	n := m.height - chrome
+	if n < 0 {
+		return 0
 	}
 	return n
 }
 
-// clampScrollOff adjusts scrollOff so that cursor remains in the visible window.
-func clampScrollOff(cursor, scrollOff, maxVis int) int {
-	if cursor < scrollOff {
-		return cursor
+// chromeAbove returns the height of the chrome above the row list at the
+// current step. Kept in sync with maxVisible for the visibleCount fallback.
+func (m *AIDefaultModelModel) chromeAbove() int {
+	var title, explain string
+	if m.step == aiModelStepProvider {
+		title = m.styles.Subtitle.Render(locale.T("setup.ai.model.provider.label"))
+		explain = m.styles.Help.Render(locale.T("setup.ai.model.provider.explain"))
+	} else {
+		title = m.styles.Subtitle.Render(locale.T("setup.ai.model.model.label"))
+		explain = m.styles.Help.Render(locale.T("setup.ai.model.model.explain"))
 	}
-	if cursor >= scrollOff+maxVis {
-		return cursor - maxVis + 1
-	}
-	return scrollOff
+	return lipgloss.Height(title) + lipgloss.Height(explain) + 1
 }
 
 // Init implements [tea.Model].
@@ -160,34 +177,6 @@ func (m *AIDefaultModelModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// renderScrollList renders a windowed list of items with optional scroll indicators.
-func (m *AIDefaultModelModel) renderScrollList(items []string, cursor, scrollOff int) []string {
-	maxVis := m.maxVisible()
-	end := scrollOff + maxVis
-	if end > len(items) {
-		end = len(items)
-	}
-
-	var rows []string
-	if scrollOff > 0 {
-		rows = append(rows, m.styles.Hint.Render(locale.T("setup.ai.model.scroll_up")))
-	}
-	for i := scrollOff; i < end; i++ {
-		if i == cursor {
-			rows = append(rows, fmt.Sprintf("%s %s",
-				m.styles.Cursor.Render(">"),
-				m.styles.Selected.Render(items[i]),
-			))
-		} else {
-			rows = append(rows, fmt.Sprintf("  %s", m.styles.Unselected.Render(items[i])))
-		}
-	}
-	if end < len(items) {
-		rows = append(rows, m.styles.Hint.Render(locale.T("setup.ai.model.scroll_down")))
-	}
-	return rows
-}
-
 // View implements [tea.Model].
 func (m *AIDefaultModelModel) View() string {
 	switch m.step {
@@ -198,13 +187,24 @@ func (m *AIDefaultModelModel) View() string {
 		for i, e := range m.entries {
 			labels[i] = e.DisplayName
 		}
-		rows := m.renderScrollList(labels, m.provCursor, m.provScrollOff)
+		rows := windowedRows(WindowedRowOpts{
+			Height:           m.height,
+			ScrollOff:        m.provScrollOff,
+			Cursor:           m.provCursor,
+			Total:            len(m.entries),
+			ChromeAbove:      m.chromeAbove(),
+			ChromeBelow:      1 + 1 + 2, // blank + hint + 2 indicator reserve
+			IndicatorReserve: 2,
+			RenderRow:        func(i int) string { return m.renderRow(labels, i) },
+			HintRender:       func(s string) string { return m.styles.Hint.Render(s) },
+		})
 		hintText := locale.T("setup.ai.model.hint")
 		if m.canGoBack {
 			hintText += "  " + locale.T("hint.esc_back")
 		}
 		hint := m.styles.Hint.Render(hintText)
-		parts := append([]string{title, explain, ""}, rows...)
+		parts := []string{title, explain, ""}
+		parts = append(parts, rows...)
 		parts = append(parts, hint)
 		return lipgloss.JoinVertical(lipgloss.Left, parts...)
 
@@ -236,7 +236,17 @@ func (m *AIDefaultModelModel) View() string {
 					labels[i] = mod.ID
 				}
 			}
-			rows = m.renderScrollList(labels, m.modelCursor, m.modelScrollOff)
+			rows = windowedRows(WindowedRowOpts{
+				Height:           m.height,
+				ScrollOff:        m.modelScrollOff,
+				Cursor:           m.modelCursor,
+				Total:            len(models),
+				ChromeAbove:      m.chromeAbove(),
+				ChromeBelow:      1 + 1 + 2, // blank + hint + 2 indicator reserve
+				IndicatorReserve: 2,
+				RenderRow:        func(i int) string { return m.renderRow(labels, i) },
+				HintRender:       func(s string) string { return m.styles.Hint.Render(s) },
+			})
 		}
 
 		var hintText string
@@ -249,10 +259,32 @@ func (m *AIDefaultModelModel) View() string {
 			}
 		}
 		hint := m.styles.Hint.Render(hintText)
-		parts := append([]string{title, explain, ""}, rows...)
+		parts := []string{title, explain, ""}
+		parts = append(parts, rows...)
 		parts = append(parts, hint)
 		return lipgloss.JoinVertical(lipgloss.Left, parts...)
 	}
 
 	return ""
+}
+
+// renderRow returns the visible line for the row at index i, using the
+// labels slice for the option text. Pure rendering — no chrome concern.
+func (m *AIDefaultModelModel) renderRow(labels []string, i int) string {
+	if i == m.currentForStep() {
+		return fmt.Sprintf("%s %s",
+			m.styles.Cursor.Render(">"),
+			m.styles.Selected.Render(labels[i]),
+		)
+	}
+	return fmt.Sprintf("  %s", m.styles.Unselected.Render(labels[i]))
+}
+
+// currentForStep returns whichever cursor the current step renders, so
+// renderRow can highlight the right index without needing step context.
+func (m *AIDefaultModelModel) currentForStep() int {
+	if m.step == aiModelStepProvider {
+		return m.provCursor
+	}
+	return m.modelCursor
 }

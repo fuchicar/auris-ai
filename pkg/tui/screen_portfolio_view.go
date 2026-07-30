@@ -303,10 +303,48 @@ func (m *portfolioViewModel) selectAction() (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m *portfolioViewModel) View() string {
-	// Summary panel.
+// compactSummaryLines returns the summary panel lines for the portfolio
+// view. When compact is true the panel collapses to the two lines the user
+// always needs (portfolio name + a single P&L line) — the long form adds
+// holdings/watchlist counts, invested/cash breakdown, current value,
+// unrealized P&L, realized P&L, and the AI model label, which can blow
+// past the terminal on a 24-line screen.
+func (m *portfolioViewModel) viewSummaryLines(compact bool) []string {
+	// Always show the name as the first line — losing it is the worst part
+	// of the pre-issue-36 overflow.
 	var summaryLines []string
 	summaryLines = append(summaryLines, m.styles.Selected.Render(m.portfolio.Name))
+	if compact {
+		// In compact mode, pack the totals into one line under the name.
+		cur := m.portfolio.Currency
+		var totalInvested, totalCurrent float64
+		var holdingCount int
+		for _, ins := range m.portfolio.Instruments {
+			if ins.Type != portfolio.InstrumentHolding {
+				continue
+			}
+			holdingCount++
+			for _, l := range ins.Lots {
+				totalInvested += l.Quantity * l.Price
+			}
+			qty := ins.TotalQuantity()
+			if price, ok := m.prices[ins.Symbol]; ok {
+				totalCurrent += qty * price
+			}
+		}
+		totalCurrent += m.portfolio.Cash
+		unrealizedPnL := totalCurrent - totalInvested - m.portfolio.Cash
+		pnlStr := colorMoney(finance.FormatMoneySigned(unrealizedPnL, cur), unrealizedPnL, m.styles)
+		summaryLines = append(summaryLines,
+			fmt.Sprintf("  %-18s %*s   %-18s %s",
+				locale.T("portfolio.view.summary.current_value"),
+				moneyColWidth, finance.FormatMoney(totalCurrent, cur),
+				locale.T("portfolio.view.summary.unrealized_pnl"),
+				pnlStr,
+			),
+		)
+		return summaryLines
+	}
 	if m.portfolio.Description != "" {
 		summaryLines = append(summaryLines, m.styles.Unselected.Render(m.portfolio.Description))
 	}
@@ -382,11 +420,35 @@ func (m *portfolioViewModel) View() string {
 		fmt.Sprintf("  %-22s %s", locale.T("portfolio.view.summary.model"), modelLabel),
 	)
 
-	summary := m.styles.Preview.Render(strings.Join(summaryLines, "\n"))
+	return summaryLines
+}
 
-	// Action menu.
+// viewMenuRows returns the action menu rows for the portfolio view. When
+// compact is true it drops the rarely-used secondary actions
+// (transactions / export / edit / delete) so the user still gets to the
+// five most common actions (agent / instruments / allocation / watchlist /
+// add) even on a 24-line terminal. The visible cursor index is remapped
+// onto the compact slice so the user can still navigate with ↑/↓ without
+// pointing at a hidden action.
+func (m *portfolioViewModel) viewMenuRows(compact bool) ([]string, int) {
+	actions := portfolioViewActions
+	if compact {
+		actions = []string{
+			"portfolio.view.action.agent",
+			"portfolio.view.action.instruments",
+			"portfolio.view.action.allocation",
+			"portfolio.view.action.watchlist",
+			"portfolio.view.action.add",
+		}
+		// Clamp the cursor to the compact slice. Most users will already be
+		// at index 0-4 (the kept actions); if they were parked on a hidden
+		// one (e.g. "delete"), bring them back to the last visible row.
+		if m.cursor >= len(actions) {
+			m.cursor = len(actions) - 1
+		}
+	}
 	var rows []string
-	for i, key := range portfolioViewActions {
+	for i, key := range actions {
 		label := locale.T(key)
 		if i == m.cursor {
 			rows = append(rows, fmt.Sprintf("%s %s", m.styles.Cursor.Render(">"), m.styles.Selected.Render(label)))
@@ -394,7 +456,10 @@ func (m *portfolioViewModel) View() string {
 			rows = append(rows, fmt.Sprintf("  %s", m.styles.Unselected.Render(label)))
 		}
 	}
+	return rows, m.cursor
+}
 
+func (m *portfolioViewModel) View() string {
 	// Trailing block (delete confirmation, or an info message plus the hint
 	// line) — built ahead of the holdings panel so its height can be
 	// subtracted from the holdings row budget below.
@@ -408,6 +473,37 @@ func (m *portfolioViewModel) View() string {
 		trailing = append(trailing, m.styles.Hint.Render(locale.T("portfolio.view.hint")))
 	}
 
+	// Decide whether the summary + menu should render in compact form.
+	// Compact thresholds are picked so a 24-line terminal with the long
+	// form (~12 + 9 rows) falls into the compact branch automatically and
+	// stops dropping the portfolio name off the top of the screen.
+	const separators = 3           // blank lines before the holdings panel, the menu, and the trailing block
+	const holdingsBorderOverhead = 2 // Preview style's RoundedBorder top+bottom
+	const safetyMargin = 1
+
+	summaryFull := m.styles.Preview.Render(strings.Join(m.viewSummaryLines(false), "\n"))
+	menuFull, _ := m.viewMenuRows(false)
+	fullContentRows := lipgloss.Height(summaryFull) + len(menuFull) + len(trailing) + separators + holdingsBorderOverhead + safetyMargin
+
+	// Switch to compact when the terminal can't hold the full layout. The
+	// thresholds are conservative — anything under (fullContentRows + 4)
+	// rows goes compact so the user always keeps at least a few holdings
+	// visible alongside the portfolio name.
+	compact := false
+	if m.height > 0 && m.height < fullContentRows+4 {
+		compact = true
+	}
+
+	var summary string
+	var rows []string
+	if compact {
+		summary = m.styles.Preview.Render(strings.Join(m.viewSummaryLines(true), "\n"))
+		rows, _ = m.viewMenuRows(true)
+	} else {
+		summary = summaryFull
+		rows = menuFull
+	}
+
 	// How many holdings rows fit before the screen overflows the terminal.
 	// The summary panel, action menu, and trailing block always render in
 	// full; only the holdings panel shrinks. Unknown height (e.g. a screen
@@ -415,9 +511,6 @@ func (m *portfolioViewModel) View() string {
 	// "don't truncate".
 	holdingsBudget := math.MaxInt
 	if m.height > 0 {
-		const separators = 3           // blank lines before the holdings panel, the menu, and the trailing block
-		const holdingsBorderOverhead = 2 // Preview style's RoundedBorder top+bottom
-		const safetyMargin = 1
 		holdingsBudget = m.height - lipgloss.Height(summary) - len(rows) - len(trailing) - separators - holdingsBorderOverhead - safetyMargin
 		if holdingsBudget < 1 {
 			holdingsBudget = 1

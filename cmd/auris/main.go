@@ -12,6 +12,11 @@
 // Flags:
 //
 //	-setup          Re-run the setup wizard even when a configuration already exists.
+//	                Prompts for confirmation on the terminal first, since finishing the
+//	                wizard overwrites the existing config file (new passphrase, new KDF
+//	                salt) — including the storage salt behind any already-encrypted
+//	                portfolios/sessions, which then become unrecoverable under the old
+//	                passphrase.
 //	-debug <path>   Append per-iteration agent diagnostics to <path>. Disabled by default for privacy.
 //	-version        Print version information and exit.
 //
@@ -32,10 +37,12 @@
 package main
 
 import (
+	"bufio"
 	"flag"
 	"fmt"
 	"log"
 	"os"
+	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -94,6 +101,13 @@ Environment variables:
 		}
 	}
 
+	if *setupFlag && tui.ConfigExists() {
+		if !confirmSetupOverwrite() {
+			fmt.Println("auris: aborted, existing configuration left untouched.")
+			return
+		}
+	}
+
 	setupMode := *setupFlag || !tui.ConfigExists()
 
 	app := tui.NewApp(tui.AppOptions{
@@ -108,4 +122,23 @@ Environment variables:
 		fmt.Fprintf(os.Stderr, "auris: %v\n", err)
 		os.Exit(1)
 	}
+}
+
+// confirmSetupOverwrite warns that -setup will replace the existing config
+// file — a new passphrase and KDF salt, which also orphans any
+// already-encrypted portfolios/sessions still keyed to the old passphrase —
+// and requires the user to type "yes" on stdin before proceeding.
+func confirmSetupOverwrite() bool {
+	fmt.Println("auris: a configuration file already exists.")
+	fmt.Println("Running -setup will replace it with a new passphrase and encryption key.")
+	fmt.Println("Any portfolios or chat sessions already encrypted under the current passphrase")
+	fmt.Println("will no longer be readable afterwards.")
+	fmt.Print("Type \"yes\" to continue: ")
+
+	reader := bufio.NewReader(os.Stdin)
+	answer, err := reader.ReadString('\n')
+	if err != nil {
+		return false
+	}
+	return strings.TrimSpace(answer) == "yes"
 }

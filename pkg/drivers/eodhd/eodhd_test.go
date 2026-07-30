@@ -7,6 +7,8 @@ import (
 	"math"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"strings"
 	"testing"
 	"time"
 
@@ -707,4 +709,43 @@ func assertCandlesNonZero(t *testing.T, candles []market.Candle) {
 		}
 	}
 	t.Error("no candle with Open > 0 and Close > 0")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Issue #31 — el API key no debe filtrarse en errores de transporte
+// ─────────────────────────────────────────────────────────────────────────────
+
+// urlErrorTransport implementa http.RoundTripper devolviendo un *url.Error
+// con la URL completa (incluyendo el api_token) y un error subyacente —
+// replica exactamente lo que http.Transport emite en un fallo de DNS/TLS.
+// Determinista y hermético, sin red real.
+type urlErrorTransport struct{}
+
+func (urlErrorTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	return nil, &url.Error{
+		Op:  "Get",
+		URL: req.URL.String(),
+		Err: errors.New("dial tcp: lookup eodhd.com: no such host"),
+	}
+}
+
+// TestTransportError_NoAPIKeyLeak verifica que un error de transporte
+// (DNS, TLS, timeout) que llegue a través de doGet no exponga el api_token
+// en err.Error() — el error llega luego al LLM y se persiste en disco.
+func TestTransportError_NoAPIKeyLeak(t *testing.T) {
+	const canary = "CANARY_EODHD_API_TOKEN"
+
+	d := eodhd.New(canary, eodhd.WithHTTPClient(&http.Client{Transport: urlErrorTransport{}}))
+	// Connect golpea /real-time/AAPL.US y devuelve un *url.Error — el
+	// camino de sanitización está dentro de doGet.
+	err := d.Connect(bg())
+	if err == nil {
+		t.Fatal("expected transport error, got nil")
+	}
+	if strings.Contains(err.Error(), canary) {
+		t.Errorf("api_token leaked into transport error: %s", err.Error())
+	}
+	if !strings.Contains(err.Error(), "REDACTED") {
+		t.Errorf("expected api_token=REDACTED in sanitized URL, got: %s", err.Error())
+	}
 }

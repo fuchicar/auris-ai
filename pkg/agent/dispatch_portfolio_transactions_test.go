@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/fuchicar/auris-ai/pkg/llm"
 	"github.com/fuchicar/auris-ai/pkg/portfolio"
@@ -323,6 +324,11 @@ func TestDispatch_PortfolioSell_CreditsCashAndRecordsConsumedLots(t *testing.T) 
 	}
 	if tx.ConsumedLots[0].LotID != "lot-1" || tx.ConsumedLots[1].LotID != "lot-2" {
 		t.Errorf("ConsumedLots = %+v, want lot-1 then lot-2", tx.ConsumedLots)
+	}
+	// #33: recorded dates must be UTC so they agree with parsePeriodDate's
+	// calendar-day bounds regardless of the host's local timezone.
+	if tx.Date.Location() != time.UTC {
+		t.Errorf("tx.Date.Location() = %v, want UTC", tx.Date.Location())
 	}
 }
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"net/http/httptest"
 	"sort"
 	"strings"
 	"testing"
@@ -72,6 +73,53 @@ func TestPing_NotConnected(t *testing.T) {
 	err := d.Ping(context.Background())
 	if !errors.Is(err, llm.ErrNotConnected) {
 		t.Errorf("expected ErrNotConnected, got: %v", err)
+	}
+}
+
+// ── Hermetic streaming tests (httptest, no live Ollama needed) ───────────────
+
+// TestStream_ConnectionClosedBeforeDoneFrame verifies that when the server
+// closes the connection cleanly (no I/O error) after sending one non-final
+// frame but before ever sending a "done":true frame, the driver reports it as
+// an abnormal termination instead of letting the channel close silently.
+func TestStream_ConnectionClosedBeforeDoneFrame(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/tags", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"models":[{"name":"test-model"}]}`))
+	})
+	mux.HandleFunc("/api/chat", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"message":{"role":"assistant","content":"partial"},"done":false}` + "\n"))
+		if f, ok := w.(http.Flusher); ok {
+			f.Flush()
+		}
+		// Handler returns here without ever writing a done:true frame,
+		// closing the connection cleanly from the client's point of view.
+	})
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	d := ollama.New(ollama.WithBaseURL(server.URL))
+	if err := d.Connect(context.Background()); err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+
+	ch, err := d.Stream(context.Background(), llm.CompletionRequest{
+		Model:    "test-model",
+		Messages: []llm.Message{{Role: llm.RoleUser, Content: "hi"}},
+	})
+	if err != nil {
+		t.Fatalf("Stream: %v", err)
+	}
+
+	var last llm.StreamChunk
+	for c := range ch {
+		last = c
+	}
+	if !last.Done {
+		t.Fatal("expected the final chunk to have Done=true")
+	}
+	if last.Err == nil {
+		t.Error("expected an error when the connection closes before a done:true frame")
 	}
 }
 

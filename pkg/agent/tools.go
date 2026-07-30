@@ -1180,11 +1180,12 @@ func (a *Agent) dispatchInner(ctx context.Context, call llm.ToolCall, lastKind *
 			}
 			return "", fmt.Errorf("no portfolio_id provided and no current portfolio is set")
 		}
-		// parseLotDate parses ISO 8601 or YYYY-MM-DD; defaults to now.
+		// parseLotDate parses ISO 8601 or YYYY-MM-DD; defaults to now (in UTC,
+		// so it agrees with parsePeriodDate's calendar-day bounds — see #33).
 		parseLotDate := func(key string) time.Time {
 			s := str(key)
 			if s == "" {
-				return time.Now()
+				return time.Now().UTC()
 			}
 			if t, err := time.Parse(time.RFC3339, s); err == nil {
 				return t
@@ -1192,21 +1193,30 @@ func (a *Agent) dispatchInner(ctx context.Context, call llm.ToolCall, lastKind *
 			if t, err := time.Parse("2006-01-02", s); err == nil {
 				return t
 			}
-			return time.Now()
+			return time.Now().UTC()
 		}
 		// parsePeriodDate parses ISO 8601 or YYYY-MM-DD; falls back to def
 		// (unlike parseLotDate, which always defaults to now) so callers can
 		// derive one bound from the other (e.g. "from" defaults relative to
-		// "to").
-		parsePeriodDate := func(key string, def time.Time) time.Time {
+		// "to"). When endOfDay is true and the value parses as a bare date
+		// (YYYY-MM-DD, no time-of-day), the result is shifted to the last
+		// instant of that calendar day, so a "to" bound given as a bare date
+		// includes the whole day rather than just its first instant (#33).
+		// RFC3339 inputs already carry an explicit time and are never
+		// shifted; def is returned as-is since it's already a precise
+		// instant (e.g. time.Now()), not a calendar date needing expansion.
+		parsePeriodDate := func(key string, def time.Time, endOfDay bool) time.Time {
 			s := str(key)
 			if s == "" {
 				return def
 			}
 			if t, err := time.Parse(time.RFC3339, s); err == nil {
-				return t
+				return t.UTC()
 			}
 			if t, err := time.Parse("2006-01-02", s); err == nil {
+				if endOfDay {
+					return t.Add(24*time.Hour - time.Nanosecond)
+				}
 				return t
 			}
 			return def
@@ -1425,7 +1435,7 @@ func (a *Agent) dispatchInner(ctx context.Context, call llm.ToolCall, lastKind *
 					Type: portfolio.TransactionSell, Symbol: ins.Symbol,
 					Quantity: qty, Price: sellPrice, CashDelta: qty * sellPrice,
 					RealizedPnL: result.RealizedPnL, ConsumedLots: result.ConsumedLots,
-					Date: time.Now(),
+					Date: time.Now().UTC(),
 				})
 				if err := portfolio.SavePortfolio(p); err != nil {
 					return encode(nil, err)
@@ -1488,7 +1498,7 @@ func (a *Agent) dispatchInner(ctx context.Context, call llm.ToolCall, lastKind *
 			}
 			delta := cash - p.Cash
 			p.RecordTransaction(portfolio.Transaction{
-				Type: portfolio.TransactionAdjustment, CashDelta: delta, Date: time.Now(),
+				Type: portfolio.TransactionAdjustment, CashDelta: delta, Date: time.Now().UTC(),
 				Note: "cash balance overwritten via portfolio_set_cash",
 			})
 			if err := portfolio.SavePortfolio(p); err != nil {
@@ -1792,8 +1802,8 @@ func (a *Agent) dispatchInner(ctx context.Context, call llm.ToolCall, lastKind *
 				return `error: no market data provider configured`
 			}
 
-			to := parsePeriodDate("to", time.Now().UTC())
-			from := parsePeriodDate("from", to.AddDate(-1, 0, 0))
+			to := parsePeriodDate("to", time.Now().UTC(), true)
+			from := parsePeriodDate("from", to.AddDate(-1, 0, 0), false)
 			if !to.After(from) {
 				return `error: to must be after from`
 			}
@@ -1928,8 +1938,8 @@ func (a *Agent) dispatchInner(ctx context.Context, call llm.ToolCall, lastKind *
 			if p == nil {
 				return `error: portfolio not found`
 			}
-			from := parsePeriodDate("from", time.Time{})
-			to := parsePeriodDate("to", time.Time{})
+			from := parsePeriodDate("from", time.Time{}, false)
+			to := parsePeriodDate("to", time.Time{}, true)
 			result, err := portfolio.CalculateTaxPnL(p, from, to)
 			if err != nil {
 				return encode(nil, err)

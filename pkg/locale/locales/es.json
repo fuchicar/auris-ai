@@ -26,6 +26,9 @@
   "disclaimer.input.error": {
     "other": "Debes escribir «yes» o «si» para continuar."
   },
+  "disclaimer.scroll_hint": {
+    "other": "↓/PgDn desplazar · End ir al final"
+  },
 
   "unlock.prompt": {
     "other": "Introduzca su contraseña maestra para desbloquear la configuración:"
@@ -35,6 +38,9 @@
   },
   "unlock.error": {
     "other": "Contraseña incorrecta. Inténtelo de nuevo."
+  },
+  "unlock.load_error": {
+    "other": "No se pudo cargar el fichero de configuración: {{.Error}}"
   },
 
   "setup.theme.label": {
@@ -1165,6 +1171,9 @@
   },
   "portfolio.instrument.chart.loading": {
     "other": "Cargando gráfico…"
+  },
+  "portfolio.instrument.chart_too_short": {
+    "other": "[gráfico oculto — agranda la terminal para verlo]"
   },
   "portfolio.instrument.badge.holding": {
     "other": "POSICIÓN"

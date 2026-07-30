@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/charmbracelet/bubbles/textinput"
@@ -42,7 +43,15 @@ func (m *UnlockModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			passphrase := m.input.Value()
 			cfg, err := config.Load(passphrase)
 			if err != nil {
-				m.err = locale.T("unlock.error")
+				if errors.Is(err, config.ErrIncorrectPassphrase) {
+					m.err = locale.T("unlock.error")
+				} else {
+					// Not a passphrase mismatch (corrupt/unreadable config
+					// file, decode failure, ...): telling the user their
+					// passphrase is wrong here would send them into an
+					// unwinnable retry loop, so surface the real cause.
+					m.err = locale.Tp("unlock.load_error", map[string]any{"Error": err.Error()})
+				}
 				m.input.SetValue("")
 				return m, textinput.Blink
 			}

@@ -42,7 +42,7 @@ func TestNewsFeedsModel_BuildCatalog(t *testing.T) {
 }
 
 func TestNewsFeedsModel_ToggleSelection(t *testing.T) {
-	m := newNewsFeedsModel(NewStyles(ThemeDark), news.DefaultFeeds, true)
+	m := newNewsFeedsModel(NewStyles(ThemeDark, 0), news.DefaultFeeds, true)
 	url := m.entries[0].Feed.URL
 
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeySpace})
@@ -62,7 +62,7 @@ func TestNewsFeedsModel_DeleteCustomOnly(t *testing.T) {
 	custom := news.FeedConfig{Name: "My Feed", URL: "https://example.com/rss.xml", Language: "en"}
 	active := append([]news.FeedConfig{}, news.DefaultFeeds...)
 	active = append(active, custom)
-	m := newNewsFeedsModel(NewStyles(ThemeDark), active, true)
+	m := newNewsFeedsModel(NewStyles(ThemeDark, 0), active, true)
 
 	// Cursor is at 0, a default entry — 'd' should be a no-op.
 	before := len(m.entries)
@@ -85,7 +85,7 @@ func TestNewsFeedsModel_DeleteCustomOnly(t *testing.T) {
 }
 
 func TestNewsFeedsModel_AddFeed_Flow(t *testing.T) {
-	m := newNewsFeedsModel(NewStyles(ThemeDark), nil, true)
+	m := newNewsFeedsModel(NewStyles(ThemeDark, 0), nil, true)
 	before := len(m.entries)
 
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a")})
@@ -138,7 +138,7 @@ func TestNewsFeedsModel_AddFeed_ValidationErrors(t *testing.T) {
 		t.Fatalf("locale.Init: %v", err)
 	}
 
-	m := newNewsFeedsModel(NewStyles(ThemeDark), nil, true)
+	m := newNewsFeedsModel(NewStyles(ThemeDark, 0), nil, true)
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a")})
 	m = updated.(*NewsFeedsModel)
 
@@ -174,7 +174,7 @@ func TestNewsFeedsModel_AddFeed_ValidationErrors(t *testing.T) {
 }
 
 func TestNewsFeedsModel_EnterEmitsFilteredOrderedResult(t *testing.T) {
-	m := newNewsFeedsModel(NewStyles(ThemeDark), news.DefaultFeeds, true)
+	m := newNewsFeedsModel(NewStyles(ThemeDark, 0), news.DefaultFeeds, true)
 
 	// Uncheck the first default.
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeySpace})
@@ -225,7 +225,7 @@ func TestNewsFeedsModel_EnterEmitsFilteredOrderedResult(t *testing.T) {
 }
 
 func TestNewsFeedsModel_EscCancelsWithNilResult(t *testing.T) {
-	m := newNewsFeedsModel(NewStyles(ThemeDark), news.DefaultFeeds, true)
+	m := newNewsFeedsModel(NewStyles(ThemeDark, 0), news.DefaultFeeds, true)
 	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
 	if cmd == nil {
 		t.Fatal("expected a command emitting ScreenDoneMsg, got nil")
@@ -240,7 +240,7 @@ func TestNewsFeedsModel_EscCancelsWithNilResult(t *testing.T) {
 }
 
 func TestNewsFeedsModel_EscNoOpWhenCannotGoBack(t *testing.T) {
-	m := newNewsFeedsModel(NewStyles(ThemeDark), news.DefaultFeeds, false)
+	m := newNewsFeedsModel(NewStyles(ThemeDark, 0), news.DefaultFeeds, false)
 	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
 	if cmd != nil {
 		if _, ok := cmd().(ScreenDoneMsg); ok {
@@ -250,7 +250,7 @@ func TestNewsFeedsModel_EscNoOpWhenCannotGoBack(t *testing.T) {
 }
 
 func TestNewsFeedsModel_ScrollFollowsCursor(t *testing.T) {
-	m := newNewsFeedsModel(NewStyles(ThemeDark), news.DefaultFeeds, true)
+	m := newNewsFeedsModel(NewStyles(ThemeDark, 0), news.DefaultFeeds, true)
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 200, Height: 15})
 	m = updated.(*NewsFeedsModel)
 
@@ -276,7 +276,7 @@ func TestNewsFeedsModel_View(t *testing.T) {
 	if err := locale.Init("en"); err != nil {
 		t.Fatalf("locale.Init: %v", err)
 	}
-	m := newNewsFeedsModel(NewStyles(ThemeDark), news.DefaultFeeds, true)
+	m := newNewsFeedsModel(NewStyles(ThemeDark, 0), news.DefaultFeeds, true)
 	if got := m.View(); got == "" {
 		t.Fatal("View() returned empty string")
 	}

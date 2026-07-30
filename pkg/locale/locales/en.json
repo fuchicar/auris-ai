@@ -26,6 +26,9 @@
   "disclaimer.input.error": {
     "other": "You must type \"yes\" to proceed."
   },
+  "disclaimer.scroll_hint": {
+    "other": "↓/PgDn scroll · End jump to bottom"
+  },
 
   "unlock.prompt": {
     "other": "Enter your master passphrase to unlock the configuration:"
@@ -35,6 +38,9 @@
   },
   "unlock.error": {
     "other": "Wrong passphrase. Please try again."
+  },
+  "unlock.load_error": {
+    "other": "Could not load the configuration file: {{.Error}}"
   },
 
   "setup.theme.label": {
@@ -1165,6 +1171,9 @@
   },
   "portfolio.instrument.chart.loading": {
     "other": "Loading chart…"
+  },
+  "portfolio.instrument.chart_too_short": {
+    "other": "[chart hidden — enlarge the terminal to see it]"
   },
   "portfolio.instrument.badge.holding": {
     "other": "POSITION"

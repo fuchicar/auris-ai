@@ -15,7 +15,7 @@ func TestNewPortfolioExportModel_NilProviderDoesNotLoad(t *testing.T) {
 			{ID: "1", Symbol: "AAPL", Type: portfolio.InstrumentHolding, Lots: []portfolio.Lot{{ID: "l1", Quantity: 1, Price: 100, Date: time.Now()}}},
 		},
 	}
-	m := newPortfolioExportModel(p, nil, NewStyles(ThemeDark))
+	m := newPortfolioExportModel(p, nil, NewStyles(ThemeDark, 0))
 	if m.loading {
 		t.Error("nil market provider should not trigger loading")
 	}
@@ -27,7 +27,7 @@ func TestNewPortfolioExportModel_NoHoldingsDoesNotLoad(t *testing.T) {
 			{ID: "1", Symbol: "TSLA", Type: portfolio.InstrumentWatchlist},
 		},
 	}
-	m := newPortfolioExportModel(p, nil, NewStyles(ThemeDark))
+	m := newPortfolioExportModel(p, nil, NewStyles(ThemeDark, 0))
 	if m.loading {
 		t.Error("portfolio with no holdings (watchlist-only) should not trigger loading")
 	}
@@ -39,7 +39,7 @@ func TestNewPortfolioExportModel_HoldingWithNoLotsDoesNotLoad(t *testing.T) {
 			{ID: "1", Symbol: "AAPL", Type: portfolio.InstrumentHolding},
 		},
 	}
-	m := newPortfolioExportModel(p, nil, NewStyles(ThemeDark))
+	m := newPortfolioExportModel(p, nil, NewStyles(ThemeDark, 0))
 	if m.loading {
 		t.Error("holding instrument with zero lots should not trigger loading")
 	}
@@ -47,7 +47,7 @@ func TestNewPortfolioExportModel_HoldingWithNoLotsDoesNotLoad(t *testing.T) {
 
 func TestPortfolioExportModel_HandleKeyEsc_EmitsBackResult(t *testing.T) {
 	p := &portfolio.Portfolio{ID: "port-1"}
-	m := newPortfolioExportModel(p, nil, NewStyles(ThemeDark))
+	m := newPortfolioExportModel(p, nil, NewStyles(ThemeDark, 0))
 	newModel, cmd := m.handleKey(tea.KeyMsg{Type: tea.KeyEsc})
 	if newModel != m {
 		t.Fatal("handleKey should return the same model instance")
