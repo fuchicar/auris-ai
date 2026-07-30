@@ -32,13 +32,13 @@ type DisclaimerModel struct {
 // disclaimerChromeReserve is the rows consumed by everything outside
 // the scrollable body on an 80×24 (or smaller) terminal:
 //
-//   3  Title (with Padding(1, 0))
-//   2  WarnBox top + bottom border
-//   1  blank separator (from JoinVertical's "")
-//   1–2  Label (the 65-char input label wraps to 2 rows on terminals
-//        narrower than ~72 cols)
-//   3  Input box (border + content + border)
-//   1  Bottom hint (or error)
+//	3  Title (with Padding(1, 0))
+//	2  WarnBox top + bottom border
+//	1  blank separator (from JoinVertical's "")
+//	1–2  Label (the 65-char input label wraps to 2 rows on terminals
+//	     narrower than ~72 cols)
+//	3  Input box (border + content + border)
+//	1  Bottom hint (or error)
 //
 // On 80×24 the label stays on 1 row → chrome = 11 → viewport budget
 // = 13. On 60×24 the label wraps to 2 rows → chrome = 12 → viewport

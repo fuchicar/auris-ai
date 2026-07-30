@@ -147,4 +147,3 @@ func TestViewportUpdateAndInputUpdate_NotNil(t *testing.T) {
 		t.Errorf("inputUpdate didn't propagate typing: got %q", got)
 	}
 }
-
