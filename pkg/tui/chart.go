@@ -15,13 +15,24 @@ import (
 
 const (
 	chartCandlePeriod = 20 // SMA period overlaid on the candle chart
-	chartWidth        = PanelWidth - 4
 	chartHeightMax    = 14 // generous default (matches the historical fixed chart)
 	chartHeightMedium = 8  // compact variant when the screen is tight
 	chartHeightMin    = 5  // smallest height the timeseries chart can render meaningfully
 	sparklineWidth    = 20
 	sparklineHeight   = 3
 )
+
+// chartWidth returns the canvas width used by renderCandleChart for the
+// given styles. It is derived from Styles.PanelWidth so it follows the
+// terminal's current width: 72 on a wide terminal, the same minus 4 on
+// any narrower one (issues #37). The 4-col subtraction matches the
+// historical PanelWidth-4 layout (border + padding).
+func chartWidth(s *Styles) int {
+	if s == nil {
+		return PanelWidthMax - 4
+	}
+	return s.PanelWidth - 4
+}
 
 // renderCandleChart renders a candlestick chart with a single SMA overlay
 // line for candles ordered oldest-first. Returns "" when there isn't enough
@@ -30,8 +41,8 @@ const (
 // When height is 0 (the screen can't spare any rows for the chart) or below
 // chartHeightMin, the chart is replaced with the locale "chart hidden" hint
 // — same degrade-gracefully precedent used by agent.chart_too_narrow in
-// screen_agent.go. width is clamped to chartWidth so callers don't have to
-// know the internal canvas size.
+// screen_agent.go. width is clamped to chartWidth(s) so callers don't have
+// to know the internal canvas size.
 func renderCandleChart(candles []market.Candle, s *Styles, width, height int) string {
 	if len(candles) < chartCandlePeriod+1 {
 		return ""
@@ -39,9 +50,10 @@ func renderCandleChart(candles []market.Candle, s *Styles, width, height int) st
 	if height <= 0 || height < chartHeightMin {
 		return s.Hint.Render(locale.T("portfolio.instrument.chart_too_short"))
 	}
+	cw := chartWidth(s)
 	w := width
-	if w <= 0 || w > chartWidth {
-		w = chartWidth
+	if w <= 0 || w > cw {
+		w = cw
 	}
 
 	minY, maxY := candles[0].Low, candles[0].High

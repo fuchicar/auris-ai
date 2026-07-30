@@ -28,7 +28,7 @@ func TestPortfolioMenu_WindowedViewStaysWithinHeight(t *testing.T) {
 	if err := locale.Init("en"); err != nil {
 		t.Fatalf("locale.Init: %v", err)
 	}
-	m := newPortfolioMenuModel(NewStyles(ThemeDark), makePortfolios(100))
+	m := newPortfolioMenuModel(NewStyles(ThemeDark, 0), makePortfolios(100))
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 24})
 	m = updated.(*portfolioMenuModel)
 	if m.height != 24 {
@@ -53,7 +53,7 @@ func TestPortfolioMenu_CursorStaysVisibleWhileNavigating(t *testing.T) {
 	if err := locale.Init("en"); err != nil {
 		t.Fatalf("locale.Init: %v", err)
 	}
-	m := newPortfolioMenuModel(NewStyles(ThemeDark), makePortfolios(80))
+	m := newPortfolioMenuModel(NewStyles(ThemeDark, 0), makePortfolios(80))
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 20})
 	m = updated.(*portfolioMenuModel)
 
@@ -79,7 +79,7 @@ func TestPortfolioMenu_EmptyListRendersEmptyHint(t *testing.T) {
 	if err := locale.Init("en"); err != nil {
 		t.Fatalf("locale.Init: %v", err)
 	}
-	m := newPortfolioMenuModel(NewStyles(ThemeDark), nil)
+	m := newPortfolioMenuModel(NewStyles(ThemeDark, 0), nil)
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 24})
 	m = updated.(*portfolioMenuModel)
 	view := m.View()

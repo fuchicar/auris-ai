@@ -17,7 +17,7 @@ func TestNewPortfolioWatchlistModel_FiltersToWatchlistOnly(t *testing.T) {
 			{ID: "3", Symbol: "MSFT", Type: portfolio.InstrumentWatchlist},
 		},
 	}
-	m := newPortfolioWatchlistModel(p, nil, NewStyles(ThemeDark))
+	m := newPortfolioWatchlistModel(p, nil, NewStyles(ThemeDark, 0))
 	if len(m.rows) != 2 {
 		t.Fatalf("want 2 watchlist rows, got %d", len(m.rows))
 	}
@@ -35,7 +35,7 @@ func TestNewPortfolioWatchlistModel_DedupesSymbols(t *testing.T) {
 			{ID: "2", Symbol: "TSLA", Type: portfolio.InstrumentWatchlist},
 		},
 	}
-	m := newPortfolioWatchlistModel(p, nil, NewStyles(ThemeDark))
+	m := newPortfolioWatchlistModel(p, nil, NewStyles(ThemeDark, 0))
 	if len(m.rows) != 1 {
 		t.Fatalf("want 1 deduped row, got %d", len(m.rows))
 	}
@@ -43,7 +43,7 @@ func TestNewPortfolioWatchlistModel_DedupesSymbols(t *testing.T) {
 
 func TestNewPortfolioWatchlistModel_Empty(t *testing.T) {
 	p := &portfolio.Portfolio{}
-	m := newPortfolioWatchlistModel(p, nil, NewStyles(ThemeDark))
+	m := newPortfolioWatchlistModel(p, nil, NewStyles(ThemeDark, 0))
 	if len(m.rows) != 0 {
 		t.Errorf("want 0 rows, got %d", len(m.rows))
 	}
@@ -56,7 +56,7 @@ func TestNewPortfolioWatchlistModel_NilProviderDoesNotLoad(t *testing.T) {
 	p := &portfolio.Portfolio{
 		Instruments: []portfolio.Instrument{{Symbol: "TSLA", Type: portfolio.InstrumentWatchlist}},
 	}
-	m := newPortfolioWatchlistModel(p, nil, NewStyles(ThemeDark))
+	m := newPortfolioWatchlistModel(p, nil, NewStyles(ThemeDark, 0))
 	if m.loadingPrices {
 		t.Error("nil market provider should not trigger loadingPrices")
 	}

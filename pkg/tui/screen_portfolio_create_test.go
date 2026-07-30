@@ -73,7 +73,7 @@ func TestNewPortfolioCreateModel_Edit_PreselectsMatchingProviderAndModel(t *test
 		AIProvider: "gemini",
 		AIModel:    "gemini-1.5-pro",
 	}
-	m := newPortfolioCreateModel(NewStyles(ThemeDark), existing, nil, makeLLMEntries(), makeModelsByProv())
+	m := newPortfolioCreateModel(NewStyles(ThemeDark, 0), existing, nil, makeLLMEntries(), makeModelsByProv())
 
 	if m.provCursor != 1 {
 		t.Errorf("provCursor = %d, want 1 (gemini)", m.provCursor)
@@ -130,7 +130,7 @@ func TestNewPortfolioCreateModel_Edit_ProviderFoundButModelMissing(t *testing.T)
 		AIProvider: "ollama",
 		AIModel:    "deleted-model",
 	}
-	m := newPortfolioCreateModel(NewStyles(ThemeDark), existing, nil, makeLLMEntries(), makeModelsByProv())
+	m := newPortfolioCreateModel(NewStyles(ThemeDark, 0), existing, nil, makeLLMEntries(), makeModelsByProv())
 
 	if m.provCursor != 0 {
 		t.Errorf("provCursor = %d, want 0 (ollama)", m.provCursor)
@@ -152,7 +152,7 @@ func TestNewPortfolioCreateModel_Edit_ProviderRemoved(t *testing.T) {
 		AIProvider: "anthropic",
 		AIModel:    "claude-opus",
 	}
-	m := newPortfolioCreateModel(NewStyles(ThemeDark), existing, nil, makeLLMEntries(), makeModelsByProv())
+	m := newPortfolioCreateModel(NewStyles(ThemeDark, 0), existing, nil, makeLLMEntries(), makeModelsByProv())
 
 	if m.provCursor != 0 {
 		t.Errorf("provCursor = %d, want 0 (fallback when provider not found)", m.provCursor)
@@ -178,7 +178,7 @@ func TestNewPortfolioCreateModel_Edit_SingleProvider_Matching(t *testing.T) {
 		AIProvider: "ollama",
 		AIModel:    "qwen2.5",
 	}
-	m := newPortfolioCreateModel(NewStyles(ThemeDark), existing, nil, entries, byProv)
+	m := newPortfolioCreateModel(NewStyles(ThemeDark, 0), existing, nil, entries, byProv)
 
 	if m.selProvider != "ollama" {
 		t.Errorf("selProvider = %q, want %q", m.selProvider, "ollama")
@@ -205,7 +205,7 @@ func TestNewPortfolioCreateModel_Edit_SingleProvider_NotMatching(t *testing.T) {
 		AIProvider: "anthropic",
 		AIModel:    "claude-opus",
 	}
-	m := newPortfolioCreateModel(NewStyles(ThemeDark), existing, nil, entries, byProv)
+	m := newPortfolioCreateModel(NewStyles(ThemeDark, 0), existing, nil, entries, byProv)
 
 	if m.selProvider != "ollama" {
 		t.Errorf("selProvider = %q, want %q (only available provider)", m.selProvider, "ollama")
@@ -224,7 +224,7 @@ func TestNewPortfolioCreateModel_Create_NoExisting(t *testing.T) {
 	if err := locale.Init("en"); err != nil {
 		t.Fatalf("locale.Init: %v", err)
 	}
-	m := newPortfolioCreateModel(NewStyles(ThemeDark), nil, nil, makeLLMEntries(), makeModelsByProv())
+	m := newPortfolioCreateModel(NewStyles(ThemeDark, 0), nil, nil, makeLLMEntries(), makeModelsByProv())
 
 	if m.provCursor != 0 {
 		t.Errorf("provCursor = %d, want 0", m.provCursor)
@@ -255,7 +255,7 @@ func TestPortfolioCreateModel_Update_ModelsLoadedMsg_PositionsCursors(t *testing
 	}
 	// Build with empty lists to simulate the screen being constructed before
 	// models have loaded, then send modelsLoadedMsg directly.
-	m := newPortfolioCreateModel(NewStyles(ThemeDark), existing, nil, nil, nil)
+	m := newPortfolioCreateModel(NewStyles(ThemeDark, 0), existing, nil, nil, nil)
 
 	next, _ := m.Update(modelsLoadedMsg{
 		entries: makeLLMEntries(),
@@ -298,7 +298,7 @@ func TestNewPortfolioCreateModel_Edit_ScrollOffKeepsCursorVisible(t *testing.T) 
 		AIProvider: "prov15",
 		AIModel:    "m1",
 	}
-	m := newPortfolioCreateModel(NewStyles(ThemeDark), existing, nil, entries, byProv)
+	m := newPortfolioCreateModel(NewStyles(ThemeDark, 0), existing, nil, entries, byProv)
 
 	maxVis := m.maxVisible()
 	if m.provCursor < m.provScrollOff || m.provCursor >= m.provScrollOff+maxVis {

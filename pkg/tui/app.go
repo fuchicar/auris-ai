@@ -258,7 +258,7 @@ type AppModel struct {
 
 // NewApp constructs the root model. The Welcome screen is always shown first.
 func NewApp(opts AppOptions) *AppModel {
-	styles := NewStyles(ThemeDark) // default; overridden after theme selection
+	styles := NewStyles(ThemeDark, 0) // default; rebuilt for actual terminal width on WindowSizeMsg (issue #37)
 	a := &AppModel{
 		setupMode:        opts.SetupMode,
 		showLocaleSelect: opts.ShowLocaleSelect,
@@ -324,6 +324,12 @@ func (a *AppModel) Update(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
 	case tea.WindowSizeMsg:
 		a.width = msg.Width
 		a.height = msg.Height
+		// Rebuild styles so every width-bound style (Input/WarnBox/.../the
+		// chart canvas) follows the actual terminal width (issues #37).
+		// The pointer swap is safe because every screen stores *Styles;
+		// existing screens pick up the new width on their next Update or
+		// View.
+		a.styles = NewStyles(a.styles.Theme, a.width)
 		// Always forward resize events so screens that need dimensions (e.g.
 		// AgentModel's viewport) can update themselves. Subtract the wizard
 		// step chrome here too — otherwise a live resize while already on a
@@ -553,11 +559,11 @@ func (a *AppModel) transition(msg ScreenDoneMsg) (tea.Model, tea.Cmd) {
 		a.screen = ScreenMenu
 		a.current = newMenuModel(a.styles, a.cfg.ActiveAIProvider != "", a.cfg.SimulationMode)
 
-	case ScreenTheme:
+		case ScreenTheme:
 		r, resultOK := msg.Result.(ThemeResult)
 		if resultOK {
 			a.cfg.Theme = r.Theme
-			a.styles = NewStyles(Theme(r.Theme))
+			a.styles = NewStyles(Theme(r.Theme), a.width)
 		}
 		if a.flowContext == FlowMenu {
 			a.saveConfig()
@@ -1230,7 +1236,7 @@ func (a *AppModel) handleCommand(cmd CommandResult) (tea.Model, tea.Cmd) {
 			t := cmd.Args[0]
 			if IsValidTheme(t) {
 				a.cfg.Theme = t
-				a.styles = NewStyles(Theme(t))
+				a.styles = NewStyles(Theme(t), a.width)
 				a.saveConfig()
 			}
 			a.current = newMenuModel(a.styles, a.cfg.ActiveAIProvider != "", a.cfg.SimulationMode)
@@ -1375,7 +1381,7 @@ func (a *AppModel) handleAgentCommand(cmd CommandResult) (tea.Model, tea.Cmd) {
 			t := cmd.Args[0]
 			if IsValidTheme(t) {
 				a.cfg.Theme = t
-				a.styles = NewStyles(Theme(t))
+				a.styles = NewStyles(Theme(t), a.width)
 				if agent, ok := a.current.(*AgentModel); ok {
 					agent.styles = a.styles
 				}
@@ -1572,7 +1578,7 @@ func reencryptAll(oldKey, newKey []byte) error {
 // loaded config, ensuring the UI matches the user's saved preference.
 func (a *AppModel) applyStoredTheme() {
 	if a.cfg.Theme != "" {
-		a.styles = NewStyles(Theme(a.cfg.Theme))
+		a.styles = NewStyles(Theme(a.cfg.Theme), a.width)
 	}
 }
 

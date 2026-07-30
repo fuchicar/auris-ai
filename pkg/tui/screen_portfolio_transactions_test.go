@@ -19,7 +19,7 @@ func TestNewPortfolioTransactionsModel_NewestFirst(t *testing.T) {
 		},
 	}
 
-	m := newPortfolioTransactionsModel(p, NewStyles(ThemeDark))
+	m := newPortfolioTransactionsModel(p, NewStyles(ThemeDark, 0))
 
 	if len(m.rows) != 2 {
 		t.Fatalf("want 2 rows, got %d", len(m.rows))
@@ -31,7 +31,7 @@ func TestNewPortfolioTransactionsModel_NewestFirst(t *testing.T) {
 
 func TestNewPortfolioTransactionsModel_Empty(t *testing.T) {
 	p := &portfolio.Portfolio{}
-	m := newPortfolioTransactionsModel(p, NewStyles(ThemeDark))
+	m := newPortfolioTransactionsModel(p, NewStyles(ThemeDark, 0))
 	if len(m.rows) != 0 {
 		t.Errorf("want 0 rows for a portfolio with no transactions, got %d", len(m.rows))
 	}

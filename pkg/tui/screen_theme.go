@@ -33,11 +33,14 @@ type ThemeModel struct {
 }
 
 // newThemeModel constructs a [ThemeModel]. All theme previews are built once
-// at construction time so cursor movement has no allocation cost.
+// at construction time so cursor movement has no allocation cost. The
+// preview width follows the live terminal width (s.PanelWidth) so a
+// preview on a narrow terminal doesn't show a wrapped block whose box
+// would overflow (issue #37).
 func newThemeModel(s *Styles, canGoBack bool) *ThemeModel {
 	previews := make([]*Styles, len(themeOptions))
 	for i, opt := range themeOptions {
-		previews[i] = NewStyles(opt.key)
+		previews[i] = NewStyles(opt.key, s.PanelWidth)
 	}
 	return &ThemeModel{
 		cursor:    1, // default cursor on Dark
@@ -87,7 +90,7 @@ func renderPreview(s *Styles) string {
 	unselected := fmt.Sprintf("  %s", s.Unselected.Render("Unselected option"))
 	hintLine := s.Hint.Render("↑↓ navigate · Enter select")
 
-	previewW := PanelWidth - 4 // account for Preview border + padding
+	previewW := s.PanelWidth - 4 // account for Preview border + padding; follows live terminal width (issue #37)
 	youLine := lipgloss.NewStyle().Width(previewW).Render(
 		s.Selected.Render("You: ") + "What is the P/E ratio of AAPL?",
 	)

@@ -24,7 +24,7 @@ func TestUpdate_ScreenDoneMsg_SeedsSizeIntoNewScreen(t *testing.T) {
 		t.Fatalf("locale.Init: %v", err)
 	}
 	a := NewApp(AppOptions{})
-	a.styles = NewStyles(ThemeDark)
+	a.styles = NewStyles(ThemeDark, 0)
 	a.width, a.height = 100, 42
 	a.screen = ScreenMenu
 	a.current = newMenuModel(a.styles, false, false)
@@ -49,7 +49,7 @@ func TestUpdate_ModelsLoadedMsg_SeedsSizeIntoNewScreen(t *testing.T) {
 		t.Fatalf("locale.Init: %v", err)
 	}
 	a := NewApp(AppOptions{})
-	a.styles = NewStyles(ThemeDark)
+	a.styles = NewStyles(ThemeDark, 0)
 	a.width, a.height = 100, 42
 	a.pendingPortfolioCreate = true
 	a.screen = ScreenPortfolioMenu
@@ -79,7 +79,7 @@ func TestUpdate_SameScreen_DoesNotReinjectSize(t *testing.T) {
 		t.Fatalf("locale.Init: %v", err)
 	}
 	a := NewApp(AppOptions{})
-	a.styles = NewStyles(ThemeDark)
+	a.styles = NewStyles(ThemeDark, 0)
 	a.width, a.height = 100, 42
 	a.pendingPortfolioCreate = true
 	a.screen = ScreenPortfolioMenu
@@ -109,7 +109,7 @@ func TestUpdate_WizardStep_SubtractsChromeForNewScreen(t *testing.T) {
 		t.Fatalf("locale.Init: %v", err)
 	}
 	a := NewApp(AppOptions{})
-	a.styles = NewStyles(ThemeDark)
+	a.styles = NewStyles(ThemeDark, 0)
 	a.flowContext = FlowSetup
 	a.width, a.height = 100, 42
 
@@ -157,7 +157,7 @@ func TestUpdate_WizardStep_LiveResizeAlsoSubtractsChrome(t *testing.T) {
 		t.Fatalf("locale.Init: %v", err)
 	}
 	a := NewApp(AppOptions{})
-	a.styles = NewStyles(ThemeDark)
+	a.styles = NewStyles(ThemeDark, 0)
 	a.flowContext = FlowSetup
 	a.width, a.height = 100, 42
 	a.screen = ScreenProfile
@@ -186,7 +186,7 @@ func TestUpdate_FlowMenu_DoesNotSubtractChrome(t *testing.T) {
 		t.Fatalf("locale.Init: %v", err)
 	}
 	a := NewApp(AppOptions{})
-	a.styles = NewStyles(ThemeDark)
+	a.styles = NewStyles(ThemeDark, 0)
 	a.flowContext = FlowMenu
 	a.width, a.height = 100, 42
 

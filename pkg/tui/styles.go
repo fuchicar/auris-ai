@@ -22,19 +22,67 @@ const (
 	ThemeBoxDark Theme = "boxdark"
 )
 
-// PanelWidth is the fixed content width used by all screens.
-// Keeping it constant ensures consistent layout regardless of terminal size;
-// AppModel centres the panel horizontally and vertically via lipgloss.Place.
-const PanelWidth = 72
+// Panel width bounds.
+//
+// PanelWidthMax is the comfortable target width used when the terminal is
+// wide enough. PanelWidthMin is the floor below which lipgloss would wrap
+// any bordered box harder than the data warrants — we still let lipgloss
+// truncate when the terminal is genuinely narrower, but cap the
+// floor here so very narrow windows don't render an empty 1-column box.
+//
+// panelMargin is the gutter (cols on each side) the centred panels
+// reserve via lipgloss.Place; widths are derived as `maxWidth -
+// panelMargin`, so a 60-col terminal yields 56, a 24-col terminal clamps
+// to PanelWidthMin (issues #37).
+//
+// Lipgloss Width(N) on a style that also has Border + Padding(0, 1)
+// means "the content + padding total = N" — the rounded border is
+// rendered *outside* Width(N), so the box's outer width is N + 2.
+// To make a WarnBox/Input/Preview render with outer width exactly equal
+// to PanelWidth, set .Width(PanelWidth - 2). The content area inside
+// the box is then `PanelWidth - 2 - 2 = PanelWidth - 4` cols
+// (accounting for the 1-col left/right padding). Any content wider than
+// that re-wraps inside the box — visible at ~2× height — which is the
+// bug the viewport refactor fixed (issues #37).
+const (
+	PanelWidthMax    = 72
+	PanelWidthMin    = 20
+	panelMargin      = 4
+	boxOuterInset    = 2 // border cols that lipgloss adds *outside* Width(N)
+	boxInnerInset    = 4 // total reserved cols inside the box: border (1) + padding (1) per side
+)
+
+// panelWidth returns the actual content width to use given the terminal's
+// outer width. When maxWidth is 0 (no resize event yet, e.g. tests that
+// construct Styles directly) we fall back to the ceiling so screens built
+// outside an AppModel still render at the historical default.
+func panelWidth(maxWidth int) int {
+	if maxWidth <= 0 {
+		return PanelWidthMax
+	}
+	pw := maxWidth - panelMargin
+	if pw < PanelWidthMin {
+		pw = PanelWidthMin
+	}
+	if pw > PanelWidthMax {
+		pw = PanelWidthMax
+	}
+	return pw
+}
 
 // Styles holds all LipGloss styles for a given theme. Screens receive a
 // pointer so that the same pointer can be swapped atomically when the user
-// changes the theme during setup.
+// changes the theme during setup or the terminal is resized (issue #37:
+// styles used to be built once with a fixed PanelWidth=72, breaking
+// terminals narrower than ~72 columns and forcing every box to wrap).
 type Styles struct {
 	// Theme identifies which palette is in use.
 	Theme Theme
 
-	// PanelWidth is the content width constraint for all screens.
+	// PanelWidth is the content width constraint for all screens. It is
+	// recomputed from the current terminal width whenever AppModel
+	// receives a WindowSizeMsg; screens should always read this field
+	// instead of any package-level constant.
 	PanelWidth int
 
 	Title      lipgloss.Style
@@ -56,12 +104,15 @@ type Styles struct {
 	Bear       lipgloss.Style // red — bearish candle (close < open)
 }
 
-// NewStyles builds a complete [Styles] set for the given [Theme].
-// All 6 themes share the same adaptive palette (see newBaseStyles); only
-// s.Theme differs, which controls how agent messages are rendered in the
-// chat screen (tinted block / green badge / rounded box, light or dark).
-func NewStyles(t Theme) *Styles {
-	s := newBaseStyles()
+// NewStyles builds a complete [Styles] set for the given [Theme] and
+// terminal width (issues #37). maxWidth is the outer terminal width in
+// columns; pass 0 to fall back to the default PanelWidthMax ceiling
+// (useful for tests that don't seed a real terminal). All 6 themes share
+// the same adaptive palette (see newBaseStyles); only s.Theme differs,
+// which controls how agent messages are rendered in the chat screen
+// (tinted block / green badge / rounded box, light or dark).
+func NewStyles(t Theme, maxWidth int) *Styles {
+	s := newBaseStyles(maxWidth)
 	s.Theme = t
 	return s
 }
@@ -96,24 +147,42 @@ var (
 	colorUnselected = lipgloss.AdaptiveColor{Light: "#374151", Dark: "#D1D5DB"}
 )
 
-func newBaseStyles() *Styles {
+// newBaseStyles builds the width-bound styles. pw is the resolved content
+// width (already clamped to [PanelWidthMin, PanelWidthMax] by panelWidth).
+// Box-bordered styles (Input/Preview/WarnBox) use `.Width(pw -
+// boxOuterInset)` so the *outer* rendered width equals pw (lipgloss
+// adds boxOuterInset=2 cols of border OUTSIDE Width). Content placed
+// inside the box (e.g. the disclaimer viewport body) must therefore
+// fit in `pw - boxInnerInset` cols or it re-wraps inside the box
+// (issues #37).
+func newBaseStyles(maxWidth int) *Styles {
+	pw := panelWidth(maxWidth)
+	frameW := pw - boxOuterInset
+	if frameW < 1 {
+		frameW = 1
+	}
+	contentW := pw - boxInnerInset
+	if contentW < 1 {
+		contentW = 1
+	}
+	_ = contentW // documented above; callers may use Styles-derived content width
 	return &Styles{
-		PanelWidth: PanelWidth,
+		PanelWidth: pw,
 		Title:      lipgloss.NewStyle().Bold(true).Foreground(colorAccent).Padding(1, 0),
 		Subtitle:   lipgloss.NewStyle().Foreground(colorSelected).MarginBottom(1),
 		Cursor:     lipgloss.NewStyle().Foreground(colorAccent).Bold(true),
 		Selected:   lipgloss.NewStyle().Foreground(colorSelected).Bold(true),
 		Unselected: lipgloss.NewStyle().Foreground(colorUnselected),
-		Input:      lipgloss.NewStyle().BorderStyle(lipgloss.RoundedBorder()).BorderForeground(colorAccent).Padding(0, 1).Width(PanelWidth - 4),
-		Error:      lipgloss.NewStyle().Foreground(colorError).Bold(true).Width(PanelWidth),
+		Input:      lipgloss.NewStyle().BorderStyle(lipgloss.RoundedBorder()).BorderForeground(colorAccent).Padding(0, 1).Width(frameW),
+		Error:      lipgloss.NewStyle().Foreground(colorError).Bold(true).Width(pw),
 		Hint:       lipgloss.NewStyle().Foreground(colorHint).Italic(true),
-		Help:       lipgloss.NewStyle().Foreground(colorHint).Width(PanelWidth),
+		Help:       lipgloss.NewStyle().Foreground(colorHint).Width(pw),
 		DocsURL:    lipgloss.NewStyle().Foreground(colorURL).Underline(true),
 		Checkbox:   lipgloss.NewStyle().Foreground(colorSelected),
 		Spinner:    lipgloss.NewStyle().Foreground(colorAccent),
-		Preview:    lipgloss.NewStyle().BorderStyle(lipgloss.RoundedBorder()).BorderForeground(colorAccent).Padding(0, 1).Width(PanelWidth - 4),
-		Warning:    lipgloss.NewStyle().Foreground(colorWarn).Bold(true),
-		WarnBox:    lipgloss.NewStyle().BorderStyle(lipgloss.RoundedBorder()).BorderForeground(colorWarn).Padding(0, 1).Width(PanelWidth - 4),
+		Preview:    lipgloss.NewStyle().BorderStyle(lipgloss.RoundedBorder()).BorderForeground(colorAccent).Padding(0, 1).Width(frameW),
+		Warning:    lipgloss.NewStyle().Foreground(colorWarn).Bold(true).Width(pw),
+		WarnBox:    lipgloss.NewStyle().BorderStyle(lipgloss.RoundedBorder()).BorderForeground(colorWarn).Padding(0, 1).Width(frameW),
 		Bull:       lipgloss.NewStyle().Foreground(colorBull),
 		Bear:       lipgloss.NewStyle().Foreground(colorError),
 	}

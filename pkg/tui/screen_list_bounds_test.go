@@ -50,7 +50,7 @@ func mustNotExceed(t *testing.T, view string, height int, label string) {
 
 func TestIssue35_PortfolioMenu_BoundedAt24Lines(t *testing.T) {
 	issue35Setup(t)
-	m := newPortfolioMenuModel(NewStyles(ThemeDark), makePortfolios(200))
+	m := newPortfolioMenuModel(NewStyles(ThemeDark, 0), makePortfolios(200))
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 24})
 	m = updated.(*portfolioMenuModel)
 	mustNotExceed(t, m.View(), 24, "PortfolioMenu")
@@ -67,7 +67,7 @@ func TestIssue35_PortfolioInstruments_BoundedAt24Lines(t *testing.T) {
 			Type: portfolio.InstrumentHolding,
 		})
 	}
-	m := newPortfolioInstrumentsModel(p, NewStyles(ThemeDark))
+	m := newPortfolioInstrumentsModel(p, NewStyles(ThemeDark, 0))
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 24})
 	m = updated.(*portfolioInstrumentsModel)
 	mustNotExceed(t, m.View(), 24, "PortfolioInstruments")
@@ -88,7 +88,7 @@ func TestIssue35_PortfolioTransactions_BoundedAt24Lines(t *testing.T) {
 			Date:      base.AddDate(0, 0, i),
 		})
 	}
-	m := newPortfolioTransactionsModel(p, NewStyles(ThemeDark))
+	m := newPortfolioTransactionsModel(p, NewStyles(ThemeDark, 0))
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 24})
 	m = updated.(*portfolioTransactionsModel)
 	mustNotExceed(t, m.View(), 24, "PortfolioTransactions")
@@ -111,7 +111,7 @@ func TestIssue35_PortfolioAllocation_BoundedAt24Lines(t *testing.T) {
 	for i := 0; i < 50; i++ {
 		p.TargetAllocation[fmt.Sprintf("SYM%02d", i)] = 1.0
 	}
-	m := newPortfolioAllocationModel(p, NewStyles(ThemeDark))
+	m := newPortfolioAllocationModel(p, NewStyles(ThemeDark, 0))
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 24})
 	m = updated.(*portfolioAllocationModel)
 	mustNotExceed(t, m.View(), 24, "PortfolioAllocation")
@@ -136,7 +136,7 @@ func TestIssue35_PortfolioAllocation_BoundedWithWarning(t *testing.T) {
 	// Intentionally unbalanced total — 0.5 (50%) instead of 100% — to force
 	// the WarnBox path on render.
 	p.TargetAllocation = map[string]float64{"S00": 0.5}
-	m := newPortfolioAllocationModel(p, NewStyles(ThemeDark))
+	m := newPortfolioAllocationModel(p, NewStyles(ThemeDark, 0))
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 24})
 	m = updated.(*portfolioAllocationModel)
 	mustNotExceed(t, m.View(), 24, "PortfolioAllocation (warning)")
@@ -158,7 +158,7 @@ func TestIssue35_PortfolioAllocation_BoundedInEditMode(t *testing.T) {
 		})
 	}
 	p.TargetAllocation = map[string]float64{"S00": 0.5}
-	m := newPortfolioAllocationModel(p, NewStyles(ThemeDark))
+	m := newPortfolioAllocationModel(p, NewStyles(ThemeDark, 0))
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 24})
 	m = updated.(*portfolioAllocationModel)
 	// Enter edit mode and verify View still fits.
@@ -169,7 +169,7 @@ func TestIssue35_PortfolioAllocation_BoundedInEditMode(t *testing.T) {
 
 func TestIssue35_MarketProviderManage_BoundedAt24Lines(t *testing.T) {
 	issue35Setup(t)
-	m := newMarketProviderManageModel(NewStyles(ThemeDark), makeMarketEntries(50), map[string]bool{}, true)
+	m := newMarketProviderManageModel(NewStyles(ThemeDark, 0), makeMarketEntries(50), map[string]bool{}, true)
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 24})
 	m = updated.(*MarketProviderManageModel)
 	mustNotExceed(t, m.View(), 24, "MarketProviderManage")
@@ -177,7 +177,7 @@ func TestIssue35_MarketProviderManage_BoundedAt24Lines(t *testing.T) {
 
 func TestIssue35_Provider_BoundedAt24Lines(t *testing.T) {
 	issue35Setup(t)
-	m := newProviderModel(NewStyles(ThemeDark))
+	m := newProviderModel(NewStyles(ThemeDark, 0))
 	// The provider registry is fixed in production; this test just pins the
 	// budget invariant for whatever length the list has at runtime.
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 24})
@@ -190,10 +190,10 @@ func TestIssue35_Provider_BoundedAt24Lines(t *testing.T) {
 // which is never enough to trigger windowing, so the test above alone can't
 // catch a wrong chrome budget (as happened: chromeAbove was hardcoded
 // assuming the wrapped "explain" paragraph was 3 lines, when it's actually
-// 5-6 at PanelWidth=72).
+// 5-6 at PanelWidthMax=72).
 func TestIssue35_Provider_LongList_BoundedAt24Lines(t *testing.T) {
 	issue35Setup(t)
-	m := &ProviderModel{entries: makeMarketEntries(50), styles: NewStyles(ThemeDark)}
+	m := &ProviderModel{entries: makeMarketEntries(50), styles: NewStyles(ThemeDark, 0)}
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 24})
 	m = updated.(*ProviderModel)
 	mustNotExceed(t, m.View(), 24, "Provider (long list)")
@@ -202,7 +202,7 @@ func TestIssue35_Provider_LongList_BoundedAt24Lines(t *testing.T) {
 // Long navigations must keep the cursor visible and the View within bounds.
 func TestIssue35_CursorAlwaysVisible_WhileNavigatingLongList(t *testing.T) {
 	issue35Setup(t)
-	m := newPortfolioMenuModel(NewStyles(ThemeDark), makePortfolios(120))
+	m := newPortfolioMenuModel(NewStyles(ThemeDark, 0), makePortfolios(120))
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 24})
 	m = updated.(*portfolioMenuModel)
 
@@ -246,7 +246,7 @@ func TestIssue35_PortfolioCreate_ModelPicker_BoundedAt24Lines(t *testing.T) {
 		}
 		models[fmt.Sprintf("prov%d", i)] = mod
 	}
-	m := newPortfolioCreateModel(NewStyles(ThemeDark), nil, nil, entries, models)
+	m := newPortfolioCreateModel(NewStyles(ThemeDark, 0), nil, nil, entries, models)
 	m.step = pcStepModel
 	m.modelStep = pmStepProvider
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 24})

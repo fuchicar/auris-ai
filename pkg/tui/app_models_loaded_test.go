@@ -14,7 +14,7 @@ func TestModelsLoadedMsg_Err_ResetsPendingPortfolioCreate(t *testing.T) {
 		t.Fatalf("locale.Init: %v", err)
 	}
 	a := NewApp(AppOptions{})
-	a.styles = NewStyles(ThemeDark)
+	a.styles = NewStyles(ThemeDark, 0)
 	a.pendingPortfolioCreate = true
 	a.screen = ScreenPortfolioMenu
 	a.current = newPortfolioMenuModel(a.styles, nil)
@@ -39,7 +39,7 @@ func TestModelsLoadedMsg_Err_ResetsPendingPortfolioEdit(t *testing.T) {
 		t.Fatalf("locale.Init: %v", err)
 	}
 	a := NewApp(AppOptions{})
-	a.styles = NewStyles(ThemeDark)
+	a.styles = NewStyles(ThemeDark, 0)
 	a.pendingPortfolioEdit = true
 	a.activePortfolio = portfolio.NewPortfolio("Test")
 	a.screen = ScreenPortfolioView
@@ -65,7 +65,7 @@ func TestModelsLoadedMsg_Err_SurfacedOnMenu(t *testing.T) {
 		t.Fatalf("locale.Init: %v", err)
 	}
 	a := NewApp(AppOptions{})
-	a.styles = NewStyles(ThemeDark)
+	a.styles = NewStyles(ThemeDark, 0)
 	a.screen = ScreenMenu
 	a.current = newMenuModel(a.styles, false, false)
 
@@ -86,7 +86,7 @@ func TestModelsLoadedMsg_Success_DoesNotSetError(t *testing.T) {
 		t.Fatalf("locale.Init: %v", err)
 	}
 	a := NewApp(AppOptions{})
-	a.styles = NewStyles(ThemeDark)
+	a.styles = NewStyles(ThemeDark, 0)
 	a.pendingPortfolioCreate = true
 	a.screen = ScreenPortfolioMenu
 	a.current = newPortfolioMenuModel(a.styles, nil)

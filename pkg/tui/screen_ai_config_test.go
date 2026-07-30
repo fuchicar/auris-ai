@@ -62,7 +62,7 @@ func assertCancelled(t *testing.T, cmd tea.Cmd) {
 
 func TestAIProviderConfigModel_OllamaMode_EscCancels(t *testing.T) {
 	entry := registry.LLMEntry{Key: "ollama", DisplayName: "Ollama"}
-	m := newAIProviderConfigModel(entry, NewStyles(ThemeDark))
+	m := newAIProviderConfigModel(entry, NewStyles(ThemeDark, 0))
 
 	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
 	assertCancelled(t, cmd)
@@ -70,7 +70,7 @@ func TestAIProviderConfigModel_OllamaMode_EscCancels(t *testing.T) {
 
 func TestAIProviderConfigModel_InstanceNameStep_EscCancels(t *testing.T) {
 	entry := registry.LLMEntry{Key: "openai_compatible", DisplayName: "OpenAI-Compatible"}
-	m := newAIProviderConfigModel(entry, NewStyles(ThemeDark))
+	m := newAIProviderConfigModel(entry, NewStyles(ThemeDark, 0))
 	if m.step != aiStepInstanceName {
 		t.Fatalf("expected initial step aiStepInstanceName for openai_compatible, got %v", m.step)
 	}
@@ -81,7 +81,7 @@ func TestAIProviderConfigModel_InstanceNameStep_EscCancels(t *testing.T) {
 
 func TestAIProviderConfigModel_InstanceNameStep_EmptyValueDoesNotAdvance(t *testing.T) {
 	entry := registry.LLMEntry{Key: "openai_compatible", DisplayName: "OpenAI-Compatible"}
-	m := newAIProviderConfigModel(entry, NewStyles(ThemeDark))
+	m := newAIProviderConfigModel(entry, NewStyles(ThemeDark, 0))
 	m.input.SetValue("")
 
 	m.Update(tea.KeyMsg{Type: tea.KeyEnter})
@@ -92,7 +92,7 @@ func TestAIProviderConfigModel_InstanceNameStep_EmptyValueDoesNotAdvance(t *test
 
 func TestAIProviderConfigModel_BaseURLStep_EscCancels(t *testing.T) {
 	entry := registry.LLMEntry{Key: "openai_compatible", DisplayName: "OpenAI-Compatible"}
-	m := newAIProviderConfigModel(entry, NewStyles(ThemeDark))
+	m := newAIProviderConfigModel(entry, NewStyles(ThemeDark, 0))
 	m.input.SetValue("DeepSeek")
 	m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	if m.step != aiStepBaseURL {
@@ -105,7 +105,7 @@ func TestAIProviderConfigModel_BaseURLStep_EscCancels(t *testing.T) {
 
 func TestAIProviderConfigModel_APIKeyStep_EscCancels_NonOllama(t *testing.T) {
 	entry := registry.LLMEntry{Key: "anthropic", DisplayName: "Anthropic Claude"}
-	m := newAIProviderConfigModel(entry, NewStyles(ThemeDark))
+	m := newAIProviderConfigModel(entry, NewStyles(ThemeDark, 0))
 	if m.step != aiStepAPIKey {
 		t.Fatalf("expected initial step aiStepAPIKey, got %v", m.step)
 	}
@@ -119,7 +119,7 @@ func TestAIProviderConfigModel_APIKeyStep_EscStillSkipsForOllama(t *testing.T) {
 	// fixed here, and must keep working: it starts connecting (never emits a
 	// cancel ScreenDoneMsg).
 	entry := registry.LLMEntry{Key: "ollama", DisplayName: "Ollama"}
-	m := newAIProviderConfigModel(entry, NewStyles(ThemeDark))
+	m := newAIProviderConfigModel(entry, NewStyles(ThemeDark, 0))
 	m.step = aiStepAPIKey
 
 	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
@@ -133,7 +133,7 @@ func TestAIProviderConfigModel_APIKeyStep_EscStillSkipsForOllama(t *testing.T) {
 
 func TestAIProviderConfigModel_ModelNameStep_EscCancels(t *testing.T) {
 	entry := registry.LLMEntry{Key: "openai_compatible", DisplayName: "OpenAI-Compatible"}
-	m := newAIProviderConfigModel(entry, NewStyles(ThemeDark))
+	m := newAIProviderConfigModel(entry, NewStyles(ThemeDark, 0))
 	m.step = aiStepModelName
 
 	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
@@ -142,7 +142,7 @@ func TestAIProviderConfigModel_ModelNameStep_EscCancels(t *testing.T) {
 
 func TestAIProviderConfigModel_ErrorStep_EscCancels(t *testing.T) {
 	entry := registry.LLMEntry{Key: "anthropic", DisplayName: "Anthropic Claude"}
-	m := newAIProviderConfigModel(entry, NewStyles(ThemeDark))
+	m := newAIProviderConfigModel(entry, NewStyles(ThemeDark, 0))
 	m.step = aiStepError
 	m.errStep = aiStepAPIKey
 
@@ -154,7 +154,7 @@ func TestAIProviderConfigModel_ErrorStep_EscCancels(t *testing.T) {
 
 func TestAIProviderConfigModel_ErrorStep_EnterReturnsToFailedStepForEditing(t *testing.T) {
 	entry := registry.LLMEntry{Key: "anthropic", DisplayName: "Anthropic Claude"}
-	m := newAIProviderConfigModel(entry, NewStyles(ThemeDark))
+	m := newAIProviderConfigModel(entry, NewStyles(ThemeDark, 0))
 	m.input.SetValue("bad-key")
 	m.apiKey = "bad-key"
 	m.err = "invalid credentials"
@@ -185,7 +185,7 @@ func TestAIProviderConfigModel_ErrorStep_EnterReturnsToFailedStepForEditing(t *t
 
 func TestAIProviderConfigModel_OpenAICompatible_FullStepFlow(t *testing.T) {
 	entry := registry.LLMEntry{Key: "openai_compatible", DisplayName: "OpenAI-Compatible"}
-	m := newAIProviderConfigModel(entry, NewStyles(ThemeDark))
+	m := newAIProviderConfigModel(entry, NewStyles(ThemeDark, 0))
 
 	if m.step != aiStepInstanceName {
 		t.Fatalf("initial step = %v, want aiStepInstanceName", m.step)
@@ -240,7 +240,7 @@ func TestAIProviderConfigModel_OpenAICompatible_FullStepFlow(t *testing.T) {
 
 func TestAIProviderConfigModel_ModelNameStep_EmptyValueDoesNotAdvance(t *testing.T) {
 	entry := registry.LLMEntry{Key: "openai_compatible", DisplayName: "OpenAI-Compatible"}
-	m := newAIProviderConfigModel(entry, NewStyles(ThemeDark))
+	m := newAIProviderConfigModel(entry, NewStyles(ThemeDark, 0))
 	m.step = aiStepModelName
 	m.input.SetValue("")
 
