@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"maps"
 	"os"
 	"sort"
 	"strings"
@@ -238,12 +239,26 @@ type AppModel struct {
 	pendingLLMModels    map[string][]llm.Model // models discovered per provider key
 	managingProviders   bool                   // true when in /aiproviders flow (not initial setup)
 
+	// providersSnapshot captures a.cfg.AIProviders/ActiveAIProvider/DefaultAIModel at
+	// the moment a /aiproviders flow starts, so a cancelled flow can be rolled back —
+	// applyProviderSelection mutates a.cfg immediately on checklist confirm, before the
+	// newly-selected providers are done being configured (a step the user can still Esc
+	// out of). Populated by snapshotProviders, consumed by restoreProviders, discarded
+	// without restoring by clearProvidersSnapshot on successful completion.
+	providersSnapshot        map[string]*config.AIProviderConfig
+	activeAIProviderSnapshot string
+	defaultAIModelSnapshot   string
+
 	// Market provider management state — used only by /marketproviders (post-setup);
 	// the first-run wizard (ScreenProvider/ScreenAPIKey/ScreenAPIKeySecondary) does
 	// not touch these.
 	pendingMarketProviders  []string // provider keys still to be configured
 	pendingMarketIdx        int      // index of the provider currently being configured
 	managingMarketProviders bool     // true when in /marketproviders flow
+
+	// marketProvidersSnapshot mirrors providersSnapshot above, for /marketproviders.
+	marketProvidersSnapshot map[string]*config.ProviderConfig
+	activeProviderSnapshot  string
 
 	// debugLogger, when non-nil, is forwarded to the agent for diagnostic output.
 	debugLogger *log.Logger
@@ -740,6 +755,7 @@ func (a *AppModel) transition(msg ScreenDoneMsg) (tea.Model, tea.Cmd) {
 				return a, a.current.Init()
 			}
 			a.managingMarketProviders = false
+			a.clearMarketProvidersSnapshot()
 			a.saveConfig()
 			return a.returnFromMarketProviderManagement()
 		}
@@ -788,6 +804,9 @@ func (a *AppModel) transition(msg ScreenDoneMsg) (tea.Model, tea.Cmd) {
 			return a.applyMarketProviderSelection(r.Selected)
 		}
 		// nil result = cancelled via Esc
+		if a.managingMarketProviders {
+			a.restoreMarketProviders()
+		}
 		a.managingMarketProviders = false
 		if a.flowContext == FlowAgent && a.cfg.ActiveAIProvider != "" {
 			return a.enterAgentMode()
@@ -816,6 +835,9 @@ func (a *AppModel) transition(msg ScreenDoneMsg) (tea.Model, tea.Cmd) {
 			return a, a.current.Init()
 		}
 		// nil result = cancelled via escape
+		if a.managingProviders {
+			a.restoreProviders()
+		}
 		a.managingProviders = false
 		if a.flowContext == FlowAgent && a.cfg.ActiveAIProvider != "" {
 			return a.enterAgentMode()
@@ -870,6 +892,7 @@ func (a *AppModel) transition(msg ScreenDoneMsg) (tea.Model, tea.Cmd) {
 			} else if a.managingProviders {
 				// /aiproviders flow: only go to model selection when no active provider is set.
 				a.managingProviders = false
+				a.clearProvidersSnapshot()
 				if a.cfg.ActiveAIProvider == "" {
 					var entries []registry.LLMEntry
 					for _, k := range a.pendingLLMProviders {
@@ -1304,6 +1327,7 @@ func (a *AppModel) handleCommand(cmd CommandResult) (tea.Model, tea.Cmd) {
 		}
 		a.flowContext = FlowMenu
 		a.managingMarketProviders = true
+		a.snapshotMarketProviders()
 		a.screen = ScreenMarketProviderManage
 		a.current = newMarketProviderManageModel(a.styles, a.marketProviderOrder(), preSelected, true)
 
@@ -1314,6 +1338,7 @@ func (a *AppModel) handleCommand(cmd CommandResult) (tea.Model, tea.Cmd) {
 		}
 		a.flowContext = FlowMenu
 		a.managingProviders = true
+		a.snapshotProviders()
 		a.screen = ScreenAIProviderSelect
 		a.current = newAIProviderSelectModel(a.styles, preSelected, dynamicLLMEntries(a.cfg), true)
 
@@ -1412,6 +1437,7 @@ func (a *AppModel) handleAgentCommand(cmd CommandResult) (tea.Model, tea.Cmd) {
 		}
 		a.flowContext = FlowAgent
 		a.managingProviders = true
+		a.snapshotProviders()
 		a.screen = ScreenAIProviderSelect
 		a.current = newAIProviderSelectModel(a.styles, preSelected, dynamicLLMEntries(a.cfg), true)
 		return a, a.current.Init()
@@ -1429,6 +1455,7 @@ func (a *AppModel) handleAgentCommand(cmd CommandResult) (tea.Model, tea.Cmd) {
 		}
 		a.flowContext = FlowAgent
 		a.managingMarketProviders = true
+		a.snapshotMarketProviders()
 		a.screen = ScreenMarketProviderManage
 		a.current = newMarketProviderManageModel(a.styles, a.marketProviderOrder(), preSelected, true)
 		return a, a.current.Init()
@@ -1534,6 +1561,56 @@ func (a *AppModel) saveConfig() {
 	_ = config.Save(a.cfg, a.passphrase)
 }
 
+// snapshotProviders records the pre-flow AI provider state so a cancelled
+// /aiproviders flow can be rolled back via restoreProviders (see issue #38).
+func (a *AppModel) snapshotProviders() {
+	a.providersSnapshot = maps.Clone(a.cfg.AIProviders)
+	a.activeAIProviderSnapshot = a.cfg.ActiveAIProvider
+	a.defaultAIModelSnapshot = a.cfg.DefaultAIModel
+}
+
+// restoreProviders reverts a.cfg to the state captured by snapshotProviders,
+// then clears the snapshot. Call only when a /aiproviders flow is being
+// abandoned, not completed.
+func (a *AppModel) restoreProviders() {
+	a.cfg.AIProviders = a.providersSnapshot
+	a.cfg.ActiveAIProvider = a.activeAIProviderSnapshot
+	a.cfg.DefaultAIModel = a.defaultAIModelSnapshot
+	a.clearProvidersSnapshot()
+}
+
+// clearProvidersSnapshot discards the snapshot without restoring it — call
+// when a /aiproviders flow completes successfully.
+func (a *AppModel) clearProvidersSnapshot() {
+	a.providersSnapshot = nil
+	a.activeAIProviderSnapshot = ""
+	a.defaultAIModelSnapshot = ""
+}
+
+// snapshotMarketProviders records the pre-flow market provider state so a
+// cancelled /marketproviders flow can be rolled back via
+// restoreMarketProviders (see issue #38).
+func (a *AppModel) snapshotMarketProviders() {
+	a.marketProvidersSnapshot = maps.Clone(a.cfg.Providers)
+	a.activeProviderSnapshot = a.cfg.ActiveProvider
+}
+
+// restoreMarketProviders reverts a.cfg to the state captured by
+// snapshotMarketProviders, then clears the snapshot. Call only when a
+// /marketproviders flow is being abandoned, not completed.
+func (a *AppModel) restoreMarketProviders() {
+	a.cfg.Providers = a.marketProvidersSnapshot
+	a.cfg.ActiveProvider = a.activeProviderSnapshot
+	a.clearMarketProvidersSnapshot()
+}
+
+// clearMarketProvidersSnapshot discards the snapshot without restoring it —
+// call when a /marketproviders flow completes successfully.
+func (a *AppModel) clearMarketProvidersSnapshot() {
+	a.marketProvidersSnapshot = nil
+	a.activeProviderSnapshot = ""
+}
+
 // setStorageEncryption toggles FEAT-16 at-rest encryption of portfolios and
 // chat sessions, synchronously re-encrypting (or decrypting) every existing
 // file so on-disk state always matches the toggle. This runs once, at the
@@ -1631,6 +1708,7 @@ func (a *AppModel) applyProviderSelection(newKeys []string) (tea.Model, tea.Cmd)
 
 	// Only removals — finalise without configuring new providers.
 	a.managingProviders = false
+	a.clearProvidersSnapshot()
 	if a.cfg.ActiveAIProvider == "" && len(a.cfg.AIProviders) > 0 {
 		// Active provider was removed; pick any remaining one and load its models
 		// so the user can choose a new default via AIDefaultModelModel.
@@ -1860,6 +1938,7 @@ func (a *AppModel) applyMarketProviderSelection(newKeys []string) (tea.Model, te
 	}
 
 	a.managingMarketProviders = false
+	a.clearMarketProvidersSnapshot()
 	if a.cfg.ActiveProvider == "" && len(a.cfg.Providers) > 0 {
 		for _, e := range a.marketProviderOrder() {
 			if _, ok := a.cfg.Providers[e.Key]; ok {
