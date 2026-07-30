@@ -3,6 +3,8 @@ package gemini_test
 import (
 	"context"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"strings"
 	"testing"
@@ -81,6 +83,66 @@ func TestPing_NotConnected(t *testing.T) {
 	err := d.Ping(context.Background())
 	if !errors.Is(err, llm.ErrNotConnected) {
 		t.Errorf("expected ErrNotConnected, got: %v", err)
+	}
+}
+
+// ── Hermetic streaming tests (httptest, no live API key needed) ──────────────
+
+// TestStream_ConnectionClosedBeforeFinishReason verifies that when the SSE
+// stream closes cleanly (EOF, no transport error) after emitting a candidate
+// with a function call but before any candidate ever reports a terminal
+// FinishReason, the driver still surfaces the accumulated tool call and a
+// non-empty StopReason on the final chunk instead of a bare, data-losing
+// Done:true frame.
+func TestStream_ConnectionClosedBeforeFinishReason(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/models") && r.Method == http.MethodGet:
+			w.Write([]byte(`{"models":[{"name":"models/test-model"}]}`))
+		case strings.Contains(r.URL.Path, ":streamGenerateContent"):
+			w.Header().Set("Content-Type", "text/event-stream")
+			w.Write([]byte(`data: {"candidates":[{"content":{"role":"model","parts":[{"functionCall":{"name":"market_get_quote","args":{"symbol":"AAPL"}}}]}}]}` + "\n\n"))
+			if f, ok := w.(http.Flusher); ok {
+				f.Flush()
+			}
+			// Connection closes here: no further data, no candidate ever
+			// carried a finishReason.
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	})
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	d := gemini.New("dummy-key", gemini.WithBaseURL(server.URL))
+	if err := d.Connect(context.Background()); err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+
+	ch, err := d.Stream(context.Background(), llm.CompletionRequest{
+		Model:    "test-model",
+		Messages: []llm.Message{{Role: llm.RoleUser, Content: "What is the price of AAPL?"}},
+	})
+	if err != nil {
+		t.Fatalf("Stream: %v", err)
+	}
+
+	var last llm.StreamChunk
+	for c := range ch {
+		last = c
+	}
+	if !last.Done {
+		t.Fatal("expected the final chunk to have Done=true")
+	}
+	if last.StopReason == "" {
+		t.Error("expected a non-empty StopReason on the fallback terminal chunk")
+	}
+	if len(last.ToolCalls) != 1 {
+		t.Fatalf("expected the accumulated tool call to be salvaged, got %d tool calls", len(last.ToolCalls))
+	}
+	if last.ToolCalls[0].Function.Name != "market_get_quote" {
+		t.Errorf("unexpected tool call name: %q", last.ToolCalls[0].Function.Name)
 	}
 }
 

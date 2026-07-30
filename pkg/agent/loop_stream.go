@@ -34,6 +34,7 @@ func runLoopStream(ctx context.Context, a *Agent, messages []llm.Message, onDelt
 
 		var text strings.Builder
 		var final llm.StreamChunk
+		var sawDone bool
 		for chunk := range ch {
 			if chunk.Err != nil {
 				a.debugf("[iter=%d] stream error: %v", iter, chunk.Err)
@@ -47,7 +48,12 @@ func runLoopStream(ctx context.Context, a *Agent, messages []llm.Message, onDelt
 			}
 			if chunk.Done {
 				final = chunk
+				sawDone = true
 			}
+		}
+		if !sawDone {
+			a.debugf("[iter=%d] stream closed without a terminal frame", iter)
+			return llm.Message{}, fmt.Errorf("agent: llm: stream closed without a final response")
 		}
 		a.setLastUsage(final.Usage)
 
