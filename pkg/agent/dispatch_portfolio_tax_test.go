@@ -125,6 +125,95 @@ func TestDispatch_PortfolioCalculateTaxPnL_DateRangeFilter(t *testing.T) {
 	}
 }
 
+// TestDispatch_PortfolioCalculateTaxPnL_LastDaySaleIncluded is the
+// regression test for #33: a bare "to" date must include the whole
+// calendar day, not just its first instant (UTC midnight).
+func TestDispatch_PortfolioCalculateTaxPnL_LastDaySaleIncluded(t *testing.T) {
+	tmp := t.TempDir()
+	prev := portfolio.SetPortfoliosDirForTest(tmp)
+	t.Cleanup(func() { portfolio.SetPortfoliosDirForTest(prev) })
+
+	buyDate := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
+	lateOnLastDay := time.Date(2026, 12, 31, 23, 30, 0, 0, time.UTC)
+	p := portfolio.NewPortfolio("test")
+	p.Transactions = []portfolio.Transaction{
+		{Type: portfolio.TransactionSell, Symbol: "AAPL", Quantity: 1, Price: 110, Date: lateOnLastDay,
+			ConsumedLots: []portfolio.LotConsumption{{LotID: "last-day", Quantity: 1, Price: 100, Date: buyDate}}},
+	}
+	if err := portfolio.SavePortfolio(p); err != nil {
+		t.Fatal(err)
+	}
+	a := New(&mockLLM{}, &mockMarket{}, "")
+	a.currentPortfolioID = p.ID
+
+	var lk ProgressKind
+	args := toolCallArgs(t, map[string]any{"from": "2026-01-01", "to": "2026-12-31"})
+	result := a.dispatch(context.Background(), llm.ToolCall{
+		Function: llm.ToolCallFunction{Name: "portfolio_calculate_tax_pnl", Arguments: args},
+	}, &lk)
+	if result[:6] == "error:" {
+		t.Fatalf("unexpected error: %s", result)
+	}
+	var res portfolio.TaxPnLResult
+	if err := json.Unmarshal([]byte(result), &res); err != nil {
+		t.Fatalf("invalid JSON: %s — %v", result, err)
+	}
+	if len(res.Lots) != 1 || res.Lots[0].LotID != "last-day" {
+		t.Fatalf("expected the last-day sale to be included, got %+v", res.Lots)
+	}
+}
+
+// TestDispatch_PortfolioCalculateTaxPnL_EndOfDayDoesNotOvershoot confirms
+// the end-of-day expansion of a bare "to" date stops at 23:59:59.999999999
+// of that day and does not leak into the next calendar day.
+func TestDispatch_PortfolioCalculateTaxPnL_EndOfDayDoesNotOvershoot(t *testing.T) {
+	tmp := t.TempDir()
+	prev := portfolio.SetPortfoliosDirForTest(tmp)
+	t.Cleanup(func() { portfolio.SetPortfoliosDirForTest(prev) })
+
+	buyDate := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
+	firstDay := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	lastDay := time.Date(2026, 12, 31, 23, 59, 59, 0, time.UTC)
+	nextYear := time.Date(2027, 1, 1, 0, 0, 1, 0, time.UTC)
+	p := portfolio.NewPortfolio("test")
+	p.Transactions = []portfolio.Transaction{
+		{Type: portfolio.TransactionSell, Symbol: "AAPL", Quantity: 1, Price: 110, Date: firstDay,
+			ConsumedLots: []portfolio.LotConsumption{{LotID: "first-day", Quantity: 1, Price: 100, Date: buyDate}}},
+		{Type: portfolio.TransactionSell, Symbol: "AAPL", Quantity: 1, Price: 120, Date: lastDay,
+			ConsumedLots: []portfolio.LotConsumption{{LotID: "last-day", Quantity: 1, Price: 100, Date: buyDate}}},
+		{Type: portfolio.TransactionSell, Symbol: "AAPL", Quantity: 1, Price: 130, Date: nextYear,
+			ConsumedLots: []portfolio.LotConsumption{{LotID: "next-year", Quantity: 1, Price: 100, Date: buyDate}}},
+	}
+	if err := portfolio.SavePortfolio(p); err != nil {
+		t.Fatal(err)
+	}
+	a := New(&mockLLM{}, &mockMarket{}, "")
+	a.currentPortfolioID = p.ID
+
+	var lk ProgressKind
+	args := toolCallArgs(t, map[string]any{"from": "2026-01-01", "to": "2026-12-31"})
+	result := a.dispatch(context.Background(), llm.ToolCall{
+		Function: llm.ToolCallFunction{Name: "portfolio_calculate_tax_pnl", Arguments: args},
+	}, &lk)
+	if result[:6] == "error:" {
+		t.Fatalf("unexpected error: %s", result)
+	}
+	var res portfolio.TaxPnLResult
+	if err := json.Unmarshal([]byte(result), &res); err != nil {
+		t.Fatalf("invalid JSON: %s — %v", result, err)
+	}
+	gotIDs := make(map[string]bool, len(res.Lots))
+	for _, l := range res.Lots {
+		gotIDs[l.LotID] = true
+	}
+	if len(res.Lots) != 2 || !gotIDs["first-day"] || !gotIDs["last-day"] {
+		t.Fatalf("expected first-day and last-day lots only, got %+v", res.Lots)
+	}
+	if gotIDs["next-year"] {
+		t.Fatalf("next-year sale must not be included, got %+v", res.Lots)
+	}
+}
+
 func TestDispatch_PortfolioCalculateTaxPnL_PortfolioNotFound(t *testing.T) {
 	tmp := t.TempDir()
 	prev := portfolio.SetPortfoliosDirForTest(tmp)
