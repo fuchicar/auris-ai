@@ -57,10 +57,17 @@ type portfolioInstrumentViewModel struct {
 	instrument *portfolio.Instrument // pointer into portfolio.Instruments
 	mode       instrumentViewMode
 	cursor     int
-	infoMsg    string
-	infoIsErr  bool
-	price      float64 // live price if available
-	loadingPx  bool
+	// lotCursor / lotScrollOff track the windowed position inside the per-lot
+	// table; separate from cursor, which navigates the action menu. They live
+	// here because the lot list is only meaningful in the menu mode — when the
+	// user enters a sell/add input flow they go back to (0, 0) so the next
+	// time the menu renders, the table starts at the top.
+	lotCursor   int
+	lotScrollOff int
+	infoMsg     string
+	infoIsErr   bool
+	price       float64 // live price if available
+	loadingPx   bool
 
 	candles        []market.Candle // recent daily candles for the chart
 	loadingCandles bool
@@ -79,6 +86,8 @@ type portfolioInstrumentViewModel struct {
 	addPriceErr   string
 	addDateErr    string
 
+	width  int // terminal width (updated by WindowSizeMsg)
+	height int // terminal height (updated by WindowSizeMsg)
 	spin   spinner.Model
 	mp     market.ProviderAPI
 	styles *Styles
@@ -89,6 +98,7 @@ func newPortfolioInstrumentViewModel(
 	ins *portfolio.Instrument,
 	mp market.ProviderAPI,
 	s *Styles,
+	width, height int,
 ) *portfolioInstrumentViewModel {
 	sp := spinner.New()
 	sp.Spinner = spinner.Dot
@@ -114,6 +124,8 @@ func newPortfolioInstrumentViewModel(
 		addQtyInput:    newInput("10"),
 		addPriceInput:  newInput("150.00"),
 		addDateInput:   newInput(time.Now().Format("2006-01-02")),
+		width:          width,
+		height:         height,
 	}
 }
 
@@ -177,6 +189,11 @@ func (m *portfolioInstrumentViewModel) fetchCandlesCmd() tea.Cmd {
 
 func (m *portfolioInstrumentViewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.width = msg.Width
+		m.height = msg.Height
+		return m, nil
+
 	case spinner.TickMsg:
 		if m.loadingPx || m.loadingCandles {
 			var cmd tea.Cmd
@@ -230,6 +247,45 @@ func (m *portfolioInstrumentViewModel) handleKey(key tea.KeyMsg) (tea.Model, tea
 func (m *portfolioInstrumentViewModel) handleMenu(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// Only show sell/add_lot for holdings.
 	actions := m.visibleActions()
+	// Lot-table navigation keys (j/k, PageUp/PageDown, g/G) are intercepted
+	// when there's something to scroll — they don't move the action cursor
+	// nor trigger any menu action, so the user can walk the table without
+	// accidentally firing the delete/change_type confirmations.
+	if m.instrument.Type == portfolio.InstrumentHolding && len(m.instrument.Lots) > 0 {
+		switch key.Type {
+		case tea.KeyRunes:
+			switch key.String() {
+			case "j":
+				if m.lotCursor < len(m.instrument.Lots)-1 {
+					m.lotCursor++
+				}
+				return m, nil
+			case "k":
+				if m.lotCursor > 0 {
+					m.lotCursor--
+				}
+				return m, nil
+			case "g":
+				m.lotCursor = 0
+				return m, nil
+			case "G":
+				m.lotCursor = len(m.instrument.Lots) - 1
+				return m, nil
+			}
+		case tea.KeyPgDown:
+			m.lotCursor += 5
+			if m.lotCursor > len(m.instrument.Lots)-1 {
+				m.lotCursor = len(m.instrument.Lots) - 1
+			}
+			return m, nil
+		case tea.KeyPgUp:
+			m.lotCursor -= 5
+			if m.lotCursor < 0 {
+				m.lotCursor = 0
+			}
+			return m, nil
+		}
+	}
 	switch key.Type {
 	case tea.KeyUp:
 		if m.cursor > 0 {
@@ -513,7 +569,61 @@ func (m *portfolioInstrumentViewModel) handleConfirmDelete(key tea.KeyMsg) (tea.
 
 // ─── View ─────────────────────────────────────────────────────────────────────
 
-func (m *portfolioInstrumentViewModel) View() string {
+// lotMoneyWidth is the fixed width money columns are right-aligned to in the
+// per-lot table (kept narrower than moneyColWidth since per-lot amounts are
+// smaller than portfolio-level totals).
+const lotMoneyWidth = 14
+
+// viewChromeless returns the static top and bottom chrome the screen always
+// renders (header line, separator, and the action menu / input / confirm
+// prompt depending on m.mode). Used by View() to compute the vertical
+// budget left for the chart and the lot table — see View() for the full
+// priority order. The chrome slice has at most the items View() always
+// shows: header + blank + (menu OR input block OR confirm) + (info message).
+// The menu block is len(visibleActions()) + 1 blank + 1 hint ≈ 6 rows for a
+// holding; the input blocks are 3 rows; confirms are 2. infoMsg adds 1.
+func (m *portfolioInstrumentViewModel) viewChromeless() []string {
+	var chrome []string
+	chrome = append(chrome, m.viewHeader())
+	chrome = append(chrome, "")
+	switch m.mode {
+	case ivModeMenu:
+		chrome = append(chrome, m.viewMenu()...)
+	case ivModeSellQty:
+		chrome = append(chrome, m.viewSellQty()...)
+	case ivModeSellPrice:
+		chrome = append(chrome, m.viewSellPrice()...)
+	case ivModeAddQty:
+		chrome = append(chrome, m.viewAddQty()...)
+	case ivModeAddPrice:
+		chrome = append(chrome, m.viewAddPrice()...)
+	case ivModeAddDate:
+		chrome = append(chrome, m.viewAddDate()...)
+	case ivModeConfirmDelete:
+		chrome = append(chrome, m.styles.Warning.Render(locale.T("portfolio.instrument.delete_confirm")))
+	case ivModeConfirmType:
+		if m.instrument.Type == portfolio.InstrumentHolding {
+			chrome = append(chrome, m.styles.Warning.Render(locale.T("portfolio.instrument.change_type.to_watchlist")))
+		} else {
+			chrome = append(chrome, m.styles.Warning.Render(locale.T("portfolio.instrument.change_type.to_holding")))
+		}
+		chrome = append(chrome, m.styles.Hint.Render("y/s confirm · other cancel"))
+	}
+	if m.infoMsg != "" {
+		if m.infoIsErr {
+			chrome = append(chrome, m.styles.Error.Render(m.infoMsg))
+		} else {
+			chrome = append(chrome, m.styles.Hint.Render(m.infoMsg))
+		}
+	}
+	return chrome
+}
+
+// viewHeader renders the badge + symbol + name line that sits at the top of
+// the screen. Extracted so the header is also accounted for in the vertical
+// budget — without it, View()'s first "header + blank" could itself exceed
+// the terminal and still push chrome off the top.
+func (m *portfolioInstrumentViewModel) viewHeader() string {
 	var badgeKey string
 	switch m.instrument.Type {
 	case portfolio.InstrumentHolding:
@@ -522,116 +632,336 @@ func (m *portfolioInstrumentViewModel) View() string {
 		badgeKey = "portfolio.instrument.badge.watchlist"
 	}
 	badge := m.styles.Checkbox.Render(fmt.Sprintf("[%s]", locale.T(badgeKey)))
-	header := fmt.Sprintf("%s %s — %s", badge, m.styles.Selected.Render(m.instrument.Symbol), m.instrument.Name)
+	return fmt.Sprintf("%s %s — %s", badge, m.styles.Selected.Render(m.instrument.Symbol), m.instrument.Name)
+}
 
-	var parts []string
-	parts = append(parts, header, "")
-
-	if chart := m.viewChart(); chart != "" {
-		parts = append(parts, chart, "")
-	}
-
-	if m.instrument.Type == portfolio.InstrumentHolding {
-		parts = append(parts, m.viewLotTable()...)
-		parts = append(parts, "")
-		parts = append(parts, m.viewSummary()...)
-		parts = append(parts, "")
-	}
-
-	switch m.mode {
-	case ivModeMenu:
-		parts = append(parts, m.viewMenu()...)
-	case ivModeSellQty:
-		parts = append(parts, m.viewSellQty()...)
-	case ivModeSellPrice:
-		parts = append(parts, m.viewSellPrice()...)
-	case ivModeAddQty:
-		parts = append(parts, m.viewAddQty()...)
-	case ivModeAddPrice:
-		parts = append(parts, m.viewAddPrice()...)
-	case ivModeAddDate:
-		parts = append(parts, m.viewAddDate()...)
-	case ivModeConfirmDelete:
-		parts = append(parts, m.styles.Warning.Render(locale.T("portfolio.instrument.delete_confirm")))
-	case ivModeConfirmType:
+func (m *portfolioInstrumentViewModel) View() string {
+	// Outside menu mode the screen is small (input/confirm), so it never
+	// overflows on its own — render the chrome plus whatever lot/summary
+	// data the user can still glance at without making the screen scroll.
+	if m.mode != ivModeMenu {
+		parts := []string{m.viewHeader(), ""}
 		if m.instrument.Type == portfolio.InstrumentHolding {
-			parts = append(parts, m.styles.Warning.Render(locale.T("portfolio.instrument.change_type.to_watchlist")))
-		} else {
-			parts = append(parts, m.styles.Warning.Render(locale.T("portfolio.instrument.change_type.to_holding")))
+			parts = append(parts, m.viewLotTableWindowed(m.height)...)
+			parts = append(parts, "")
+			parts = append(parts, m.viewSummary()...)
+			parts = append(parts, "")
 		}
-		parts = append(parts, m.styles.Hint.Render("y/s confirm · other cancel"))
+		switch m.mode {
+		case ivModeSellQty:
+			parts = append(parts, m.viewSellQty()...)
+		case ivModeSellPrice:
+			parts = append(parts, m.viewSellPrice()...)
+		case ivModeAddQty:
+			parts = append(parts, m.viewAddQty()...)
+		case ivModeAddPrice:
+			parts = append(parts, m.viewAddPrice()...)
+		case ivModeAddDate:
+			parts = append(parts, m.viewAddDate()...)
+		case ivModeConfirmDelete:
+			parts = append(parts, m.styles.Warning.Render(locale.T("portfolio.instrument.delete_confirm")))
+		case ivModeConfirmType:
+			if m.instrument.Type == portfolio.InstrumentHolding {
+				parts = append(parts, m.styles.Warning.Render(locale.T("portfolio.instrument.change_type.to_watchlist")))
+			} else {
+				parts = append(parts, m.styles.Warning.Render(locale.T("portfolio.instrument.change_type.to_holding")))
+			}
+			parts = append(parts, m.styles.Hint.Render("y/s confirm · other cancel"))
+		}
+		if m.infoMsg != "" {
+			if m.infoIsErr {
+				parts = append(parts, m.styles.Error.Render(m.infoMsg))
+			} else {
+				parts = append(parts, m.styles.Hint.Render(m.infoMsg))
+			}
+		}
+		return lipgloss.JoinVertical(lipgloss.Left, parts...)
 	}
 
-	if m.infoMsg != "" {
-		if m.infoIsErr {
-			parts = append(parts, m.styles.Error.Render(m.infoMsg))
-		} else {
-			parts = append(parts, m.styles.Hint.Render(m.infoMsg))
+	// Menu mode: build the screen in priority order, then shrink chart and
+	// window lots until the result fits.
+	//
+	// Priority:
+	//   1. Header + summary + menu + info (always; the chrome).
+	//   2. Chart (degrade: full → medium → min → hint → "").
+	//   3. Lot table (windowed).
+	//
+	// The trick is to compute the chrome height from the rendered strings
+	// (not estimates) so we don't miscount blanks. Once we know the chrome
+	// height, the chart+lot budget is m.height - chromeH minus one blank
+	// line for each non-empty block that follows.
+	header := m.viewHeader()
+	summary := m.viewSummary()
+	menuLines := m.viewMenu()
+	infoLine := m.infoLine()
+
+	chrome := []string{header}
+	if len(summary) > 0 {
+		chrome = append(chrome, "")
+		chrome = append(chrome, summary...)
+	}
+	if len(menuLines) > 0 {
+		chrome = append(chrome, "")
+		chrome = append(chrome, menuLines...)
+	}
+	if infoLine != "" {
+		chrome = append(chrome, "")
+		chrome = append(chrome, infoLine)
+	}
+	chromeH := lipgloss.Height(strings.Join(chrome, "\n"))
+
+	// If we don't know the terminal height, render the legacy layout — no
+	// windowing, full chart — to preserve backward compat for tests that
+	// construct the model without ever sending WindowSizeMsg.
+	if m.height <= 0 {
+		parts := []string{header, ""}
+		if chart, _ := m.viewChartSized(chartHeightMax); chart != "" {
+			parts = append(parts, chart, "")
 		}
+		if m.instrument.Type == portfolio.InstrumentHolding {
+			parts = append(parts, m.viewLotTableWindowed(0)...)
+			parts = append(parts, "")
+			parts = append(parts, summary...)
+			parts = append(parts, "")
+		}
+		parts = append(parts, menuLines...)
+		if infoLine != "" {
+			parts = append(parts, "", infoLine)
+		}
+		return lipgloss.JoinVertical(lipgloss.Left, parts...)
+	}
+
+	// Allocate rows to chart + lot. If the chrome alone exceeds the
+	// terminal (very tight), the chart and lot both collapse and the chrome
+	// keeps its priority order.
+	chartH, lotH := m.allocateChartAndLot(m.height - chromeH)
+	chart := ""
+	if chartH > 0 {
+		chart, _ = m.viewChartSized(chartH)
+	}
+
+	parts := []string{header}
+	if len(summary) > 0 {
+		parts = append(parts, "")
+		parts = append(parts, summary...)
+	}
+	if chart != "" {
+		parts = append(parts, "")
+		parts = append(parts, chart)
+	}
+	if m.instrument.Type == portfolio.InstrumentHolding && lotH > 0 {
+		parts = append(parts, "")
+		parts = append(parts, m.viewLotTableWindowed(lotH)...)
+	}
+	if len(menuLines) > 0 {
+		parts = append(parts, "")
+		parts = append(parts, menuLines...)
+	}
+	if infoLine != "" {
+		parts = append(parts, "")
+		parts = append(parts, infoLine)
 	}
 
 	return lipgloss.JoinVertical(lipgloss.Left, parts...)
 }
 
-// viewChart renders the candlestick+SMA chart, a loading spinner, or "" if
-// there isn't enough data — the chart is a nice-to-have and never blocks the
-// rest of the screen with an error state.
-func (m *portfolioInstrumentViewModel) viewChart() string {
-	if m.loadingCandles {
-		return m.styles.Hint.Render(locale.T("portfolio.instrument.chart.loading") + " " + m.spin.View())
-	}
-	if len(m.candles) == 0 {
+// infoLine returns the current info message rendered (or "" when there is
+// no message). Encapsulates the error/hint styling switch.
+func (m *portfolioInstrumentViewModel) infoLine() string {
+	if m.infoMsg == "" {
 		return ""
 	}
-	return renderCandleChart(m.candles, m.styles)
+	if m.infoIsErr {
+		return m.styles.Error.Render(m.infoMsg)
+	}
+	return m.styles.Hint.Render(m.infoMsg)
 }
 
-// lotMoneyWidth is the fixed width money columns are right-aligned to in the
-// per-lot table (kept narrower than moneyColWidth since per-lot amounts are
-// smaller than portfolio-level totals).
-const lotMoneyWidth = 14
+// allocateChartAndLot splits the available budget (already net of chrome)
+// between the chart and the lot table. The chart tries to claim the
+// biggest variant that fits in the budget; whatever's left goes to the
+// lot table. Both blocks include one blank line above them in the parts
+// list, so the effective budget is reduced by 1 for each block that's
+// actually rendered.
+//
+// The chart-degrade ladder (descending):
+//   chartHeightMax (14) → chartHeightMedium (8) → chartHeightMin (5) → hint (1)
+// Lots use whatever's left, also deducting one separator line for the
+// blank above the block.
+func (m *portfolioInstrumentViewModel) allocateChartAndLot(budget int) (chartH, lotH int) {
+	if budget <= 1 {
+		// Even one separator + one line can't fit both — drop the chart
+		// entirely and let the lot table take the single separator.
+		return 0, budget - 1
+	}
+	// Try the biggest chart that fits, accounting for the separator the
+	// chart itself will need above it.
+	candidates := []int{chartHeightMax, chartHeightMedium, chartHeightMin}
+	for _, c := range candidates {
+		if c+1 <= budget {
+			return c, budget - c - 1
+		}
+	}
+	// Can't fit a real chart variant — degrade to the 1-row "hidden" hint.
+	if budget >= 2 {
+		return 1, budget - 2
+	}
+	return 0, 0
+}
 
-func (m *portfolioInstrumentViewModel) viewLotTable() []string {
+// viewChart returns the rendered chart at the requested height (or "" when
+// nothing should render). The rendered string and the number of terminal
+// rows it actually consumes are returned in a pair so View() can subtract
+// that from the lot-table budget.
+func (m *portfolioInstrumentViewModel) viewChartSized(budget int) (string, int) {
+	if budget <= 0 {
+		return "", 0
+	}
+	if m.loadingCandles {
+		// Spinner line is always 1 row — give it that if any rows remain.
+		return m.styles.Hint.Render(locale.T("portfolio.instrument.chart.loading") + " " + m.spin.View()), 1
+	}
+	if len(m.candles) == 0 {
+		return "", 0
+	}
+	// Pick the largest variant that fits the budget.
+	var h int
+	switch {
+	case budget >= chartHeightMax:
+		h = chartHeightMax
+	case budget >= chartHeightMedium:
+		h = chartHeightMedium
+	case budget >= chartHeightMin:
+		h = chartHeightMin
+	default:
+		// Below chartHeightMin: degrade to the "chart hidden" hint so the
+		// user at least sees a placeholder rather than nothing — they know
+		// the data is there but the terminal is too short to draw it.
+		return m.styles.Hint.Render(locale.T("portfolio.instrument.chart_too_short")), 1
+	}
+	return renderCandleChart(m.candles, m.styles, chartWidth, h), h
+}
+
+// viewLotTableWindowed returns the lot table clipped to fit within maxRows
+// terminal rows. When maxRows is 0, the table renders in full (the
+// pre-issue-36 behavior, used by tests that don't seed a height).
+// Allocation rules:
+//   - 1 row is reserved for the lot header.
+//   - At most (maxRows - 1) rows of actual lots are rendered.
+//   - The windowed helper reserves 2 indicator slots ("↑ more above" / "↓
+//     more below"); the helper itself floors visibleCount at 0, so a tight
+//     budget gracefully collapses to header + 0 lot rows instead of
+//     overflowing.
+//   - The cursor is kept inside the visible window so the user can always
+//     see what they're walking.
+func (m *portfolioInstrumentViewModel) viewLotTableWindowed(maxRows int) []string {
 	if len(m.instrument.Lots) == 0 {
 		return []string{m.styles.Hint.Render(locale.T("portfolio.instrument.no_lots"))}
 	}
 	header := m.styles.Hint.Render(locale.T("portfolio.instrument.lot_header"))
-	var rows []string
-	rows = append(rows, header)
 	cur := m.portfolio.Currency
-	for _, l := range m.instrument.Lots {
-		value := locale.T("portfolio.view.price_unavailable")
-		pnlText := locale.T("portfolio.view.price_unavailable")
-		havePnL := false
-		var pnl float64
-		if m.price > 0 {
-			value = finance.FormatMoney(l.Quantity*m.price, cur)
-			pnl = l.Quantity * (m.price - l.Price)
-			pnlText = finance.FormatMoneySigned(pnl, cur)
-			havePnL = true
-		} else if m.loadingPx {
-			value = m.spin.View()
-			pnlText = "…"
-		}
-		row := fmt.Sprintf("%-16s %-12.6g %*s %*s",
-			l.Date.Format("2006-01-02"),
-			l.Quantity,
-			lotMoneyWidth, finance.FormatMoney(l.Price, cur),
-			lotMoneyWidth, value,
-		)
-		rendered := m.styles.Unselected.Render(row)
 
-		padded := fmt.Sprintf("%*s", lotMoneyWidth, pnlText)
-		pnlStyle := m.styles.Unselected
-		if havePnL {
-			pnlStyle = m.styles.Bull
-			if pnl < 0 {
-				pnlStyle = m.styles.Bear
-			}
-		}
-		rows = append(rows, rendered+" "+pnlStyle.Render(padded))
+	// Clamp cursor into the legal range so a deletion or race doesn't send
+	// it out of bounds.
+	if m.lotCursor < 0 {
+		m.lotCursor = 0
 	}
-	return rows
+	if m.lotCursor > len(m.instrument.Lots)-1 {
+		m.lotCursor = len(m.instrument.Lots) - 1
+	}
+
+	if maxRows <= 0 {
+		// Full table (no windowing) — preserves the pre-issue-36 look.
+		rows := []string{header}
+		rows = append(rows, m.renderLotRows(0, len(m.instrument.Lots), m.instrument.Lots, cur)...)
+		return rows
+	}
+
+	// Lot header takes 1 row; reserve up to 2 for window indicators; the
+	// rest are actual lot rows.
+	const headerReserve = 1
+	const indicatorReserve = 2
+	rowsBudget := maxRows - headerReserve - indicatorReserve
+	if rowsBudget < 0 {
+		rowsBudget = 0
+	}
+
+	total := len(m.instrument.Lots)
+	opts := WindowedRowOpts{
+		Height:           rowsBudget + indicatorReserve, // header is chromeAbove
+		ScrollOff:        m.lotScrollOff,
+		Cursor:           m.lotCursor,
+		Total:            total,
+		ChromeAbove:      0,
+		ChromeBelow:      0,
+		IndicatorReserve: indicatorReserve,
+		RenderRow: func(i int) string {
+			return m.renderLotRow(i, m.instrument.Lots[i], cur)
+		},
+		HintRender: func(s string) string { return m.styles.Hint.Render(s) },
+	}
+	window := windowedRows(opts)
+	m.lotScrollOff = clampScrollOff(m.lotCursor, m.lotScrollOff, len(window)-indicatorReserve)
+
+	out := []string{header}
+	if len(window) == 0 {
+		return out
+	}
+	out = append(out, window...)
+	return out
+}
+
+// renderLotRows renders the [from, to) lot range. Used for the
+// pre-windowing full-table path; windowedRows calls renderLotRow directly.
+func (m *portfolioInstrumentViewModel) renderLotRows(from, to int, lots []portfolio.Lot, cur string) []string {
+	out := make([]string, 0, to-from)
+	for i := from; i < to; i++ {
+		out = append(out, m.renderLotRow(i, lots[i], cur))
+	}
+	return out
+}
+
+// renderLotRow renders one lot row in the per-lot table. Row i gets the
+// "cursor" prefix ("> ") when the user has navigated to it via j/k/g/G/
+// PageUp/PageDown; this gives them a visual anchor when the table is
+// windowed and the lot they care about isn't the topmost rendered row.
+func (m *portfolioInstrumentViewModel) renderLotRow(i int, l portfolio.Lot, cur string) string {
+	value := locale.T("portfolio.view.price_unavailable")
+	pnlText := locale.T("portfolio.view.price_unavailable")
+	havePnL := false
+	var pnl float64
+	if m.price > 0 {
+		value = finance.FormatMoney(l.Quantity*m.price, cur)
+		pnl = l.Quantity * (m.price - l.Price)
+		pnlText = finance.FormatMoneySigned(pnl, cur)
+		havePnL = true
+	} else if m.loadingPx {
+		value = m.spin.View()
+		pnlText = "…"
+	}
+	row := fmt.Sprintf("%-16s %-12.6g %*s %*s",
+		l.Date.Format("2006-01-02"),
+		l.Quantity,
+		lotMoneyWidth, finance.FormatMoney(l.Price, cur),
+		lotMoneyWidth, value,
+	)
+	style := m.styles.Unselected
+	prefix := "  "
+	if i == m.lotCursor {
+		style = m.styles.Selected
+		prefix = m.styles.Cursor.Render(">") + " "
+	}
+	rendered := style.Render(row)
+
+	padded := fmt.Sprintf("%*s", lotMoneyWidth, pnlText)
+	pnlStyle := style
+	if havePnL {
+		pnlStyle = m.styles.Bull
+		if pnl < 0 {
+			pnlStyle = m.styles.Bear
+		}
+	}
+	return prefix + rendered + " " + pnlStyle.Render(padded)
 }
 
 func (m *portfolioInstrumentViewModel) viewSummary() []string {

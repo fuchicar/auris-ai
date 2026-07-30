@@ -1169,6 +1169,9 @@
   "portfolio.instrument.chart.loading": {
     "other": "Cargando gráfico…"
   },
+  "portfolio.instrument.chart_too_short": {
+    "other": "[gráfico oculto — agranda la terminal para verlo]"
+  },
   "portfolio.instrument.badge.holding": {
     "other": "POSICIÓN"
   },
